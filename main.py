@@ -8,7 +8,7 @@ from telegram.ext import (
 from config import BOT_TOKEN, PROXY_URL
 from database import init_db
 
-from handlers.start import start_command, menu_callback, set_translation_callback
+from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
     fav_ayah_callback, tafsir_callback, ayah_direct_lookup,
@@ -76,6 +76,7 @@ def main():
 
     # دستورات
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 

@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
 from config import DEFAULT_TRANSLATIONS
 from database import get_user_translation, set_user_translation
@@ -15,7 +15,20 @@ def main_menu_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
+async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور کمکی برای پاک کردن هر کیبورد ثابت (Reply Keyboard) قدیمی."""
+    msg = await update.message.reply_text("کیبورد پاک شد ✅", reply_markup=ReplyKeyboardRemove())
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ابتدا هر کیبورد ثابت (Reply Keyboard) قدیمی که ممکن است از قبل روی این چت
+    # باقی مانده باشد را پاک می‌کنیم. این پیام تقریباً نامرئی است.
+    cleanup_msg = await update.message.reply_text("⏳", reply_markup=ReplyKeyboardRemove())
+    try:
+        await cleanup_msg.delete()
+    except Exception:
+        pass
+
     text = (
         "🌙 به ربات قرآن و احادیث معصومین خوش آمدید.\n\n"
         "می‌توانید آیات قرآن را همراه با ترجمه و تفسیر مطالعه کنید، "
