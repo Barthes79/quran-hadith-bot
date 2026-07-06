@@ -140,6 +140,22 @@ def add_hadith(arabic_text, translation_text, narrator, source_book, chapter,
     return hadith_id
 
 
+def get_hadith_by_id(hadith_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM hadiths WHERE id = ?", (hadith_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def update_hadith_tafsir(hadith_id: int, tafsir_text: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE hadiths SET tafsir_text = ? WHERE id = ?", (tafsir_text, hadith_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_all_topics():
     conn = get_connection()
     rows = conn.execute("SELECT DISTINCT topic_name FROM hadith_topics ORDER BY topic_name").fetchall()

@@ -15,7 +15,7 @@ from handlers.quran import (
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
-    add_hadith_command, text_search_handler,
+    add_hadith_command, text_search_handler, add_tafsir_command,
 )
 from handlers.inline import inline_query_handler
 from handlers.admin import (
@@ -78,6 +78,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
+    app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 
     # کالبک‌های منو

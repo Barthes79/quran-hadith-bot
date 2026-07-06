@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes
 from database import (
     get_all_topics, get_hadiths_by_topic, get_random_hadith,
     search_hadiths, add_favorite, get_favorites, add_hadith,
+    get_hadith_by_id, update_hadith_tafsir,
 )
 from config import ADMIN_IDS
 
@@ -51,6 +52,7 @@ def format_hadith(row):
             text += f" - {chapter}"
         if number:
             text += f" (حدیث {number})"
+    text += f"\n\n🆔 شناسه: {row['id']}"
     return text
 
 
@@ -152,6 +154,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "/addhadith\n"
             "عربی: ...\n"
             "ترجمه: ...\n"
+            "شرح: ... (اختیاری)\n"
             "راوی: ...\n"
             "منبع: ...\n"
             "باب: ...\n"
@@ -164,7 +167,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # پارسینگ مقاوم: چون تلگرام گاهی خط‌های جدا را با فاصله جایگزین می‌کند،
     # به‌جای تکیه بر خط جدید، بر اساس خود برچسب‌های شناخته‌شده (عربی:، ترجمه: و...) جدا می‌کنیم.
-    field_labels = ["عربی", "ترجمه", "راوی", "منبع", "باب", "شماره", "موضوعات"]
+    field_labels = ["عربی", "ترجمه", "شرح", "راوی", "منبع", "باب", "شماره", "موضوعات"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())
 
@@ -180,6 +183,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
+    tafsir = fields.get("شرح", "") or None
     narrator = fields.get("راوی", "")
     source = fields.get("منبع", "")
     chapter = fields.get("باب", "")
@@ -195,5 +199,45 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    hadith_id = add_hadith(arabic, translation, narrator, source, chapter, number, topics=topics)
+    hadith_id = add_hadith(
+        arabic, translation, narrator, source, chapter, number,
+        tafsir_text=tafsir, topics=topics,
+    )
     await update.message.reply_text(f"✅ حدیث با شناسه {hadith_id} با موفقیت ثبت شد.")
+
+
+# ---------------- دستور ادمین برای افزودن/ویرایش شرح یک حدیث موجود ----------------
+# فرمت: /addtafsir <شناسه_حدیث> <متن شرح>
+# مثال: /addtafsir 3 این حدیث اشاره به اهمیت اخلاص در عمل دارد.
+
+async def add_tafsir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    parts = update.message.text.split(" ", 2)
+    if len(parts) < 3:
+        await update.message.reply_text(
+            "فرمت صحیح استفاده:\n"
+            "/addtafsir شناسه_حدیث متن شرح\n\n"
+            "مثال:\n"
+            "/addtafsir 3 این حدیث اشاره به اهمیت اخلاص در عمل دارد.\n\n"
+            "برای پیدا کردن شناسه‌ی حدیث، از منوی احادیث یا حدیث تصادفی استفاده کنید "
+            "(شناسه در پایین کارت حدیث یا هنگام افزودن نمایش داده می‌شود)."
+        )
+        return
+
+    try:
+        hadith_id = int(parts[1])
+    except ValueError:
+        await update.message.reply_text("شناسه‌ی حدیث باید یک عدد باشد.")
+        return
+
+    tafsir_text = parts[2].strip()
+    row = get_hadith_by_id(hadith_id)
+    if not row:
+        await update.message.reply_text(f"حدیثی با شناسه‌ی {hadith_id} یافت نشد.")
+        return
+
+    update_hadith_tafsir(hadith_id, tafsir_text)
+    await update.message.reply_text(f"✅ شرح حدیث شماره {hadith_id} با موفقیت ثبت/به‌روزرسانی شد.")
