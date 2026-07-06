@@ -43,20 +43,13 @@ async def send_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     text = (
-        "🧠 Quiz Time!
-
-"
-        f"{q['question']}
-
-"
-        f"1) {q['options'][0]}
-"
-        f"2) {q['options'][1]}
-"
-        f"3) {q['options'][2]}
-"
-        f"4) {q['options'][3]}"
-    )
+    "🧠 Quiz Time!\n\n"
+    f"{q['question']}\n\n"
+    f"1) {q['options'][0]}\n"
+    f"2) {q['options'][1]}\n"
+    f"3) {q['options'][2]}\n"
+    f"4) {q['options'][3]}"
+)
 
     msg = await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
