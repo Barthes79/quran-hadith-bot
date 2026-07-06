@@ -1,0 +1,3 @@
+python-telegram-bot[job-queue,socks]==21.4
+httpx[socks]==0.27.2
+python-dotenv==1.0.1
