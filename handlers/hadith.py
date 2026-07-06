@@ -1,3 +1,4 @@
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import (
@@ -160,11 +161,22 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     body = full_text[1]
+
+    # پارسینگ مقاوم: چون تلگرام گاهی خط‌های جدا را با فاصله جایگزین می‌کند،
+    # به‌جای تکیه بر خط جدید، بر اساس خود برچسب‌های شناخته‌شده (عربی:، ترجمه: و...) جدا می‌کنیم.
+    field_labels = ["عربی", "ترجمه", "راوی", "منبع", "باب", "شماره", "موضوعات"]
+    pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
+    chunks = re.split(pattern, body.strip())
+
     fields = {}
-    for line in body.strip().split("\n"):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            fields[key.strip()] = value.strip()
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk or ":" not in chunk:
+            continue
+        key, value = chunk.split(":", 1)
+        key = key.strip()
+        if key in field_labels:
+            fields[key] = value.strip()
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
@@ -177,7 +189,10 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
               [t.strip() for t in topics_raw.split(",") if t.strip()]
 
     if not arabic or not translation:
-        await update.message.reply_text("حداقل فیلدهای «عربی» و «ترجمه» الزامی هستند.")
+        await update.message.reply_text(
+            "حداقل فیلدهای «عربی» و «ترجمه» الزامی هستند.\n"
+            "مطمئن شوید هر فیلد را دقیقاً با همان برچسب (مثلاً «عربی:») نوشته‌اید."
+        )
         return
 
     hadith_id = add_hadith(arabic, translation, narrator, source, chapter, number, topics=topics)
