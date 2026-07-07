@@ -21,7 +21,7 @@ from handlers.hadith import (
 from handlers.inline import inline_query_handler
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
-    group_send_now_callback, daily_post_job,
+    group_send_now_callback, daily_post_job, interval_menu_callback, set_interval_callback,
 )
 from handlers.quiz import (
     quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
@@ -111,6 +111,8 @@ def main():
     # کالبک‌های تنظیمات گروه
     app.add_handler(CallbackQueryHandler(toggle_daily_post_callback, pattern="^toggle_daily_post$"))
     app.add_handler(CallbackQueryHandler(group_send_now_callback, pattern="^group_send_now$"))
+    app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
+    app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))

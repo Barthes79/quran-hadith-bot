@@ -70,6 +70,7 @@ def init_db():
             chat_id INTEGER PRIMARY KEY,
             daily_post_enabled INTEGER DEFAULT 0,
             daily_post_hour INTEGER DEFAULT 8,
+            post_interval_hours INTEGER DEFAULT 1,
             preferred_translation TEXT DEFAULT 'makarem'
         )
     """)
@@ -108,6 +109,12 @@ def init_db():
             PRIMARY KEY (surah, ayah)
         )
     """)
+
+    # سازگاری با دیتابیس‌های قدیمی
+    try:
+        cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()

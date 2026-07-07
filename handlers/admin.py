@@ -28,13 +28,15 @@ async def group_settings_command(update: Update, context: ContextTypes.DEFAULT_T
 
     buttons = [
         [InlineKeyboardButton(
-            f"پست روزانه: {status}",
+            f"پست خودکار: {status}",
             callback_data="toggle_daily_post"
         )],
+        [InlineKeyboardButton("⏱ فاصله ارسال: هر %s ساعت" % settings["post_interval_hours"], callback_data="set_interval_menu")],
         [InlineKeyboardButton("🎲 ارسال یک حدیث الان", callback_data="group_send_now")],
     ]
     await update.message.reply_text(
-        f"⚙️ تنظیمات گروه:\n\nساعت پست روزانه (به وقت سرور): {settings['daily_post_hour']}:00",
+        "⚙️ تنظیمات گروه:\n\n"
+        "هر 1 تا 24 ساعت یک آیه یا حدیث به صورت تصادفی ارسال می‌شود.",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
 
@@ -66,17 +68,39 @@ async def group_send_now_callback(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.send_message(update.effective_chat.id, "هنوز حدیثی ثبت نشده است.")
 
 
+async def interval_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not await is_group_admin(update):
+        await query.answer("فقط ادمین می‌تواند این کار را انجام دهد.", show_alert=True)
+        return
+    buttons = [[InlineKeyboardButton(f"هر {i} ساعت", callback_data=f"set_interval_{i}")] for i in range(1,25)]
+    await query.edit_message_reply_markup(InlineKeyboardMarkup(buttons))
+
+
+async def set_interval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not await is_group_admin(update):
+        await query.answer("فقط ادمین می‌تواند این کار را انجام دهد.", show_alert=True)
+        return
+    hours = int(query.data.split("_")[-1])
+    update_group_settings(update.effective_chat.id, post_interval_hours=hours)
+    await query.answer("ذخیره شد ✅")
+    await query.edit_message_text(f"✅ زمان‌بندی روی هر {hours} ساعت تنظیم شد.\nبرای فعال/غیرفعال کردن از /groupsettings استفاده کنید.")
+
+
 async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
     """
     این تابع باید هر ساعت (یا هر چند دقیقه) توسط JobQueue اجرا شود
     و بررسی کند کدام گروه‌ها باید در این ساعت پست دریافت کنند.
     """
     import datetime
-    current_hour = datetime.datetime.now().hour
+    now = datetime.datetime.now()
 
     groups = get_all_active_daily_groups()
     for g in groups:
-        if g["daily_post_hour"] != current_hour:
+        # اجرای تقریبی بر اساس فاصله انتخابی
+        interval = g["post_interval_hours"] or 1
+        if now.hour % interval != 0:
             continue
 
         # به‌صورت تصادفی بین حدیث و آیه انتخاب کن
