@@ -74,6 +74,30 @@ def init_db():
         )
     """)
 
+    # سوالات مسابقه (Quiz)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_text TEXT NOT NULL,
+            option_a TEXT NOT NULL,
+            option_b TEXT NOT NULL,
+            option_c TEXT NOT NULL,
+            option_d TEXT NOT NULL,
+            correct_option TEXT NOT NULL  -- 'a', 'b', 'c' یا 'd'
+        )
+    """)
+
+    # امتیاز کاربران در هر گروه (لیدربورد)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_scores (
+            chat_id INTEGER,
+            user_id INTEGER,
+            username TEXT,
+            score INTEGER DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -217,6 +241,60 @@ def get_all_active_daily_groups():
     conn = get_connection()
     rows = conn.execute(
         "SELECT * FROM group_settings WHERE daily_post_enabled = 1"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# ---------------- توابع مربوط به Quiz ----------------
+
+def add_quiz_question(question_text, option_a, option_b, option_c, option_d, correct_option):
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO quiz_questions
+           (question_text, option_a, option_b, option_c, option_d, correct_option)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (question_text, option_a, option_b, option_c, option_d, correct_option.lower()),
+    )
+    qid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return qid
+
+
+def get_random_quiz_question():
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM quiz_questions ORDER BY RANDOM() LIMIT 1").fetchone()
+    conn.close()
+    return row
+
+
+def get_quiz_question_by_id(qid: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM quiz_questions WHERE id = ?", (qid,)).fetchone()
+    conn.close()
+    return row
+
+
+def add_score(chat_id: int, user_id: int, username: str, points: int = 1):
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO quiz_scores (chat_id, user_id, username, score)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(chat_id, user_id) DO UPDATE SET
+               score = score + excluded.score,
+               username = excluded.username""",
+        (chat_id, user_id, username, points),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_leaderboard(chat_id: int, limit: int = 10):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM quiz_scores WHERE chat_id = ? ORDER BY score DESC LIMIT ?",
+        (chat_id, limit),
     ).fetchall()
     conn.close()
     return rows

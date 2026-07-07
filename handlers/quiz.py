@@ -1,88 +1,155 @@
-
-import random
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-
-# سوالات ساده اولیه (بعداً می‌تونی ببری DB)
-QUESTIONS = [
-    {
-        "question": "کدام گزینه یک حدیث مشهور درباره علم است؟",
-        "options": [
-            "طلب العلم فریضة",
-            "الصبر مفتاح الفرج",
-            "الدنیا دار الغرور",
-            "الوقت سیف"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "کدام گزینه درباره صبر است؟",
-        "options": [
-            "طلب العلم فریضة",
-            "الصبر مفتاح الفرج",
-            "من جد وجد",
-            "العدل اساس الملک"
-        ],
-        "correct": 1
-    }
-]
-
-active_quiz = {}
-scores = {}
-
-async def send_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
-    q = random.choice(QUESTIONS)
-
-    keyboard = [
-        [InlineKeyboardButton("1", callback_data="quiz_0"),
-         InlineKeyboardButton("2", callback_data="quiz_1")],
-        [InlineKeyboardButton("3", callback_data="quiz_2"),
-         InlineKeyboardButton("4", callback_data="quiz_3")]
-    ]
-
-    text = (
-    "🧠 Quiz Time!\n\n"
-    f"{q['question']}\n\n"
-    f"1) {q['options'][0]}\n"
-    f"2) {q['options'][1]}\n"
-    f"3) {q['options'][2]}\n"
-    f"4) {q['options'][3]}"
+from config import ADMIN_IDS
+from database import (
+    get_random_quiz_question, get_quiz_question_by_id,
+    add_score, get_leaderboard, add_quiz_question,
 )
 
-    msg = await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    active_quiz[msg.message_id] = q
+def quiz_keyboard(qid: int):
+    buttons = [
+        [InlineKeyboardButton("الف", callback_data=f"quizans_{qid}_a"),
+         InlineKeyboardButton("ب", callback_data=f"quizans_{qid}_b")],
+        [InlineKeyboardButton("ج", callback_data=f"quizans_{qid}_c"),
+         InlineKeyboardButton("د", callback_data=f"quizans_{qid}_d")],
+    ]
+    return InlineKeyboardMarkup(buttons)
 
 
-async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    msg_id = query.message.message_id
-
-    if msg_id not in active_quiz:
+async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    row = get_random_quiz_question()
+    if not row:
+        await update.message.reply_text(
+            "هنوز سوالی برای مسابقه ثبت نشده است.\n"
+            "ادمین می‌تواند با دستور /addquiz سوال جدید اضافه کند."
+        )
         return
 
-    q = active_quiz[msg_id]
-    data = query.data
+    text = (
+        f"❓ {row['question_text']}\n\n"
+        f"الف) {row['option_a']}\n"
+        f"ب) {row['option_b']}\n"
+        f"ج) {row['option_c']}\n"
+        f"د) {row['option_d']}\n\n"
+        "هرکس زودتر جواب درست را بزند، امتیاز می‌گیرد! 🏆"
+    )
+    await update.message.reply_text(text, reply_markup=quiz_keyboard(row["id"]))
 
-    chosen = int(data.split("_")[1])
 
-    if chosen == q["correct"]:
-        await query.edit_message_text("✅ درست بود! آفرین 🎉")
-        uid = query.from_user.id
-        scores[uid] = scores.get(uid, 0) + 1
+async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    _, qid, chosen = query.data.split("_")
+    qid = int(qid)
+
+    row = get_quiz_question_by_id(qid)
+    if not row:
+        await query.answer("این سوال دیگر معتبر نیست.", show_alert=True)
+        return
+
+    if chosen == row["correct_option"]:
+        user = query.from_user
+        username = user.username or user.first_name or "ناشناس"
+        add_score(update.effective_chat.id, user.id, username, points=1)
+
+        await query.answer("✅ آفرین، جواب درست بود!")
+
+        option_map = {"a": "الف", "b": "ب", "c": "ج", "d": "د"}
+        correct_text_map = {
+            "a": row["option_a"], "b": row["option_b"],
+            "c": row["option_c"], "d": row["option_d"],
+        }
+        result_text = (
+            f"❓ {row['question_text']}\n\n"
+            f"✅ پاسخ درست: {option_map[row['correct_option']]}) "
+            f"{correct_text_map[row['correct_option']]}\n\n"
+            f"🏆 برنده: {username}"
+        )
+        try:
+            await query.edit_message_text(result_text)
+        except Exception:
+            pass
     else:
-        await query.edit_message_text("❌ اشتباه بود!")
+        await query.answer("❌ جواب اشتباه بود، دوباره امتحان کن!", show_alert=True)
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "🏆 Leaderboard:\n\n"
 
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = get_leaderboard(update.effective_chat.id)
+    if not rows:
+        await update.message.reply_text("هنوز کسی در این گروه امتیازی کسب نکرده است.")
+        return
 
-    for i, (uid, score) in enumerate(sorted_scores[:10]):
-        text += f"{i+1}. User {uid} — {score}\n"
+    lines = ["🏆 جدول امتیازات این گروه:\n"]
+    medals = ["🥇", "🥈", "🥉"]
+    for i, row in enumerate(rows):
+        prefix = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{prefix} {row['username']} — {row['score']} امتیاز")
 
-    await update.message.reply_text(text)
+    await update.message.reply_text("\n".join(lines))
+
+
+# ---------------- دستور ادمین برای افزودن سوال مسابقه ----------------
+# فرمت:
+# /addquiz
+# سوال: نام کتاب مقدس مسلمانان چیست؟
+# الف: تورات
+# ب: قرآن
+# ج: انجیل
+# د: زبور
+# پاسخ: ب
+
+async def add_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    full_text = update.message.text.split(" ", 1)
+    if len(full_text) < 2:
+        await update.message.reply_text(
+            "فرمت صحیح استفاده:\n\n"
+            "/addquiz\n"
+            "سوال: ...\n"
+            "الف: ...\n"
+            "ب: ...\n"
+            "ج: ...\n"
+            "د: ...\n"
+            "پاسخ: الف (یا ب، ج، د)"
+        )
+        return
+
+    body = full_text[1]
+    field_labels = ["سوال", "الف", "ب", "ج", "د", "پاسخ"]
+    pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
+    chunks = re.split(pattern, body.strip())
+
+    fields = {}
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk or ":" not in chunk:
+            continue
+        key, value = chunk.split(":", 1)
+        key = key.strip()
+        if key in field_labels:
+            fields[key] = value.strip()
+
+    question = fields.get("سوال", "")
+    option_a = fields.get("الف", "")
+    option_b = fields.get("ب", "")
+    option_c = fields.get("ج", "")
+    option_d = fields.get("د", "")
+    answer_raw = fields.get("پاسخ", "").strip()
+
+    letter_map = {"الف": "a", "ب": "b", "ج": "c", "د": "d",
+                  "a": "a", "b": "b", "c": "c", "d": "d"}
+    correct_option = letter_map.get(answer_raw)
+
+    if not all([question, option_a, option_b, option_c, option_d, correct_option]):
+        await update.message.reply_text(
+            "همه‌ی فیلدها (سوال، الف، ب، ج، د، پاسخ) الزامی هستند و پاسخ باید "
+            "یکی از حروف الف/ب/ج/د باشد."
+        )
+        return
+
+    qid = add_quiz_question(question, option_a, option_b, option_c, option_d, correct_option)
+    await update.message.reply_text(f"✅ سوال با شناسه {qid} با موفقیت ثبت شد.")

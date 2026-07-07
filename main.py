@@ -18,10 +18,12 @@ from handlers.hadith import (
     add_hadith_command, text_search_handler, add_tafsir_command,
 )
 from handlers.inline import inline_query_handler
-from handlers.quiz import send_quiz, quiz_answer, leaderboard
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
     group_send_now_callback, daily_post_job,
+)
+from handlers.quiz import (
+    quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
 )
 
 logging.basicConfig(
@@ -80,6 +82,9 @@ def main():
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
+    app.add_handler(CommandHandler("quiz", quiz_command))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("addquiz", add_quiz_command))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 
     # کالبک‌های منو
@@ -104,12 +109,6 @@ def main():
 
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
-
-    # Quiz system
-    app.add_handler(CommandHandler("quiz", send_quiz))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CallbackQueryHandler(quiz_answer, pattern="^quiz_"))
-
 
     # عضویت ربات در گروه جدید
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
