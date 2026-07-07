@@ -1,4 +1,8 @@
 import re
+import time
+
+QUIZ_TIME_LIMIT = 20  # زمان پاسخ‌گویی به ثانیه
+QUIZ_START_TIMES = {}
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import ADMIN_IDS
@@ -35,11 +39,18 @@ async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"د) {row['option_d']}\n\n"
         "هرکس زودتر جواب درست را بزند، امتیاز می‌گیرد! 🏆"
     )
-    await update.message.reply_text(text, reply_markup=quiz_keyboard(row["id"]))
+    sent = await update.message.reply_text(text, reply_markup=quiz_keyboard(row["id"]))
+    QUIZ_START_TIMES[(update.effective_chat.id, sent.message_id)] = time.time()
 
 
 async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+
+    start_time = QUIZ_START_TIMES.get((query.message.chat.id, query.message.message_id))
+    if start_time and time.time() - start_time > QUIZ_TIME_LIMIT:
+        await query.answer("⏰ زمان پاسخ‌گویی تمام شد!", show_alert=True)
+        return
+
     _, qid, chosen = query.data.split("_")
     qid = int(qid)
 
