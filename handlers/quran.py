@@ -6,6 +6,8 @@ from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ay
 from config import ADMIN_IDS
 
 PAGE_SIZE = 10
+AYAH_PAGE_SIZE = 30  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
+AYAHS_PER_ROW = 5
 
 
 async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
@@ -53,11 +55,60 @@ async def surah_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await show_surah_list(update, context, page=page)
 
 
+async def show_ayah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, page: int = 0):
+    query = update.callback_query
+    surahs = await get_surah_list()
+    surah_info = next((s for s in surahs if s["number"] == surah), None)
+    total_ayahs = surah_info["numberOfAyahs"] if surah_info else 286
+    surah_name = surah_info["name"] if surah_info else surah
+
+    start = page * AYAH_PAGE_SIZE + 1
+    end = min(start + AYAH_PAGE_SIZE - 1, total_ayahs)
+
+    buttons = []
+    row = []
+    for n in range(start, end + 1):
+        row.append(InlineKeyboardButton(str(n), callback_data=f"ayah_{surah}_{n}"))
+        if len(row) == AYAHS_PER_ROW:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"ayahlist_{surah}_{page-1}"))
+    if end < total_ayahs:
+        nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"ayahlist_{surah}_{page+1}"))
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append([InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran")])
+
+    text = (
+        f"📖 سوره {surah_name} — {total_ayahs} آیه\n\n"
+        "شماره‌ی آیه‌ای که می‌خواهید را انتخاب کنید:"
+    )
+    markup = InlineKeyboardMarkup(buttons)
+
+    if query:
+        await query.edit_message_text(text, reply_markup=markup)
+    else:
+        await update.message.reply_text(text, reply_markup=markup)
+
+
+async def ayah_list_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, surah, page = query.data.split("_")
+    await show_ayah_list(update, context, int(surah), page=int(page))
+
+
 async def surah_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     surah_number = int(query.data.replace("surah_", ""))
-    await show_ayah(update, context, surah_number, 1)
+    await show_ayah_list(update, context, surah_number, page=0)
 
 
 def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
@@ -74,7 +125,10 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
         InlineKeyboardButton("🔊 پخش تلاوت", callback_data=f"audio_{surah}_{ayah}"),
     ])
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}")])
-    buttons.append([InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran")])
+    buttons.append([
+        InlineKeyboardButton("🔢 لیست آیات", callback_data=f"ayahlist_{surah}_0"),
+        InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran"),
+    ])
     return InlineKeyboardMarkup(buttons)
 
 
