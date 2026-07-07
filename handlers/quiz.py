@@ -3,6 +3,7 @@ import time
 
 QUIZ_TIME_LIMIT = 20  # زمان پاسخ‌گویی به ثانیه
 QUIZ_START_TIMES = {}
+QUIZ_ANSWERS = {}
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import ADMIN_IDS
@@ -40,49 +41,85 @@ async def quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "هرکس زودتر جواب درست را بزند، امتیاز می‌گیرد! 🏆"
     )
     sent = await update.message.reply_text(text, reply_markup=quiz_keyboard(row["id"]))
-    QUIZ_START_TIMES[(update.effective_chat.id, sent.message_id)] = time.time()
+    key = (update.effective_chat.id, sent.message_id)
+    QUIZ_START_TIMES[key] = time.time()
+    QUIZ_ANSWERS[key] = {"qid": row["id"], "answers": {}}
+
+    context.job_queue.run_once(
+        finish_quiz,
+        QUIZ_TIME_LIMIT,
+        data={"chat_id": update.effective_chat.id,
+              "message_id": sent.message_id,
+              "qid": row["id"]}
+    )
 
 
 async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    key = (query.message.chat.id, query.message.message_id)
 
-    start_time = QUIZ_START_TIMES.get((query.message.chat.id, query.message.message_id))
-    if start_time and time.time() - start_time > QUIZ_TIME_LIMIT:
-        await query.answer("⏰ زمان پاسخ‌گویی تمام شد!", show_alert=True)
+    if key not in QUIZ_ANSWERS:
+        await query.answer("⏰ زمان پاسخ‌گویی تمام شده است.", show_alert=True)
         return
 
     _, qid, chosen = query.data.split("_")
     qid = int(qid)
 
-    row = get_quiz_question_by_id(qid)
-    if not row:
-        await query.answer("این سوال دیگر معتبر نیست.", show_alert=True)
+    user = query.from_user
+    username = user.username or user.first_name or "ناشناس"
+
+    QUIZ_ANSWERS[key]["answers"][user.id] = {
+        "username": username,
+        "chosen": chosen
+    }
+
+    await query.answer("✅ جواب شما ثبت شد")
+
+
+async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
+    data = context.job.data
+    key = (data["chat_id"], data["message_id"])
+
+    quiz = QUIZ_ANSWERS.pop(key, None)
+    QUIZ_START_TIMES.pop(key, None)
+
+    if not quiz:
         return
 
-    if chosen == row["correct_option"]:
-        user = query.from_user
-        username = user.username or user.first_name or "ناشناس"
-        add_score(update.effective_chat.id, user.id, username, points=1)
+    row = get_quiz_question_by_id(data["qid"])
+    if not row:
+        return
 
-        await query.answer("✅ آفرین، جواب درست بود!")
+    correct = []
+    wrong = []
 
-        option_map = {"a": "الف", "b": "ب", "c": "ج", "d": "د"}
-        correct_text_map = {
-            "a": row["option_a"], "b": row["option_b"],
-            "c": row["option_c"], "d": row["option_d"],
-        }
-        result_text = (
-            f"❓ {row['question_text']}\n\n"
-            f"✅ پاسخ درست: {option_map[row['correct_option']]}) "
-            f"{correct_text_map[row['correct_option']]}\n\n"
-            f"🏆 برنده: {username}"
-        )
-        try:
-            await query.edit_message_text(result_text)
-        except Exception:
-            pass
-    else:
-        await query.answer("❌ جواب اشتباه بود، دوباره امتحان کن!", show_alert=True)
+    for uid, ans in quiz["answers"].items():
+        if ans["chosen"] == row["correct_option"]:
+            correct.append(ans["username"])
+            add_score(data["chat_id"], uid, ans["username"], points=1)
+        else:
+            wrong.append(ans["username"])
+
+    option_map = {"a": "الف", "b": "ب", "c": "ج", "d": "د"}
+    correct_text_map = {
+        "a": row["option_a"],
+        "b": row["option_b"],
+        "c": row["option_c"],
+        "d": row["option_d"],
+    }
+
+    result_text = (
+        "⏰ زمان پاسخ‌گویی تمام شد!\n\n"
+        f"✅ درست‌ها:\n{chr(10).join(correct) if correct else 'هیچ‌کس'}\n\n"
+        f"❌ غلط‌ها:\n{chr(10).join(wrong) if wrong else 'هیچ‌کس'}\n\n"
+        f"📌 جواب صحیح: {option_map[row['correct_option']]}) {correct_text_map[row['correct_option']]}"
+    )
+
+    await context.bot.edit_message_text(
+        chat_id=data["chat_id"],
+        message_id=data["message_id"],
+        text=result_text
+    )
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
