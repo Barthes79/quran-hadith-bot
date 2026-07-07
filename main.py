@@ -12,6 +12,7 @@ from handlers.start import start_command, menu_callback, set_translation_callbac
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
     fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
+    audio_callback,
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
@@ -99,6 +100,7 @@ def main():
     app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^ayah_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(fav_ayah_callback, pattern="^fav_ayah_"))
     app.add_handler(CallbackQueryHandler(tafsir_callback, pattern="^tafsir_"))
+    app.add_handler(CallbackQueryHandler(audio_callback, pattern="^audio_"))
 
     # کالبک‌های احادیث
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_"))

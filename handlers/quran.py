@@ -1,7 +1,7 @@
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from services.quran_api import get_surah_list, get_ayah
+from services.quran_api import get_surah_list, get_ayah, get_audio_url
 from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ayah_tafsir
 from config import ADMIN_IDS
 
@@ -71,8 +71,9 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
 
     buttons.append([
         InlineKeyboardButton("📝 تفسیر", callback_data=f"tafsir_{surah}_{ayah}"),
-        InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}"),
+        InlineKeyboardButton("🔊 پخش تلاوت", callback_data=f"audio_{surah}_{ayah}"),
     ])
+    buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}")])
     buttons.append([InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran")])
     return InlineKeyboardMarkup(buttons)
 
@@ -117,6 +118,31 @@ async def fav_ayah_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, _, surah, ayah = query.data.split("_")
     add_favorite(query.from_user.id, "ayah", f"{surah}:{ayah}")
     await query.answer("به علاقه‌مندی‌ها اضافه شد ⭐")
+
+
+async def audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("در حال آماده‌سازی صوت...")
+    _, surah, ayah = query.data.split("_")
+    surah, ayah = int(surah), int(ayah)
+
+    data = await get_ayah(surah, ayah)
+    if not data or not data.get("number"):
+        await query.message.reply_text("متاسفانه در دریافت صوت این آیه مشکلی پیش آمد.")
+        return
+
+    audio_url = get_audio_url(data["number"])
+    try:
+        await context.bot.send_audio(
+            chat_id=update.effective_chat.id,
+            audio=audio_url,
+            title=f"تلاوت سوره {surah} آیه {ayah}",
+            performer="مشاری راشد العفاسی",
+        )
+    except Exception:
+        await query.message.reply_text(
+            f"مشکلی در پخش صوت پیش آمد. می‌توانید مستقیم از این لینک گوش دهید:\n{audio_url}"
+        )
 
 
 async def tafsir_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

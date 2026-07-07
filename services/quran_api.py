@@ -57,9 +57,10 @@ async def get_ayah(surah: int, ayah: int, translation_key: str = "makarem"):
 
     arabic = _get_cached(surah, ayah, "arabic")
     translation = _get_cached(surah, ayah, edition_code)
+    global_number = _get_cached(surah, ayah, "global_number")
 
-    if arabic and translation:
-        return {"arabic": arabic, "translation": translation}
+    if arabic and translation and global_number:
+        return {"arabic": arabic, "translation": translation, "number": int(global_number)}
 
     ref = f"{surah}:{ayah}"
     async with _http_client() as client:
@@ -73,9 +74,11 @@ async def get_ayah(surah: int, ayah: int, translation_key: str = "makarem"):
     editions_data = data["data"]
     arabic_text = None
     translation_text = None
+    ayah_global_number = None
     for ed in editions_data:
         if ed["edition"]["identifier"] == "quran-uthmani":
             arabic_text = ed["text"]
+            ayah_global_number = ed.get("number")
         elif ed["edition"]["identifier"] == edition_code:
             translation_text = ed["text"]
 
@@ -83,5 +86,19 @@ async def get_ayah(surah: int, ayah: int, translation_key: str = "makarem"):
         _set_cached(surah, ayah, "arabic", arabic_text)
     if translation_text:
         _set_cached(surah, ayah, edition_code, translation_text)
+    if ayah_global_number:
+        _set_cached(surah, ayah, "global_number", str(ayah_global_number))
 
-    return {"arabic": arabic_text, "translation": translation_text}
+    return {
+        "arabic": arabic_text,
+        "translation": translation_text,
+        "number": ayah_global_number,
+    }
+
+
+def get_audio_url(global_number: int, reciter: str = "ar.alafasy", bitrate: int = 128) -> str:
+    """
+    ساخت آدرس مستقیم فایل صوتی تلاوت یک آیه از CDN رسمی alquran.cloud.
+    reciter پیش‌فرض: مشاری راشد العفاسی (یکی از معروف‌ترین قاریان).
+    """
+    return f"https://cdn.islamic.network/quran/audio/{bitrate}/{reciter}/{global_number}.mp3"
