@@ -98,6 +98,17 @@ def init_db():
         )
     """)
 
+    # تفسیر آیات قرآن (ثبت دستی توسط ادمین، چون API رایگان تفسیر فارسی وجود ندارد)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quran_tafsir (
+            surah INTEGER,
+            ayah INTEGER,
+            tafsir_text TEXT NOT NULL,
+            source TEXT,
+            PRIMARY KEY (surah, ayah)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -298,3 +309,28 @@ def get_leaderboard(chat_id: int, limit: int = 10):
     ).fetchall()
     conn.close()
     return rows
+
+
+# ---------------- توابع مربوط به تفسیر قرآن ----------------
+
+def set_ayah_tafsir(surah: int, ayah: int, tafsir_text: str, source: str = ""):
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO quran_tafsir (surah, ayah, tafsir_text, source)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(surah, ayah) DO UPDATE SET
+               tafsir_text = excluded.tafsir_text,
+               source = excluded.source""",
+        (surah, ayah, tafsir_text, source),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_ayah_tafsir(surah: int, ayah: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM quran_tafsir WHERE surah = ? AND ayah = ?", (surah, ayah)
+    ).fetchone()
+    conn.close()
+    return row

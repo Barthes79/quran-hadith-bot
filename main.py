@@ -11,7 +11,7 @@ from database import init_db
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
-    fav_ayah_callback, tafsir_callback, ayah_direct_lookup,
+    fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
@@ -85,6 +85,7 @@ def main():
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
+    app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
     app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 

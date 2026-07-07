@@ -1,7 +1,9 @@
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.quran_api import get_surah_list, get_ayah
-from database import get_user_translation, add_favorite
+from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ayah_tafsir
+from config import ADMIN_IDS
 
 PAGE_SIZE = 10
 
@@ -118,17 +120,53 @@ async def fav_ayah_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def tafsir_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    فعلا تفسیر به صورت نمونه پیاده‌سازی شده. در فاز بعد باید به دیتابیس
-    تفسیر (مثلاً تفسیر نمونه یا المیزان) وصل شود.
-    """
     query = update.callback_query
     await query.answer()
     _, surah, ayah = query.data.split("_")
-    await query.message.reply_text(
-        f"📝 تفسیر آیه {ayah} سوره {surah} به‌زودی از منبع تفسیری اضافه خواهد شد.\n"
-        "(این بخش نیاز به اتصال به دیتابیس تفسیر دارد که در فاز بعدی پروژه تکمیل می‌شود.)"
-    )
+    surah, ayah = int(surah), int(ayah)
+
+    row = get_ayah_tafsir(surah, ayah)
+    if row:
+        text = f"📝 تفسیر آیه {ayah} سوره {surah}:\n\n{row['tafsir_text']}"
+        if row["source"]:
+            text += f"\n\n📚 منبع: {row['source']}"
+    else:
+        text = (
+            f"📝 هنوز تفسیری برای آیه {ayah} سوره {surah} ثبت نشده است.\n"
+            "ادمین می‌تواند با دستور /addqtafsir آن را اضافه کند."
+        )
+    await query.message.reply_text(text)
+
+
+# ---------------- دستور ادمین برای افزودن/ویرایش تفسیر یک آیه ----------------
+# فرمت: /addqtafsir سوره:آیه متن تفسیر
+# مثال: /addqtafsir 2:255 این آیه معروف به آیة الکرسی است و به توحید و قدرت خداوند اشاره دارد.
+
+async def add_quran_tafsir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    parts = update.message.text.split(" ", 2)
+    if len(parts) < 3:
+        await update.message.reply_text(
+            "فرمت صحیح استفاده:\n"
+            "/addqtafsir سوره:آیه متن تفسیر\n\n"
+            "مثال:\n"
+            "/addqtafsir 2:255 این آیه معروف به آیة الکرسی است و به توحید و قدرت خداوند اشاره دارد."
+        )
+        return
+
+    ref = parts[1]
+    if not re.match(r"^\d+:\d+$", ref):
+        await update.message.reply_text("فرمت سوره:آیه درست نیست. مثال درست: 2:255")
+        return
+
+    surah, ayah = ref.split(":")
+    tafsir_text = parts[2].strip()
+
+    set_ayah_tafsir(int(surah), int(ayah), tafsir_text)
+    await update.message.reply_text(f"✅ تفسیر آیه {ayah} سوره {surah} با موفقیت ثبت/به‌روزرسانی شد.")
 
 
 async def ayah_direct_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE, ref: str):
