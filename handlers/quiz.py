@@ -110,6 +110,7 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
 
     result_text = (
         "⏰ زمان پاسخ‌گویی تمام شد!\n\n"
+        f"❓ سوال:\n{row['question_text']}\n\n"
         f"✅ درست‌ها:\n{chr(10).join(correct) if correct else 'هیچ‌کس'}\n\n"
         f"❌ غلط‌ها:\n{chr(10).join(wrong) if wrong else 'هیچ‌کس'}\n\n"
         f"📌 جواب صحیح: {option_map[row['correct_option']]}) {correct_text_map[row['correct_option']]}"
