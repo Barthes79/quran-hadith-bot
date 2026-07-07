@@ -85,6 +85,7 @@ def main():
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
+    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 
     # کالبک‌های منو
