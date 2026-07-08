@@ -341,3 +341,25 @@ def get_ayah_tafsir(surah: int, ayah: int):
     ).fetchone()
     conn.close()
     return row
+
+# ===== User profile helpers =====
+def register_user(user_id: int, username: str = None):
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR IGNORE INTO users (user_id, preferred_translation) VALUES (?, 'makarem')",
+        (user_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_stats(user_id: int):
+    conn = get_connection()
+    favorites = conn.execute(
+        "SELECT COUNT(*) c FROM favorites WHERE user_id = ?", (user_id,)
+    ).fetchone()["c"]
+    quizzes = conn.execute(
+        "SELECT COALESCE(SUM(score),0) s FROM quiz_scores WHERE user_id = ?", (user_id,)
+    ).fetchone()["s"]
+    conn.close()
+    return {"favorites": favorites, "score": quizzes}
