@@ -10,18 +10,27 @@ async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = "⭐ علاقه‌مندی‌های شما:\n\n"
-    buttons = []
-    for r in rows[:20]:
+    count = 0
+
+    for r in rows[:10]:
         if r["item_type"] == "hadith":
             hadith = get_hadith_by_id(int(r["item_ref"]))
             if hadith:
-                title = f"📿 حدیث {r['item_ref']}"
-                text += title + "\n"
-                buttons.append([InlineKeyboardButton(title, callback_data=f"fav_hadith_{r['item_ref']}")])
+                count += 1
+                text += (
+                    f"📿 {hadith['arabic_text']}\n\n"
+                    f"📖 ترجمه:\n{hadith['translation_text']}\n"
+                )
+                if hadith["tafsir_text"]:
+                    text += f"\n📝 شرح:\n{hadith['tafsir_text']}\n"
+                text += "\n────────────\n\n"
         else:
-            text += f"📖 آیه {r['item_ref']}\n"
+            text += f"📖 آیه: {r['item_ref']}\n\n────────────\n\n"
 
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons) if buttons else None)
+    if count == 0:
+        text += "موردی برای نمایش وجود ندارد."
+
+    await update.message.reply_text(text)
 
 
 async def show_favorite_hadith(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -34,7 +43,7 @@ async def show_favorite_hadith(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     text = (
-        f"📿 حدیث شماره {hadith_id}\n\n"
+        f"📿 حدیث ذخیره‌شده:\n\n"
         f"{hadith['arabic_text']}\n\n"
         f"📖 ترجمه:\n{hadith['translation_text']}"
     )
