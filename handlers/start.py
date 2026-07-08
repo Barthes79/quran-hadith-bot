@@ -61,8 +61,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "menu_favorites":
-        from handlers.hadith import show_favorites
-        await show_favorites(update, context)
+        from handlers.favorites import favorites_command
+        await favorites_command(update, context)
 
     elif query.data == "menu_settings":
         await show_settings(update, context)
