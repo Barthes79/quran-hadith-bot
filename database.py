@@ -155,10 +155,20 @@ def add_favorite(user_id: int, item_type: str, item_ref: str):
 def get_favorites(user_id: int):
     conn = get_connection()
     rows = conn.execute(
-        "SELECT item_type, item_ref FROM favorites WHERE user_id = ?", (user_id,)
+        "SELECT item_type, item_ref FROM favorites WHERE user_id = ? ORDER BY rowid DESC", (user_id,)
     ).fetchall()
     conn.close()
     return rows
+
+
+def remove_favorite(user_id: int, item_type: str, item_ref: str):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM favorites WHERE user_id = ? AND item_type = ? AND item_ref = ?",
+        (user_id, item_type, item_ref),
+    )
+    conn.commit()
+    conn.close()
 
 
 def add_hadith(arabic_text, translation_text, narrator, source_book, chapter,

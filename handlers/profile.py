@@ -13,7 +13,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆔 شناسه: {user.id}\n"
         f"⭐ علاقه‌مندی‌ها: {stats['favorites']}\n"
         f"🏆 امتیاز کوییز: {stats['score']}\n\n"
-        "به مرور با استفاده از ربات، آمار و دستاوردهای بیشتری اضافه می‌شود."
+        "برای دیدن ذخیره‌های خود از دستور /favorites استفاده کنید ⭐"
     )
 
     await update.message.reply_text(text)

@@ -21,6 +21,7 @@ from handlers.hadith import (
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
+from handlers.favorites import favorites_command
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
     group_send_now_callback, daily_post_job, interval_menu_callback, set_interval_callback,
@@ -83,6 +84,7 @@ def main():
     # دستورات
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
