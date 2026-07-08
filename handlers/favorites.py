@@ -64,10 +64,12 @@ async def favorites_quran_callback(update: Update, context: ContextTypes.DEFAULT
             surah, ayah = map(int, r["item_ref"].split(":"))
             data = await get_ayah(surah, ayah)
             if data:
-                text += f"📖 آیه قرآن\n\n"
-                text += f"{data.get('arabic_text', '')}\n\n"
-                text += f"📖 ترجمه:\n{data.get('translation_text', '')}\n"
+                text += "📖 آیه قرآن:\n\n"
+                text += f"{data.get('arabic', '')}\n\n"
+                text += f"📖 ترجمه:\n{data.get('translation', '')}\n"
                 text += "\n────────────\n\n"
+            else:
+                text += f"📖 آیه ذخیره شده: {r['item_ref']}\n\n────────────\n\n"
         except Exception:
             text += f"📖 آیه ذخیره شده: {r['item_ref']}\n\n────────────\n\n"
 
