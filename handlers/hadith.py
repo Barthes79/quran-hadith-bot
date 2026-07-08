@@ -142,12 +142,19 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = ["⭐ علاقه‌مندی‌های شما:\n"]
     for f in favs:
-        if f["item_type"] == "ayah":
-            lines.append(f"📖 آیه {f['item_ref']}")
+        if f["item_type"] == "hadith":
+            hadith = get_hadith_by_id(int(f["item_ref"]))
+            if hadith:
+                lines.append(
+                    f"📿 {hadith['arabic_text']}\n\n"
+                    f"📖 ترجمه:\n{hadith['translation_text']}\n"
+                )
+                if hadith["tafsir_text"]:
+                    lines.append(f"\n📝 شرح:\n{hadith['tafsir_text']}")
+                lines.append("\n────────────\n")
         else:
-            lines.append(f"📿 حدیث شماره {f['item_ref']}")
+            lines.append(f"📖 آیه {f['item_ref']}\n────────────\n")
 
-    lines.append("\n(برای مشاهده کامل هرکدام، از منوی قرآن/احادیث دوباره وارد شوید.)")
     await query.edit_message_text(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(
