@@ -56,12 +56,24 @@ def format_hadith(row):
     return text
 
 
-def hadith_keyboard(hadith_id):
-    buttons = [
-        [InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_hadith_{hadith_id}")],
-        [InlineKeyboardButton("⬅️ موضوعات", callback_data="menu_hadith")],
-    ]
+def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None):
+    buttons = []
+    if topic_name is not None and total and total > 1:
+        nav_row = []
+        if index > 0:
+            nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"topicnav_{index-1}_{topic_name}"))
+        nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
+        if index < total - 1:
+            nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"topicnav_{index+1}_{topic_name}"))
+        buttons.append(nav_row)
+
+    buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_hadith_{hadith_id}")])
+    buttons.append([InlineKeyboardButton("⬅️ موضوعات", callback_data="menu_hadith")])
     return InlineKeyboardMarkup(buttons)
+
+
+async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
 
 
 async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +87,28 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     row = rows[0]
-    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows)),
+    )
+
+
+async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, index, topic_name = query.data.split("_", 2)
+    index = int(index)
+
+    rows = get_hadiths_by_topic(topic_name)
+    if not rows or index < 0 or index >= len(rows):
+        await query.answer("موردی یافت نشد.", show_alert=True)
+        return
+
+    row = rows[index]
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows)),
+    )
 
 
 async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -16,6 +16,7 @@ from handlers.quran import (
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
+    topic_nav_callback, noop_callback,
     add_hadith_command, text_search_handler, add_tafsir_command,
 )
 from handlers.inline import inline_query_handler
@@ -105,6 +106,8 @@ def main():
 
     # کالبک‌های احادیث
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_"))
+    app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
+    app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))
     app.add_handler(CallbackQueryHandler(fav_hadith_callback, pattern="^fav_hadith_"))
 
