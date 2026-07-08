@@ -42,7 +42,8 @@ async def favorites_hadith_callback(update: Update, context: ContextTypes.DEFAUL
                 text += f"\n📝 شرح:\n{hadith['tafsir_text']}\n"
             text += "\n────────────\n\n"
 
-    await query.edit_message_text(text or "📿 موردی پیدا نشد.")
+    buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+    await query.edit_message_text(text or "📿 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def favorites_quran_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -63,11 +64,16 @@ async def favorites_quran_callback(update: Update, context: ContextTypes.DEFAULT
             surah, ayah = map(int, r["item_ref"].split(":"))
             data = await get_ayah(surah, ayah)
             if data:
-                text += f"📖 سوره {surah} - آیه {ayah}\n\n"
+                text += f"📖 آیه قرآن\n\n"
                 text += f"{data.get('arabic_text', '')}\n\n"
                 text += f"📖 ترجمه:\n{data.get('translation_text', '')}\n"
                 text += "\n────────────\n\n"
         except Exception:
             text += f"📖 آیه ذخیره شده: {r['item_ref']}\n\n────────────\n\n"
 
-    await query.edit_message_text(text or "📖 موردی پیدا نشد.")
+    buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+    await query.edit_message_text(text or "📖 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def favorites_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await favorites_command(update, context)
