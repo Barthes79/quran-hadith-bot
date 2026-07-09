@@ -6,8 +6,7 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN, PROXY_URL
-from database import init_db, get_nahj_numbers, add_nahj_item
-import json, os
+from database import init_db
 
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
 from handlers.quran import (
@@ -86,23 +85,6 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     init_db()
-
-# ثبت خودکار اطلاعات نهج البلاغه در اولین اجرا
-try:
-    if len(get_nahj_numbers("hekmat")) == 0:
-        with open("nahj_seed_batch_full.json", "r", encoding="utf-8") as f:
-            for item in json.load(f):
-                add_nahj_item(
-                    category=item["category"],
-                    number=item["number"],
-                    arabic_text=item.get("arabic","—"),
-                    translation_text=item.get("translation",""),
-                    title=item.get("title"),
-                    tafsir_text=item.get("tafsir")
-                )
-        print("✅ نهج البلاغه خودکار وارد شد")
-except Exception as e:
-    print("⚠️ خطا در ورود نهج البلاغه:", e)
 
     builder = Application.builder().token(BOT_TOKEN)
 
