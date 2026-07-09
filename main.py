@@ -18,6 +18,7 @@ from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
     topic_nav_callback, noop_callback,
     add_hadith_command, text_search_handler, add_tafsir_command,
+    find_hadith_command, edit_hadith_command, del_hadith_command,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
@@ -111,6 +112,9 @@ def main():
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
+    app.add_handler(CommandHandler("findhadith", find_hadith_command))
+    app.add_handler(CommandHandler("edithadith", edit_hadith_command))
+    app.add_handler(CommandHandler("delhadith", del_hadith_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
