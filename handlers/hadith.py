@@ -1,5 +1,6 @@
 import re
 import logging
+import hashlib
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import (
@@ -13,6 +14,16 @@ from text_utils import normalize_input_text
 logger = logging.getLogger(__name__)
 
 
+def topic_hash(topic_name: str) -> str:
+    """
+    یک شناسه‌ی کوتاه (۱۲ کاراکتری) برای هر موضوع می‌سازد تا در callback_data
+    استفاده شود. تلگرام محدودیت ۶۴ بایتی برای callback_data دارد و اسم موضوع
+    (که فارسی و چندبایتی است) می‌تواند به‌راحتی از این محدودیت رد شود؛ به همین
+    خاطر به‌جای خود متن، از هش کوتاهش استفاده می‌کنیم.
+    """
+    return hashlib.md5(topic_name.encode("utf-8")).hexdigest()[:12]
+
+
 async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     topics = get_all_topics()
@@ -20,7 +31,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     row = []
     for t in topics:
-        row.append(InlineKeyboardButton(t, callback_data=f"topic_{t}"))
+        row.append(InlineKeyboardButton(t, callback_data=f"topic_{topic_hash(t)}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -63,12 +74,13 @@ def format_hadith(row):
 def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None):
     buttons = []
     if topic_name is not None and total and total > 1:
+        h = topic_hash(topic_name)
         nav_row = []
         if index > 0:
-            nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"topicnav_{index-1}_{topic_name}"))
+            nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"topicnav_{index-1}_{h}"))
         nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
         if index < total - 1:
-            nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"topicnav_{index+1}_{topic_name}"))
+            nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"topicnav_{index+1}_{h}"))
         buttons.append(nav_row)
 
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_hadith_{hadith_id}")])
@@ -83,7 +95,12 @@ async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    topic_name = query.data.replace("topic_", "")
+    topic_h = query.data.replace("topic_", "")
+    topics = get_all_topics()
+    topic_name = next((t for t in topics if topic_hash(t) == topic_h), None)
+    if topic_name is None:
+        await query.edit_message_text("این موضوع دیگر معتبر نیست. لطفاً دوباره از منو انتخاب کنید.")
+        return
     rows = get_hadiths_by_topic(topic_name)
 
     if not rows:
@@ -100,8 +117,14 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
 async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    _, index, topic_name = query.data.split("_", 2)
+    _, index, topic_h = query.data.split("_", 2)
     index = int(index)
+
+    topics = get_all_topics()
+    topic_name = next((t for t in topics if topic_hash(t) == topic_h), None)
+    if topic_name is None:
+        await query.answer("این موضوع دیگر معتبر نیست.", show_alert=True)
+        return
 
     rows = get_hadiths_by_topic(topic_name)
     if not rows or index < 0 or index >= len(rows):
