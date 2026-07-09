@@ -178,7 +178,7 @@ def build_nahj_pages(category: str, number: int, row):
     body_parts = []
     if row["arabic_text"]:
         body_parts.append(row["arabic_text"])
-    body_parts.append(f"🔹 ترجمه:\n{row['translation_text']}")
+    body_parts.append(row["translation_text"])
     if row["tafsir_text"]:
         body_parts.append(f"📝 شرح:\n{row['tafsir_text']}")
     full_body = "\n\n".join(body_parts)
