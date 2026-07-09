@@ -1,3 +1,4 @@
+from admins import is_admin
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
