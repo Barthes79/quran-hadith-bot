@@ -8,6 +8,7 @@ async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("📿 احادیث", callback_data="favorites_hadith")],
         [InlineKeyboardButton("📖 قرآن", callback_data="favorites_quran")],
+        [InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")],
     ]
     text = "⭐ علاقه‌مندی‌ها\n\nدسته مورد نظر را انتخاب کنید:"
     if update.callback_query:
