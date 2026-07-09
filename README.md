@@ -233,6 +233,33 @@ python bulk_add_nahj.py nahj_seed_batch.json
 python bulk_add_mafatih.py mafatih_seed_batch.json
 ```
 
+## ⚡ ساده‌ترین روش برای وارد کردن حجم بالا (بدون دردسر JSON)
+
+نوشتن دستی JSON برای صدها خطبه/نامه/حکمت/دعا/حدیث زمان‌بر و پرخطاست (کوتیشن،
+کاما، براکت...). به‌جایش می‌توانید یک فایل متنی ساده با همان برچسب‌های آشنای
+دستورهای `/addhadith`/`/addnahj`/`/addmafatih` بنویسید و موردها را با یک خط
+شامل فقط `----` از هم جدا کنید، بعد با `text_to_json.py` آن را به JSON درست
+تبدیل کنید:
+
+```
+python text_to_json.py nahj    nahj_input_template.txt    nahj_seed_batch.json
+python bulk_add_nahj.py nahj_seed_batch.json
+```
+
+همین الگو برای مفاتیح و حدیث هم هست:
+```
+python text_to_json.py mafatih mafatih_input_template.txt mafatih_seed_batch.json
+python bulk_add_mafatih.py mafatih_seed_batch.json
+
+python text_to_json.py hadith  hadith_input_template.txt  hadiths_seed_batch.json
+python bulk_add_hadiths.py hadiths_seed_batch.json
+```
+
+سه فایل نمونه‌ی `nahj_input_template.txt`، `mafatih_input_template.txt` و
+`hadith_input_template.txt` را برای دیدن دقیق فرمت باز کنید — فقط کافیست
+همان الگو را با تعداد دلخواه مورد کپی و پر کنید (حتی می‌توانید از Word/Notepad
+هم استفاده کنید، چون فرمت کاملاً ساده و خطی است).
+
 ## 📂 ساختار پروژه
 
 ```
