@@ -234,6 +234,94 @@ def update_hadith_tafsir(hadith_id: int, tafsir_text: str):
     conn.close()
 
 
+def update_hadith(hadith_id: int, arabic_text=None, translation_text=None,
+                   tafsir_text=None, narrator=None, source_book=None,
+                   chapter=None, hadith_number=None):
+    """
+    فقط فیلدهایی که مقدار برایشان داده شده (None نباشند) آپدیت می‌شوند.
+    """
+    fields = {
+        "arabic_text": arabic_text,
+        "translation_text": translation_text,
+        "tafsir_text": tafsir_text,
+        "narrator": narrator,
+        "source_book": source_book,
+        "chapter": chapter,
+        "hadith_number": hadith_number,
+    }
+    fields = {k: v for k, v in fields.items() if v is not None}
+    if not fields:
+        return
+
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn = get_connection()
+    conn.execute(
+        f"UPDATE hadiths SET {set_clause} WHERE id = ?",
+        (*fields.values(), hadith_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_hadith_topics(hadith_id: int, topics):
+    """موضوعات قبلی حدیث را پاک و موضوعات جدید را جایگزین می‌کند."""
+    conn = get_connection()
+    conn.execute("DELETE FROM hadith_topics WHERE hadith_id = ?", (hadith_id,))
+    for topic in topics:
+        topic = topic.strip()
+        if topic:
+            conn.execute(
+                "INSERT INTO hadith_topics (hadith_id, topic_name) VALUES (?, ?)",
+                (hadith_id, topic),
+            )
+    conn.commit()
+    conn.close()
+
+
+def delete_hadith(hadith_id: int):
+    """یک حدیث و موضوعات/علاقه‌مندی‌های مرتبط با آن را حذف می‌کند."""
+    conn = get_connection()
+    conn.execute("DELETE FROM hadith_topics WHERE hadith_id = ?", (hadith_id,))
+    conn.execute(
+        "DELETE FROM favorites WHERE item_type = 'hadith' AND item_ref = ?",
+        (str(hadith_id),),
+    )
+    conn.execute("DELETE FROM hadiths WHERE id = ?", (hadith_id,))
+    conn.commit()
+    conn.close()
+
+
+def list_hadiths(source_book: str = None, narrator: str = None,
+                  topic: str = None, limit: int = 50):
+    """
+    برای پیدا کردن شناسه (id) احادیث قبل از حذف/ادیت، با فیلتر اختیاری.
+    """
+    conn = get_connection()
+    query = "SELECT h.* FROM hadiths h"
+    conditions = []
+    params = []
+
+    if topic:
+        query += " JOIN hadith_topics t ON h.id = t.hadith_id"
+        conditions.append("t.topic_name = ?")
+        params.append(topic)
+    if source_book:
+        conditions.append("h.source_book LIKE ?")
+        params.append(f"%{source_book}%")
+    if narrator:
+        conditions.append("h.narrator LIKE ?")
+        params.append(f"%{narrator}%")
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY h.id LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
 def get_all_topics():
     conn = get_connection()
     rows = conn.execute("SELECT DISTINCT topic_name FROM hadith_topics ORDER BY topic_name").fetchall()
