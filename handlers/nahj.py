@@ -122,7 +122,7 @@ def _nahj_page_of(category: str, number: int) -> int:
 
 
 # حداکثر طول هر بخش از متن (کاراکتر) — تلگرام بیشتر از ۴۰۹۶ کاراکتر را در یک پیام قبول نمی‌کند
-TEXT_CHUNK_SIZE = 3500
+TEXT_CHUNK_SIZE = 500
 
 
 def _split_text(full_text: str, chunk_size: int = TEXT_CHUNK_SIZE):
