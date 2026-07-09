@@ -124,6 +124,18 @@ def init_db():
         )
     """)
 
+    # مفاتیح‌الجنان: ادعیه، زیارات، اعمال روزانه/هفتگی/ماهانه، مناجات و...
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS mafatih (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,      -- daily | ziyarat | weekly | monthly | munajat | special
+            title TEXT NOT NULL,         -- مثلاً 'دعای کمیل' یا 'زیارت عاشورا'
+            arabic_text TEXT NOT NULL,
+            translation_text TEXT,
+            tafsir_text TEXT
+        )
+    """)
+
     # سازگاری با دیتابیس‌های قدیمی
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
@@ -415,6 +427,53 @@ def update_nahj_tafsir(category: str, number: int, tafsir_text: str):
     )
     conn.commit()
     conn.close()
+
+
+# ---------------- توابع مربوط به مفاتیح‌الجنان ----------------
+
+MAFATIH_CATEGORIES = ("daily", "ziyarat", "weekly", "monthly", "munajat", "special")
+
+
+def add_mafatih_item(category: str, title: str, arabic_text: str,
+                      translation_text: str = None, tafsir_text: str = None):
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text)
+           VALUES (?, ?, ?, ?, ?)""",
+        (category, title, arabic_text, translation_text, tafsir_text),
+    )
+    item_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return item_id
+
+
+def get_mafatih_by_category(category: str):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM mafatih WHERE category = ? ORDER BY id", (category,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_mafatih_by_id(item_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM mafatih WHERE id = ?", (item_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def update_mafatih_tafsir(item_id: int, tafsir_text: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE mafatih SET tafsir_text = ? WHERE id = ?", (tafsir_text, item_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+# ===== User profile helpers =====
 def register_user(user_id: int, username: str = None):
     conn = get_connection()
     conn.execute(

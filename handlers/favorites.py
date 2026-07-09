@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import get_favorites, get_hadith_by_id, get_nahj_item
+from database import get_favorites, get_hadith_by_id, get_nahj_item, get_mafatih_by_id
 from services.quran_api import get_ayah
 
 
@@ -9,6 +9,7 @@ async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📿 احادیث", callback_data="favorites_hadith")],
         [InlineKeyboardButton("📖 قرآن", callback_data="favorites_quran")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="favorites_nahj")],
+        [InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="favorites_mafatih")],
         [InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")],
     ]
     text = "⭐ علاقه‌مندی‌ها\n\nدسته مورد نظر را انتخاب کنید:"
@@ -117,6 +118,41 @@ async def favorites_nahj_callback(update: Update, context: ContextTypes.DEFAULT_
 
     buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
     await query.edit_message_text(text or "🕌 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def favorites_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    rows = get_favorites(query.from_user.id)
+    maf_rows = [r for r in rows if r["item_type"] == "mafatih"]
+
+    if not maf_rows:
+        await query.edit_message_text(
+            "📗 هنوز موردی از مفاتیح‌الجنان در علاقه‌مندی‌ها ذخیره نکرده‌اید.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+            ),
+        )
+        return
+
+    text = "📗 علاقه‌مندی‌های مفاتیح‌الجنان شما:\n\n"
+    for r in maf_rows[:10]:
+        try:
+            item = get_mafatih_by_id(int(r["item_ref"]))
+        except ValueError:
+            continue
+        if item:
+            text += f"📗 {item['title']}\n\n"
+            text += f"{item['arabic_text']}\n\n"
+            if item["translation_text"]:
+                text += f"🔹 ترجمه:\n{item['translation_text']}\n"
+            if item["tafsir_text"]:
+                text += f"\n📝 توضیح:\n{item['tafsir_text']}\n"
+            text += "\n────────────\n\n"
+
+    buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+    await query.edit_message_text(text or "📗 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def favorites_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
