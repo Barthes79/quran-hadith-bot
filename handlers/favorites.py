@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import get_favorites, get_hadith_by_id
+from database import get_favorites, get_hadith_by_id, get_nahj_item
 from services.quran_api import get_ayah
 
 
@@ -8,6 +8,7 @@ async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = [
         [InlineKeyboardButton("📿 احادیث", callback_data="favorites_hadith")],
         [InlineKeyboardButton("📖 قرآن", callback_data="favorites_quran")],
+        [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="favorites_nahj")],
         [InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")],
     ]
     text = "⭐ علاقه‌مندی‌ها\n\nدسته مورد نظر را انتخاب کنید:"
@@ -76,6 +77,46 @@ async def favorites_quran_callback(update: Update, context: ContextTypes.DEFAULT
 
     buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
     await query.edit_message_text(text or "📖 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def favorites_nahj_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
+
+    rows = get_favorites(query.from_user.id)
+    nahj_rows = [r for r in rows if r["item_type"] == "nahj"]
+
+    if not nahj_rows:
+        await query.edit_message_text(
+            "🕌 هنوز موردی از نهج‌البلاغه در علاقه‌مندی‌ها ذخیره نکرده‌اید.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+            ),
+        )
+        return
+
+    text = "🕌 علاقه‌مندی‌های نهج‌البلاغه‌ی شما:\n\n"
+    for r in nahj_rows[:10]:
+        try:
+            category, number = r["item_ref"].split(":")
+            number = int(number)
+        except ValueError:
+            continue
+        item = get_nahj_item(category, number)
+        if item:
+            item_label = NAHJ_ITEM_LABELS.get(category, category)
+            title = f" — {item['title']}" if item["title"] else ""
+            text += f"{NAHJ_MENU_LABELS.get(category, category)} — {item_label} {number}{title}\n\n"
+            text += f"{item['arabic_text']}\n\n"
+            text += f"📖 ترجمه:\n{item['translation_text']}\n"
+            if item["tafsir_text"]:
+                text += f"\n📝 شرح:\n{item['tafsir_text']}\n"
+            text += "\n────────────\n\n"
+
+    buttons = [[InlineKeyboardButton("⬅️ بازگشت", callback_data="favorites_back")]]
+    await query.edit_message_text(text or "🕌 موردی پیدا نشد.", reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def favorites_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

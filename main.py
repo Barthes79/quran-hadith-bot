@@ -25,7 +25,12 @@ from handlers.favorites import (
     favorites_command,
     favorites_hadith_callback,
     favorites_quran_callback,
+    favorites_nahj_callback,
     favorites_back_callback,
+)
+from handlers.nahj import (
+    nahj_category_callback, nahj_page_callback, nahj_menu_callback,
+    nahj_item_callback, fav_nahj_callback, add_nahj_command,
 )
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
@@ -92,7 +97,9 @@ def main():
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
     app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
+    app.add_handler(CallbackQueryHandler(favorites_nahj_callback, pattern="^favorites_nahj$"))
     app.add_handler(CallbackQueryHandler(favorites_back_callback, pattern="^favorites_back$"))
+    app.add_handler(CommandHandler("addnahj", add_nahj_command))
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
@@ -122,6 +129,13 @@ def main():
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))
     app.add_handler(CallbackQueryHandler(fav_hadith_callback, pattern="^fav_hadith_"))
+
+    # کالبک‌های نهج‌البلاغه
+    app.add_handler(CallbackQueryHandler(nahj_menu_callback, pattern="^nahjmenu$"))
+    app.add_handler(CallbackQueryHandler(nahj_category_callback, pattern="^nahjcat_"))
+    app.add_handler(CallbackQueryHandler(nahj_page_callback, pattern="^nahjpage_"))
+    app.add_handler(CallbackQueryHandler(nahj_item_callback, pattern="^nahjitem_"))
+    app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
     # کالبک‌های تنظیمات گروه
     app.add_handler(CallbackQueryHandler(toggle_daily_post_callback, pattern="^toggle_daily_post$"))

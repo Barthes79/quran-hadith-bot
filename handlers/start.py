@@ -8,6 +8,7 @@ def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("📖 قرآن کریم", callback_data="menu_quran"),
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
+        [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj")],
         [InlineKeyboardButton("🔍 جستجو", callback_data="menu_search"),
          InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
         [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
@@ -63,6 +64,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_favorites":
         from handlers.favorites import favorites_command
         await favorites_command(update, context)
+
+    elif query.data == "menu_nahj":
+        from handlers.nahj import show_nahj_menu
+        await show_nahj_menu(update, context)
 
     elif query.data == "menu_settings":
         await show_settings(update, context)

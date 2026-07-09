@@ -110,6 +110,20 @@ def init_db():
         )
     """)
 
+    # نهج‌البلاغه: خطبه‌ها (khutbah)، نامه‌ها (letter)، حکمت‌ها (hekmat)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS nahj_balagha (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,      -- 'khutbah' | 'letter' | 'hekmat'
+            number INTEGER NOT NULL,     -- شماره‌ی متعارف (بر اساس نسخه صبحی صالح)
+            title TEXT,                  -- عنوان اختیاری (مثلاً موضوع خطبه)
+            arabic_text TEXT NOT NULL,
+            translation_text TEXT NOT NULL,
+            tafsir_text TEXT,
+            UNIQUE(category, number)
+        )
+    """)
+
     # سازگاری با دیتابیس‌های قدیمی
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
@@ -352,7 +366,55 @@ def get_ayah_tafsir(surah: int, ayah: int):
     conn.close()
     return row
 
-# ===== User profile helpers =====
+# ---------------- توابع مربوط به نهج‌البلاغه ----------------
+
+NAHJ_CATEGORIES = ("khutbah", "letter", "hekmat")
+
+
+def add_nahj_item(category: str, number: int, arabic_text: str, translation_text: str,
+                   title: str = None, tafsir_text: str = None):
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO nahj_balagha (category, number, title, arabic_text, translation_text, tafsir_text)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(category, number) DO UPDATE SET
+               title = excluded.title,
+               arabic_text = excluded.arabic_text,
+               translation_text = excluded.translation_text,
+               tafsir_text = excluded.tafsir_text""",
+        (category, number, title, arabic_text, translation_text, tafsir_text),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_nahj_item(category: str, number: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM nahj_balagha WHERE category = ? AND number = ?", (category, number)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_nahj_numbers(category: str):
+    """شماره‌ی موارد ثبت‌شده‌ی یک دسته (خطبه/نامه/حکمت)، مرتب‌شده."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT number FROM nahj_balagha WHERE category = ? ORDER BY number", (category,)
+    ).fetchall()
+    conn.close()
+    return [r["number"] for r in rows]
+
+
+def update_nahj_tafsir(category: str, number: int, tafsir_text: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE nahj_balagha SET tafsir_text = ? WHERE category = ? AND number = ?",
+        (tafsir_text, category, number),
+    )
+    conn.commit()
+    conn.close()
 def register_user(user_id: int, username: str = None):
     conn = get_connection()
     conn.execute(
