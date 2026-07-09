@@ -1,4 +1,5 @@
 import re
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import (
@@ -8,6 +9,8 @@ from database import (
 )
 from config import ADMIN_IDS
 from text_utils import normalize_input_text
+
+logger = logging.getLogger(__name__)
 
 
 async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -205,6 +208,8 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     body = normalize_input_text(full_text[1])
+    logger.info("DEBUG addhadith raw=%r", full_text[1])
+    logger.info("DEBUG addhadith normalized=%r", body)
 
     # پارسینگ مقاوم: چون تلگرام گاهی خط‌های جدا را با فاصله جایگزین می‌کند،
     # به‌جای تکیه بر خط جدید، بر اساس خود برچسب‌های شناخته‌شده (عربی:، ترجمه: و...) جدا می‌کنیم.
@@ -224,6 +229,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
+    logger.info("DEBUG addhadith fields_keys=%r arabic_len=%d translation_len=%d", list(fields.keys()), len(arabic), len(translation))
     tafsir = fields.get("شرح", "") or None
     narrator = fields.get("راوی", "")
     source = fields.get("منبع", "")
