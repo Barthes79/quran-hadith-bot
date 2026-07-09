@@ -175,7 +175,10 @@ def build_nahj_pages(category: str, number: int, row):
     title = f" — {row['title']}" if row["title"] else ""
     header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}{title}\n\n"
 
-    body_parts = [row["arabic_text"], f"🔹 ترجمه:\n{row['translation_text']}"]
+    body_parts = []
+    if row["arabic_text"]:
+        body_parts.append(row["arabic_text"])
+    body_parts.append(f"🔹 ترجمه:\n{row['translation_text']}")
     if row["tafsir_text"]:
         body_parts.append(f"📝 شرح:\n{row['tafsir_text']}")
     full_body = "\n\n".join(body_parts)
@@ -308,7 +311,6 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "دسته: خطبه یا نامه یا حکمت\n"
             "شماره: ...\n"
             "عنوان: ... (اختیاری)\n"
-            "عربی: ...\n"
             "ترجمه: ...\n"
             "شرح: ... (اختیاری)"
         )
@@ -333,7 +335,7 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     category = CATEGORY_FA_TO_KEY.get(category_fa)
     number_raw = fields.get("شماره", "")
     title = fields.get("عنوان") or None
-    arabic = fields.get("عربی", "")
+    arabic = fields.get("عربی", "") or ""
     translation = fields.get("ترجمه", "")
     tafsir = fields.get("شرح") or None
 
@@ -353,8 +355,8 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if not arabic or not translation:
-        await update.message.reply_text("حداقل فیلدهای «عربی» و «ترجمه» الزامی هستند.")
+    if not translation:
+        await update.message.reply_text("فیلد «ترجمه» الزامی است.")
         return
 
     add_nahj_item(category, number, arabic, translation, title=title, tafsir_text=tafsir)
