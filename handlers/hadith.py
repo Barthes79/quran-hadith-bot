@@ -7,6 +7,7 @@ from database import (
     get_hadith_by_id, update_hadith_tafsir,
 )
 from config import ADMIN_IDS
+from text_utils import normalize_input_text
 
 
 async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -203,7 +204,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    body = full_text[1]
+    body = normalize_input_text(full_text[1])
 
     # پارسینگ مقاوم: چون تلگرام گاهی خط‌های جدا را با فاصله جایگزین می‌کند،
     # به‌جای تکیه بر خط جدید، بر اساس خود برچسب‌های شناخته‌شده (عربی:، ترجمه: و...) جدا می‌کنیم.

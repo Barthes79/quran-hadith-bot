@@ -6,6 +6,7 @@ from database import (
     add_favorite,
 )
 from config import ADMIN_IDS
+from text_utils import normalize_input_text
 
 # شماره‌گذاری متعارف بر اساس نسخه‌ی صبحی صالح (رایج‌ترین نسخه‌ی چاپی نهج‌البلاغه)
 NAHJ_TOTALS = {
@@ -316,7 +317,7 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    body = full_text[1]
+    body = normalize_input_text(full_text[1])
     field_labels = ["دسته", "شماره", "عنوان", "عربی", "ترجمه", "شرح"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())

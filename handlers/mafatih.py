@@ -6,6 +6,7 @@ from database import (
     add_favorite,
 )
 from config import ADMIN_IDS
+from text_utils import normalize_input_text
 
 MAFATIH_MENU_LABELS = {
     "daily": "🌅 ادعیه روزانه",
@@ -157,7 +158,7 @@ async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    body = full_text[1]
+    body = normalize_input_text(full_text[1])
     field_labels = ["دسته", "عنوان", "عربی", "ترجمه", "توضیح"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())

@@ -7,6 +7,7 @@ QUIZ_ANSWERS = {}
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import ADMIN_IDS
+from text_utils import normalize_input_text
 from database import (
     get_random_quiz_question, get_quiz_question_by_id,
     add_score, get_leaderboard, add_quiz_question,
@@ -167,7 +168,7 @@ async def add_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    body = full_text[1]
+    body = normalize_input_text(full_text[1])
     field_labels = ["سوال", "الف", "ب", "ج", "د", "پاسخ"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())
