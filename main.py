@@ -32,6 +32,7 @@ from handlers.favorites import (
 from handlers.nahj import (
     nahj_category_callback, nahj_page_callback, nahj_menu_callback,
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
+    nahj_text_page_callback,
 )
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_menu_callback, mafatih_item_callback,
@@ -142,6 +143,7 @@ def main():
     app.add_handler(CallbackQueryHandler(nahj_category_callback, pattern="^nahjcat_"))
     app.add_handler(CallbackQueryHandler(nahj_page_callback, pattern="^nahjpage_"))
     app.add_handler(CallbackQueryHandler(nahj_item_callback, pattern="^nahjitem_"))
+    app.add_handler(CallbackQueryHandler(nahj_text_page_callback, pattern="^nahjtxt_"))
     app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
     # کالبک‌های مفاتیح‌الجنان

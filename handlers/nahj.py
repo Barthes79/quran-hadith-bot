@@ -121,9 +121,89 @@ def _nahj_page_of(category: str, number: int) -> int:
     return (number - 1) // PAGE_SIZE
 
 
-def nahj_item_keyboard(category: str, number: int):
+# حداکثر طول هر بخش از متن (کاراکتر) — تلگرام بیشتر از ۴۰۹۶ کاراکتر را در یک پیام قبول نمی‌کند
+TEXT_CHUNK_SIZE = 3500
+
+
+def _split_text(full_text: str, chunk_size: int = TEXT_CHUNK_SIZE):
+    """متن طولانی را به چند بخش با مرز پاراگراف/خط تقسیم می‌کند."""
+    if len(full_text) <= chunk_size:
+        return [full_text]
+
+    paragraphs = full_text.split("\n")
+    chunks = []
+    current = ""
+
+    def flush():
+        nonlocal current
+        if current:
+            chunks.append(current.strip("\n"))
+            current = ""
+
+    for para in paragraphs:
+        candidate = (current + "\n" + para) if current else para
+        if len(candidate) <= chunk_size:
+            current = candidate
+            continue
+
+        # این پاراگراف به‌تنهایی یا در ادامه‌ی بخش فعلی جا نمی‌شود
+        flush()
+        if len(para) <= chunk_size:
+            current = para
+        else:
+            # پاراگراف خیلی طولانی است؛ بر اساس کلمه تقسیم می‌شود
+            words = para.split(" ")
+            piece = ""
+            for word in words:
+                cand = (piece + " " + word) if piece else word
+                if len(cand) <= chunk_size:
+                    piece = cand
+                else:
+                    if piece:
+                        chunks.append(piece)
+                    piece = word
+            if piece:
+                current = piece
+
+    flush()
+    return chunks or [full_text]
+
+
+def build_nahj_pages(category: str, number: int, row):
+    """متن مورد نظر را به هدر + لیستی از بخش‌های متنی تقسیم می‌کند."""
+    item_label = NAHJ_ITEM_LABELS[category]
+    title = f" — {row['title']}" if row["title"] else ""
+    header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}{title}\n\n"
+
+    body_parts = [row["arabic_text"], f"🔹 ترجمه:\n{row['translation_text']}"]
+    if row["tafsir_text"]:
+        body_parts.append(f"📝 شرح:\n{row['tafsir_text']}")
+    full_body = "\n\n".join(body_parts)
+
+    chunks = _split_text(full_body)
+    return header, chunks
+
+
+def format_nahj_item(category: str, number: int, row):
+    """نسخه‌ی کامل و یک‌تکه‌ی متن (برای استفاده‌های دیگر مثل ارسال فایل و ...)."""
+    header, chunks = build_nahj_pages(category, number, row)
+    return header + "\n\n".join(chunks)
+
+
+def nahj_item_keyboard(category: str, number: int, page: int = 0, total_pages: int = 1):
     total = NAHJ_TOTALS[category]
     buttons = []
+
+    # دکمه‌های ادامه/قسمت قبل برای متن‌های طولانی
+    if total_pages > 1:
+        text_nav_row = []
+        if page > 0:
+            text_nav_row.append(InlineKeyboardButton("◀️ قسمت قبل", callback_data=f"nahjtxt_{category}_{number}_{page-1}"))
+        if page < total_pages - 1:
+            text_nav_row.append(InlineKeyboardButton("ادامه ▶️", callback_data=f"nahjtxt_{category}_{number}_{page+1}"))
+        if text_nav_row:
+            buttons.append(text_nav_row)
+
     nav_row = []
     if number > 1:
         nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"nahjitem_{category}_{number-1}"))
@@ -140,18 +220,7 @@ def nahj_item_keyboard(category: str, number: int):
     return InlineKeyboardMarkup(buttons)
 
 
-def format_nahj_item(category: str, number: int, row):
-    item_label = NAHJ_ITEM_LABELS[category]
-    title = f" — {row['title']}" if row["title"] else ""
-    text = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}{title}\n\n"
-    text += f"{row['arabic_text']}\n\n"
-    text += f"🔹 ترجمه:\n{row['translation_text']}\n"
-    if row["tafsir_text"]:
-        text += f"\n📝 شرح:\n{row['tafsir_text']}\n"
-    return text
-
-
-async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, number: int):
+async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, number: int, page: int = 0):
     query = update.callback_query
     if not _category_ok(category) or number < 1 or number > NAHJ_TOTALS[category]:
         if query:
@@ -166,10 +235,19 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
             f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}\n\n"
             "😕 متن این مورد هنوز در ربات ثبت نشده است."
         )
+        markup = nahj_item_keyboard(category, number)
     else:
-        text = format_nahj_item(category, number, row)
+        header, chunks = build_nahj_pages(category, number, row)
+        total_pages = len(chunks)
+        page = max(0, min(page, total_pages - 1))
 
-    markup = nahj_item_keyboard(category, number)
+        text = header
+        if total_pages > 1:
+            text += f"(قسمت {page + 1} از {total_pages})\n\n"
+        text += chunks[page]
+
+        markup = nahj_item_keyboard(category, number, page=page, total_pages=total_pages)
+
     if query:
         await query.edit_message_text(text, reply_markup=markup)
     else:
@@ -181,6 +259,13 @@ async def nahj_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     _, category, number = query.data.split("_")
     await show_nahj_item(update, context, category, int(number))
+
+
+async def nahj_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, category, number, page = query.data.split("_")
+    await show_nahj_item(update, context, category, int(number), page=int(page))
 
 
 async def fav_nahj_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
