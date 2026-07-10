@@ -54,7 +54,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def format_hadith(row):
-    text = f"📿 {row['narrator'] or ''}\n\n"
+    text = f"{row['narrator'] or ''}\n\n"
     text += f"{row['arabic_text']}\n\n"
     text += f"🔹 ترجمه:\n{row['translation_text']}\n"
     if row["tafsir_text"]:
