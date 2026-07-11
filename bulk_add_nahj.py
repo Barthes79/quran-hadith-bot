@@ -60,8 +60,8 @@ def main():
             skipped += 1
             continue
 
-        if not arabic or not translation:
-            print(f"⚠️ رد شد (فیلد ناقص): {it}")
+        if not translation:
+            print(f"⚠️ رد شد (فیلد ترجمه خالی است): {it}")
             skipped += 1
             continue
 
