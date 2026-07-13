@@ -166,8 +166,10 @@ def build_nahj_pages(category: str, number: int, row):
     """متن مورد نظر را به هدر + موضوع + بخش‌های متنی تقسیم می‌کند."""
     item_label = NAHJ_ITEM_LABELS[category]
     
-    # اضافه کردن الماس در انتهای شماره حکمت و قرار دادن تایتل در دو خط پایین‌تر بدون خط تیره
+    # فقط یک \n\n قرار می‌دهیم تا دقیقاً یک سطر خالی بین هدر و تایتل باشد
     title_part = f"\n\n{row['title']}" if row["title"] else ""
+    
+    # الماس در انتهای خط اول می‌ماند، تایتل در سطر بعدی با ایموجی خودش شروع می‌شود
     header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number} 💎{title_part}\n\n"
 
     body_parts = []
@@ -176,6 +178,8 @@ def build_nahj_pages(category: str, number: int, row):
     body_parts.append(row["translation_text"])
     if row["tafsir_text"]:
         body_parts.append(f"📝 شرح:\n{row['tafsir_text']}")
+    
+    # بین بخش‌های متن اصلی هم فاصله را تنظیم می‌کنیم
     full_body = "\n\n".join(body_parts)
 
     chunks = _split_text(full_body)
