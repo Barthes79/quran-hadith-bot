@@ -6,14 +6,16 @@
 {
     "category": "daily",     // یکی از: daily/ziyarat/weekly/monthly/munajat/special
     "title": "دعای کمیل",
-    "arabic": "...",
+    "arabic": "...",          // اگر آیتم عکس دارد، می‌تواند خالی باشد
     "translation": "...",     // اختیاری
-    "tafsir": "..."           // اختیاری
+    "tafsir": "...",          // اختیاری
+    "image": "images/xxx.png" // اختیاری؛ مسیر فایل عکس (اگر عکس موجود نباشد نادیده گرفته می‌شود)
 }
 
 نحوه اجرا (روی Railway، از تب Console، یا لوکال):
     python bulk_add_mafatih.py mafatih_seed_batch.json
 """
+import os
 import sys
 import json
 from database import init_db, add_mafatih_item, get_connection
@@ -48,16 +50,22 @@ def main():
         category = (it.get("category") or "").strip()
         title = (it.get("title") or "").strip()
         arabic = (it.get("arabic") or "").strip()
+        image_path = (it.get("image") or "").strip() or None
 
         if category not in VALID_CATEGORIES:
             print(f"⚠️ رد شد (دسته نامعتبر): {it}")
             skipped += 1
             continue
 
-        if not title or not arabic:
-            print(f"⚠️ رد شد (فیلد ناقص): {it}")
+        translation = (it.get("translation") or "").strip()
+        if not title or (not arabic and not image_path and not translation):
+            print(f"⚠️ رد شد (فیلد ناقص - حداقل عربی، عکس یا ترجمه لازم است): {it}")
             skipped += 1
             continue
+
+        if image_path and not os.path.isfile(image_path):
+            print(f"⚠️ توجه: فایل عکس «{image_path}» پیدا نشد؛ فعلاً بدون عکس ثبت می‌شود: {title}")
+            image_path = None
 
         if item_exists(category, title):
             print(f"⏭️  از قبل موجود است، رد شد: {title}")
@@ -70,6 +78,7 @@ def main():
             arabic_text=arabic,
             translation_text=it.get("translation") or None,
             tafsir_text=it.get("tafsir") or None,
+            image_path=image_path,
         )
         print(f"✅ ثبت شد (شناسه {item_id}): {title}")
         added += 1

@@ -1,3 +1,4 @@
+import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -81,12 +82,24 @@ async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAUL
 
 def format_mafatih_item(row):
     text = f"📗 {row['title']}\n\n"
-    text += f"{row['arabic_text']}\n\n"
+    if row["arabic_text"]:
+        text += f"{row['arabic_text']}\n\n"
     if row["translation_text"]:
         text += f"🔹 ترجمه:\n{row['translation_text']}\n"
     if row["tafsir_text"]:
         text += f"\n📝 توضیح:\n{row['tafsir_text']}\n"
     return text
+
+
+def _get_image_path(row):
+    """اگر آیتم عکس داشته باشد و فایل آن روی دیسک موجود باشد، مسیرش را برمی‌گرداند."""
+    try:
+        image_path = row["image_path"]
+    except (KeyError, IndexError):
+        return None
+    if image_path and os.path.isfile(image_path):
+        return image_path
+    return None
 
 
 def mafatih_item_keyboard(category: str, index: int, total: int, item_id: int):
@@ -119,10 +132,44 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     row = rows[index]
-    await query.edit_message_text(
-        format_mafatih_item(row),
-        reply_markup=mafatih_item_keyboard(category, index, len(rows), row["id"]),
-    )
+    chat_id = query.message.chat_id
+    keyboard = mafatih_item_keyboard(category, index, len(rows), row["id"])
+    image_path = _get_image_path(row)
+
+    # اگر پیام عکس مربوط به آیتم قبلی هنوز باز است، آن را پاک می‌کنیم تا چت شلوغ نشود
+    prev_photo_id = context.chat_data.pop("maf_photo_msg_id", None)
+    if prev_photo_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=prev_photo_id)
+        except Exception:
+            pass
+
+    if image_path:
+        # پیام فعلی (منو/متنی) را حذف می‌کنیم و عکس را به‌جای آن می‌فرستیم
+        try:
+            await query.delete_message()
+        except Exception:
+            pass
+
+        with open(image_path, "rb") as photo_file:
+            sent_photo = await context.bot.send_photo(
+                chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
+            )
+        context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
+
+        translation = row["translation_text"] or "—"
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🔹 ترجمه:\n{translation}",
+            reply_markup=keyboard,
+        )
+    else:
+        try:
+            await query.edit_message_text(format_mafatih_item(row), reply_markup=keyboard)
+        except Exception:
+            await context.bot.send_message(
+                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
+            )
 
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,7 +206,7 @@ async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     body = normalize_input_text(full_text[1])
-    field_labels = ["دسته", "عنوان", "عربی", "ترجمه", "توضیح"]
+    field_labels = ["دسته", "عنوان", "عربی", "ترجمه", "توضیح", "عکس"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())
 
@@ -179,6 +226,7 @@ async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     arabic = fields.get("عربی", "").strip()
     translation = fields.get("ترجمه", "").strip() or None
     tafsir = fields.get("توضیح", "").strip() or None
+    image_path = fields.get("عکس", "").strip() or None
 
     if not category:
         await update.message.reply_text(
@@ -186,9 +234,14 @@ async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    if not title or not arabic:
-        await update.message.reply_text("حداقل فیلدهای «عنوان» و «عربی» الزامی هستند.")
+    if not title or (not arabic and not image_path):
+        await update.message.reply_text(
+            "فیلد «عنوان» الزامی است، و باید حداقل یکی از فیلدهای «عربی» یا «عکس» را وارد کنید."
+        )
         return
 
-    item_id = add_mafatih_item(category, title, arabic, translation_text=translation, tafsir_text=tafsir)
+    item_id = add_mafatih_item(
+        category, title, arabic,
+        translation_text=translation, tafsir_text=tafsir, image_path=image_path,
+    )
     await update.message.reply_text(f"✅ «{title}» با شناسه {item_id} در بخش «{category_fa}» ثبت شد.")

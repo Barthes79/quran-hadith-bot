@@ -132,13 +132,19 @@ def init_db():
             title TEXT NOT NULL,         -- مثلاً 'دعای کمیل' یا 'زیارت عاشورا'
             arabic_text TEXT NOT NULL,
             translation_text TEXT,
-            tafsir_text TEXT
+            tafsir_text TEXT,
+            image_path TEXT              -- مسیر فایل تصویر (اختیاری)، مثلاً 'images/shanbe.jpg.png'
         )
     """)
 
     # سازگاری با دیتابیس‌های قدیمی
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE mafatih ADD COLUMN image_path TEXT")
     except sqlite3.OperationalError:
         pass
 
@@ -522,13 +528,14 @@ def update_nahj_tafsir(category: str, number: int, tafsir_text: str):
 MAFATIH_CATEGORIES = ("daily", "ziyarat", "weekly", "monthly", "munajat", "special")
 
 
-def add_mafatih_item(category: str, title: str, arabic_text: str,
-                      translation_text: str = None, tafsir_text: str = None):
+def add_mafatih_item(category: str, title: str, arabic_text: str = "",
+                      translation_text: str = None, tafsir_text: str = None,
+                      image_path: str = None):
     conn = get_connection()
     cur = conn.execute(
-        """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text)
-           VALUES (?, ?, ?, ?, ?)""",
-        (category, title, arabic_text, translation_text, tafsir_text),
+        """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (category, title, arabic_text or "", translation_text, tafsir_text, image_path),
     )
     item_id = cur.lastrowid
     conn.commit()
@@ -556,6 +563,15 @@ def update_mafatih_tafsir(item_id: int, tafsir_text: str):
     conn = get_connection()
     conn.execute(
         "UPDATE mafatih SET tafsir_text = ? WHERE id = ?", (tafsir_text, item_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_mafatih_image(item_id: int, image_path: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE mafatih SET image_path = ? WHERE id = ?", (image_path, item_id)
     )
     conn.commit()
     conn.close()
