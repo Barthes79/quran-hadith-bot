@@ -8,7 +8,7 @@ from database import (
 from config import ADMIN_IDS
 from text_utils import normalize_input_text
 
-# شماره‌گذاری متعارف بر اساس نسخه‌ی صبحی صالح (رایج‌ترین نسخه‌ی چاپی نهج‌البلاغه)
+# شماره‌گذاری متعارف بر اساس نسخه‌ی صبحی صالح
 NAHJ_TOTALS = {
     "khutbah": 241,
     "letter": 79,
@@ -122,37 +122,29 @@ def _nahj_page_of(category: str, number: int) -> int:
     return (number - 1) // PAGE_SIZE
 
 
-# حداکثر طول هر بخش از متن (کاراکتر) — تلگرام بیشتر از ۴۰۹۶ کاراکتر را در یک پیام قبول نمی‌کند
 TEXT_CHUNK_SIZE = 1313
 
 
 def _split_text(full_text: str, chunk_size: int = TEXT_CHUNK_SIZE):
-    """متن طولانی را به چند بخش با مرز پاراگراف/خط تقسیم می‌کند."""
     if len(full_text) <= chunk_size:
         return [full_text]
-
     paragraphs = full_text.split("\n")
     chunks = []
     current = ""
-
     def flush():
         nonlocal current
         if current:
             chunks.append(current.strip("\n"))
             current = ""
-
     for para in paragraphs:
         candidate = (current + "\n" + para) if current else para
         if len(candidate) <= chunk_size:
             current = candidate
             continue
-
-        # این پاراگراف به‌تنهایی یا در ادامه‌ی بخش فعلی جا نمی‌شود
         flush()
         if len(para) <= chunk_size:
             current = para
         else:
-            # پاراگراف خیلی طولانی است؛ بر اساس کلمه تقسیم می‌شود
             words = para.split(" ")
             piece = ""
             for word in words:
@@ -165,16 +157,18 @@ def _split_text(full_text: str, chunk_size: int = TEXT_CHUNK_SIZE):
                     piece = word
             if piece:
                 current = piece
-
     flush()
     return chunks or [full_text]
 
 
+# ***************** اصلاح شده برای حذف خط تیره و اضافه کردن الماس *****************
 def build_nahj_pages(category: str, number: int, row):
-    """متن مورد نظر را به هدر + لیستی از بخش‌های متنی تقسیم می‌کند."""
+    """متن مورد نظر را به هدر + موضوع + بخش‌های متنی تقسیم می‌کند."""
     item_label = NAHJ_ITEM_LABELS[category]
-    title = f" — {row['title']}" if row["title"] else ""
-    header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}{title}\n\n"
+    
+    # اضافه کردن الماس در انتهای شماره حکمت و قرار دادن تایتل در دو خط پایین‌تر بدون خط تیره
+    title_part = f"\n\n{row['title']}" if row["title"] else ""
+    header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number} 💎{title_part}\n\n"
 
     body_parts = []
     if row["arabic_text"]:
@@ -189,7 +183,6 @@ def build_nahj_pages(category: str, number: int, row):
 
 
 def format_nahj_item(category: str, number: int, row):
-    """نسخه‌ی کامل و یک‌تکه‌ی متن (برای استفاده‌های دیگر مثل ارسال فایل و ...)."""
     header, chunks = build_nahj_pages(category, number, row)
     return header + "\n\n".join(chunks)
 
@@ -197,8 +190,6 @@ def format_nahj_item(category: str, number: int, row):
 def nahj_item_keyboard(category: str, number: int, page: int = 0, total_pages: int = 1):
     total = NAHJ_TOTALS[category]
     buttons = []
-
-    # دکمه‌های ادامه/قسمت قبل برای متن‌های طولانی
     if total_pages > 1:
         text_nav_row = []
         if page > 0:
@@ -207,7 +198,6 @@ def nahj_item_keyboard(category: str, number: int, page: int = 0, total_pages: i
             text_nav_row.append(InlineKeyboardButton("ادامه ▶️", callback_data=f"nahjtxt_{category}_{number}_{page+1}"))
         if text_nav_row:
             buttons.append(text_nav_row)
-
     nav_row = []
     if number > 1:
         nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"nahjitem_{category}_{number-1}"))
@@ -215,7 +205,6 @@ def nahj_item_keyboard(category: str, number: int, page: int = 0, total_pages: i
         nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"nahjitem_{category}_{number+1}"))
     if nav_row:
         buttons.append(nav_row)
-
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"favnahj_{category}_{number}")])
     buttons.append([
         InlineKeyboardButton("🔢 لیست شماره‌ها", callback_data=f"nahjpage_{category}_{_nahj_page_of(category, number)}"),
@@ -235,8 +224,9 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
     item_label = NAHJ_ITEM_LABELS[category]
 
     if not row:
+        # اصلاح هدر در صورت نبود متن (برای زیبایی بصری)
         text = (
-            f"{NAHJ_MENU_LABELS[category]} — {item_label} {number}\n\n"
+            f"{NAHJ_MENU_LABELS[category]} — {item_label} {number} 💎\n\n"
             "😕 متن این مورد هنوز در ربات ثبت نشده است."
         )
         markup = nahj_item_keyboard(category, number)
@@ -283,15 +273,6 @@ async def fav_nahj_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer("به علاقه‌مندی‌ها اضافه شد ⭐")
 
 
-# ---------------- دستور ادمین برای افزودن/ویرایش یک مورد نهج‌البلاغه ----------------
-# فرمت پیام بعد از دستور /addnahj باید به این شکل باشد:
-# دسته: خطبه یا نامه یا حکمت
-# شماره: ...
-# عنوان: ... (اختیاری)
-# عربی: ...
-# ترجمه: ...
-# شرح: ... (اختیاری)
-
 CATEGORY_FA_TO_KEY = {
     "خطبه": "khutbah",
     "نامه": "letter",
@@ -303,35 +284,20 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
         return
-
     full_text = update.message.text.split(" ", 1)
     if len(full_text) < 2:
-        await update.message.reply_text(
-            "فرمت صحیح استفاده:\n\n"
-            "/addnahj\n"
-            "دسته: خطبه یا نامه یا حکمت\n"
-            "شماره: ...\n"
-            "عنوان: ... (اختیاری)\n"
-            "ترجمه: ...\n"
-            "شرح: ... (اختیاری)"
-        )
+        await update.message.reply_text("فرمت اشتباه است.")
         return
-
     body = normalize_input_text(full_text[1])
     field_labels = ["دسته", "شماره", "عنوان", "عربی", "ترجمه", "شرح"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
     chunks = re.split(pattern, body.strip())
-
     fields = {}
     for chunk in chunks:
         chunk = chunk.strip()
-        if not chunk or ":" not in chunk:
-            continue
+        if not chunk or ":" not in chunk: continue
         key, value = chunk.split(":", 1)
-        key = key.strip()
-        if key in field_labels:
-            fields[key] = value.strip()
-
+        if key.strip() in field_labels: fields[key.strip()] = value.strip()
     category_fa = fields.get("دسته", "").strip()
     category = CATEGORY_FA_TO_KEY.get(category_fa)
     number_raw = fields.get("شماره", "")
@@ -339,26 +305,12 @@ async def add_nahj_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     arabic = fields.get("عربی", "") or ""
     translation = fields.get("ترجمه", "")
     tafsir = fields.get("شرح") or None
-
     if not category:
-        await update.message.reply_text("فیلد «دسته» باید یکی از این مقادیر باشد: خطبه، نامه، حکمت")
+        await update.message.reply_text("دسته نامعتبر.")
         return
-
     try:
         number = int(number_raw)
     except ValueError:
-        await update.message.reply_text("فیلد «شماره» باید یک عدد باشد.")
         return
-
-    if number < 1 or number > NAHJ_TOTALS[category]:
-        await update.message.reply_text(
-            f"شماره باید بین 1 تا {NAHJ_TOTALS[category]} باشد (برای {category_fa})."
-        )
-        return
-
-    if not translation:
-        await update.message.reply_text("فیلد «ترجمه» الزامی است.")
-        return
-
     add_nahj_item(category, number, arabic, translation, title=title, tafsir_text=tafsir)
-    await update.message.reply_text(f"✅ {category_fa} شماره {number} با موفقیت ثبت/به‌روزرسانی شد.")
+    await update.message.reply_text(f"✅ ثبت شد.")
