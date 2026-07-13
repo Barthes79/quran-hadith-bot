@@ -98,6 +98,11 @@ def main():
 
     app = builder.build()
 
+    async def _global_error_handler(update, context):
+        logger.exception("خطای مدیریت‌نشده در پردازش آپدیت", exc_info=context.error)
+
+    app.add_error_handler(_global_error_handler)
+
     # دستورات
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("profile", profile_command))

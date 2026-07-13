@@ -15,6 +15,26 @@ logger = logging.getLogger(__name__)
 # ریشه‌ی پروژه (پوشه‌ای که این فایل داخل handlers/ آن قرار دارد)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
+async def _safe_edit_message_text(query, text, reply_markup=None):
+    """
+    مثل query.edit_message_text ولی در برابر خطای بی‌ضرر تلگرام
+    «Message is not modified» (وقتی کاربر روی دکمه‌ای می‌زند که محتوایش
+    همان محتوای فعلی پیام است) مقاوم است، تا هندلر کرش نکند و کاربر
+    بی‌پاسخ نماند.
+    """
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup)
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            # محتوا تغییری نکرده؛ نیازی به کاری نیست
+            return
+        logger.exception("خطا در edit_message_text؛ تلاش برای ارسال پیام جدید")
+        try:
+            await query.message.reply_text(text, reply_markup=reply_markup)
+        except Exception:
+            logger.exception("ارسال پیام جایگزین هم شکست خورد")
+
 MAFATIH_MENU_LABELS = {
     "daily": "🌅 ادعیه روزانه",
     "ziyarat": "🕋 زیارت‌نامه‌ها",
@@ -42,7 +62,7 @@ async def show_mafatih_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📗 مفاتیح‌الجنان\n\nیک بخش را انتخاب کنید:"
     markup = InlineKeyboardMarkup(buttons)
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await _safe_edit_message_text(query, text, reply_markup=markup)
     else:
         await update.message.reply_text(text, reply_markup=markup)
 
@@ -74,7 +94,7 @@ async def show_mafatih_list(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     markup = InlineKeyboardMarkup(buttons)
 
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await _safe_edit_message_text(query, text, reply_markup=markup)
     else:
         await update.message.reply_text(text, reply_markup=markup)
 
@@ -183,12 +203,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
             )
     else:
-        try:
-            await query.edit_message_text(format_mafatih_item(row), reply_markup=keyboard)
-        except Exception:
-            await context.bot.send_message(
-                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
-            )
+        await _safe_edit_message_text(query, format_mafatih_item(row), reply_markup=keyboard)
 
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
