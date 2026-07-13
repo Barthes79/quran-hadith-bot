@@ -168,34 +168,38 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
     keyboard = mafatih_item_keyboard(category, index, len(rows), row["id"])
     image_path = _get_image_path(row)
 
-    # اگر پیام عکس مربوط به آیتم قبلی هنوز باز است، آن را پاک می‌کنیم تا چت شلوغ نشود
-    prev_photo_id = context.chat_data.pop("maf_photo_msg_id", None)
-    if prev_photo_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=prev_photo_id)
-        except Exception:
-            pass
+    # پیام قبلی (منو یا آیتم قبلی، چه متنی چه عکس) را حذف می‌کنیم تا آیتم جدید
+    # یک تکه‌ی واحد و متصل باشد، نه دو پیام جدا از هم.
+    try:
+        await query.delete_message()
+    except Exception:
+        pass
+    # این کلید از نسخه‌های قدیمی‌تر باقی مانده و برای اطمینان همچنان پاک می‌شود
+    context.chat_data.pop("maf_photo_msg_id", None)
 
     if image_path:
+        translation = row["translation_text"] or "—"
+        caption = f"📗 {row['title']}\n\n🔹 ترجمه:\n{translation}"
         try:
-            # پیام فعلی (منو/متنی) را حذف می‌کنیم و عکس را به‌جای آن می‌فرستیم
-            try:
-                await query.delete_message()
-            except Exception:
-                pass
-
-            with open(image_path, "rb") as photo_file:
-                sent_photo = await context.bot.send_photo(
-                    chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
+            if len(caption) <= 1024:
+                # عکس و ترجمه در یک پیام واحد (کپشن عکس) فرستاده می‌شود
+                with open(image_path, "rb") as photo_file:
+                    await context.bot.send_photo(
+                        chat_id=chat_id, photo=photo_file, caption=caption, reply_markup=keyboard
+                    )
+            else:
+                # کپشن از حد مجاز تلگرام (۱۰۲۴ کاراکتر) بلندتر است؛ چاره‌ای نیست
+                # جز اینکه ترجمه را در پیام دوم بفرستیم
+                with open(image_path, "rb") as photo_file:
+                    sent_photo = await context.bot.send_photo(
+                        chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
+                    )
+                context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔹 ترجمه:\n{translation}",
+                    reply_markup=keyboard,
                 )
-            context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
-
-            translation = row["translation_text"] or "—"
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🔹 ترجمه:\n{translation}",
-                reply_markup=keyboard,
-            )
         except Exception:
             logger.exception("خطا در ارسال عکس مفاتیح برای آیتم id=%s (%s)", row["id"], image_path)
             # اگر ارسال عکس با خطا مواجه شد، حداقل متن دعا را بفرست تا کاربر چیزی دریافت کند
@@ -203,7 +207,9 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
             )
     else:
-        await _safe_edit_message_text(query, format_mafatih_item(row), reply_markup=keyboard)
+        await context.bot.send_message(
+            chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
+        )
 
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
