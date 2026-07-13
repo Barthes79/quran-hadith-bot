@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -8,6 +9,11 @@ from database import (
 )
 from config import ADMIN_IDS
 from text_utils import normalize_input_text
+
+logger = logging.getLogger(__name__)
+
+# ریشه‌ی پروژه (پوشه‌ای که این فایل داخل handlers/ آن قرار دارد)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MAFATIH_MENU_LABELS = {
     "daily": "🌅 ادعیه روزانه",
@@ -92,13 +98,19 @@ def format_mafatih_item(row):
 
 
 def _get_image_path(row):
-    """اگر آیتم عکس داشته باشد و فایل آن روی دیسک موجود باشد، مسیرش را برمی‌گرداند."""
+    """اگر آیتم عکس داشته باشد و فایل آن روی دیسک موجود باشد، مسیر مطلقش را برمی‌گرداند."""
     try:
         image_path = row["image_path"]
     except (KeyError, IndexError):
         return None
-    if image_path and os.path.isfile(image_path):
-        return image_path
+    if not image_path:
+        return None
+    # اگر مسیر نسبی است (مثل 'images/shanbe.jpg.png')، آن را نسبت به ریشه‌ی پروژه resolve می‌کنیم
+    # تا مستقل از working directory‌ای باشد که پردازه‌ی ربات با آن اجرا شده.
+    full_path = image_path if os.path.isabs(image_path) else os.path.join(BASE_DIR, image_path)
+    if os.path.isfile(full_path):
+        return full_path
+    logger.warning("فایل عکس مفاتیح پیدا نشد: %s (مسیر کامل: %s)", image_path, full_path)
     return None
 
 
@@ -145,24 +157,31 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
     if image_path:
-        # پیام فعلی (منو/متنی) را حذف می‌کنیم و عکس را به‌جای آن می‌فرستیم
         try:
-            await query.delete_message()
-        except Exception:
-            pass
+            # پیام فعلی (منو/متنی) را حذف می‌کنیم و عکس را به‌جای آن می‌فرستیم
+            try:
+                await query.delete_message()
+            except Exception:
+                pass
 
-        with open(image_path, "rb") as photo_file:
-            sent_photo = await context.bot.send_photo(
-                chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
+            with open(image_path, "rb") as photo_file:
+                sent_photo = await context.bot.send_photo(
+                    chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
+                )
+            context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
+
+            translation = row["translation_text"] or "—"
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🔹 ترجمه:\n{translation}",
+                reply_markup=keyboard,
             )
-        context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
-
-        translation = row["translation_text"] or "—"
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"🔹 ترجمه:\n{translation}",
-            reply_markup=keyboard,
-        )
+        except Exception:
+            logger.exception("خطا در ارسال عکس مفاتیح برای آیتم id=%s (%s)", row["id"], image_path)
+            # اگر ارسال عکس با خطا مواجه شد، حداقل متن دعا را بفرست تا کاربر چیزی دریافت کند
+            await context.bot.send_message(
+                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
+            )
     else:
         try:
             await query.edit_message_text(format_mafatih_item(row), reply_markup=keyboard)

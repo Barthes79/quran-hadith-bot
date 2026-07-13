@@ -18,18 +18,26 @@
 import os
 import sys
 import json
-from database import init_db, add_mafatih_item, get_connection
+from database import init_db, add_mafatih_item, get_connection, update_mafatih_image
 
 VALID_CATEGORIES = {"daily", "ziyarat", "weekly", "monthly", "munajat", "special"}
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def item_exists(category: str, title: str) -> bool:
+def resolve_image_path(image_path):
+    if not image_path:
+        return None
+    full_path = image_path if os.path.isabs(image_path) else os.path.join(BASE_DIR, image_path)
+    return full_path if os.path.isfile(full_path) else None
+
+
+def get_existing_item(category: str, title: str):
     conn = get_connection()
     row = conn.execute(
-        "SELECT id FROM mafatih WHERE category = ? AND title = ?", (category, title)
+        "SELECT id, image_path FROM mafatih WHERE category = ? AND title = ?", (category, title)
     ).fetchone()
     conn.close()
-    return row is not None
+    return row
 
 
 def main():
@@ -44,13 +52,14 @@ def main():
         items = json.load(f)
 
     added = 0
+    updated = 0
     skipped = 0
 
     for it in items:
         category = (it.get("category") or "").strip()
         title = (it.get("title") or "").strip()
         arabic = (it.get("arabic") or "").strip()
-        image_path = (it.get("image") or "").strip() or None
+        raw_image = (it.get("image") or "").strip() or None
 
         if category not in VALID_CATEGORIES:
             print(f"⚠️ رد شد (دسته نامعتبر): {it}")
@@ -58,18 +67,27 @@ def main():
             continue
 
         translation = (it.get("translation") or "").strip()
-        if not title or (not arabic and not image_path and not translation):
+        if not title or (not arabic and not raw_image and not translation):
             print(f"⚠️ رد شد (فیلد ناقص - حداقل عربی، عکس یا ترجمه لازم است): {it}")
             skipped += 1
             continue
 
-        if image_path and not os.path.isfile(image_path):
-            print(f"⚠️ توجه: فایل عکس «{image_path}» پیدا نشد؛ فعلاً بدون عکس ثبت می‌شود: {title}")
-            image_path = None
+        resolved = resolve_image_path(raw_image)
+        if raw_image and not resolved:
+            print(f"⚠️ توجه: فایل عکس «{raw_image}» پیدا نشد؛ فعلاً بدون عکس ثبت/به‌روزرسانی می‌شود: {title}")
+        # فقط اگر فایل واقعاً روی دیسک پیدا شد، مسیر (نسبی) را در دیتابیس ذخیره کن
+        image_path = raw_image if resolved else None
 
-        if item_exists(category, title):
-            print(f"⏭️  از قبل موجود است، رد شد: {title}")
-            skipped += 1
+        existing = get_existing_item(category, title)
+        if existing is not None:
+            # آیتم از قبل موجود است. اگر عکس جدید پیدا شده و آیتم قبلاً عکس نداشت، فقط عکسش را به‌روزرسانی کن.
+            if image_path and not existing["image_path"]:
+                update_mafatih_image(existing["id"], image_path)
+                print(f"🔄 عکس برای آیتم موجود «{title}» ثبت شد.")
+                updated += 1
+            else:
+                print(f"⏭️  از قبل موجود است، رد شد: {title}")
+                skipped += 1
             continue
 
         item_id = add_mafatih_item(
@@ -83,7 +101,7 @@ def main():
         print(f"✅ ثبت شد (شناسه {item_id}): {title}")
         added += 1
 
-    print(f"\nنتیجه نهایی: {added} مورد جدید اضافه شد، {skipped} مورد رد شد.")
+    print(f"\nنتیجه نهایی: {added} مورد جدید اضافه شد، {updated} مورد به‌روزرسانی شد، {skipped} مورد رد شد.")
 
 
 if __name__ == "__main__":
