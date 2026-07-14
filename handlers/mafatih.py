@@ -195,10 +195,14 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                         chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
                     )
                 context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
+                # پیام ترجمه را «ریپلای» به پیام عکس می‌فرستیم تا در تلگرام
+                # به‌صورت بصری به هم متصل نشان داده شوند (نه دو پیام کاملاً جدا)
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=f"🔹 ترجمه:\n{translation}",
                     reply_markup=keyboard,
+                    reply_to_message_id=sent_photo.message_id,
+                    allow_sending_without_reply=True,
                 )
         except Exception:
             logger.exception("خطا در ارسال عکس مفاتیح برای آیتم id=%s (%s)", row["id"], image_path)
