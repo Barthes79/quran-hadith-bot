@@ -229,11 +229,27 @@ SUB_KEYBOARDS = {
 # 3. هندلرها (Handlers)
 # ==========================================
 
+async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
+    """
+    ویرایش امن پیام.
+    اگر پیام فعلی از نوع عکس باشد (مثلاً کاربر تازه یک دعای عکس‌دار را دیده)،
+    edit_message_text با خطا مواجه می‌شود چون تلگرام اجازه تبدیل پیام عکس‌دار
+    به پیام متنی را نمی‌دهد. در این حالت پیام قبلی حذف و یک پیام متنی جدید فرستاده می‌شود.
+    """
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception:
+        try:
+            await query.message.delete()
+        except Exception:
+            logger.exception("safe_edit_message: خطا در حذف پیام قبلی")
+        await query.message.chat.send_message(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
-    await query.edit_message_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    await safe_edit_message(query, text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -244,7 +260,7 @@ async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAUL
     
     kb_func = CAT_KEYBOARDS.get(cat_id)
     if kb_func:
-        await query.edit_message_text("📂 لطفاً زیردسته مورد نظر را انتخاب کنید:", reply_markup=kb_func())
+        await safe_edit_message(query, "📂 لطفاً زیردسته مورد نظر را انتخاب کنید:", reply_markup=kb_func())
 
 async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -255,7 +271,7 @@ async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEF
     
     kb_func = SUB_KEYBOARDS.get(sub_id)
     if kb_func:
-        await query.edit_message_text("📜 لطفاً دعای مورد نظر را انتخاب کنید:", reply_markup=kb_func())
+        await safe_edit_message(query, "📜 لطفاً دعای مورد نظر را انتخاب کنید:", reply_markup=kb_func())
 
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -267,7 +283,8 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
         item = db.get_mafatih_item(item_id)
 
         if not item:
-            await query.edit_message_text(
+            await safe_edit_message(
+                query,
                 "❌ اطلاعات این دعا در دیتابیس یافت نشد!",
                 reply_markup=get_main_menu_keyboard()
             )
@@ -312,19 +329,21 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 except Exception:
                     logger.exception(f"MAFATIH IMAGE SEND ERROR {item_id} ({full_path})")
                     # اگر ارسال عکس هم شکست خورد، حداقل متن را نشان بده
-                    await query.edit_message_text(text[:4096], reply_markup=back_kb)
+                    await safe_edit_message(query, text[:4096], reply_markup=back_kb)
                 return
             else:
                 logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
 
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             text[:4096],
             reply_markup=back_kb
         )
 
     except Exception as e:
         logger.exception(f"MAFATIH ERROR {item_id}: {e}")
-        await query.edit_message_text(
+        await safe_edit_message(
+            query,
             "❌ خطایی در نمایش دعا رخ داد.",
             reply_markup=get_main_menu_keyboard()
         )
