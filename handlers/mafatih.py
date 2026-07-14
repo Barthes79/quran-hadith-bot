@@ -232,8 +232,25 @@ SUB_KEYBOARDS = {
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
-    await query.edit_message_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    keyboard = get_main_menu_keyboard()
+
+    try:
+        if query.message and query.message.photo:
+            await query.edit_message_caption(
+                caption=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.exception(f"MAFATIH MENU ERROR: {e}")
 
 async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
