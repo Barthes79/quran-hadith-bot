@@ -298,15 +298,24 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             full_path = Path("/app") / image_path
 
             if full_path.exists():
-                with open(full_path, "rb") as img:
-                    await query.edit_message_media(
-                        media=InputMediaPhoto(
-                            media=img,
-                            caption=text[:1024]
-                        ),
-                        reply_markup=back_kb
-                    )
+                # توجه: نمی‌شود یک پیام متنی را با edit_message_media به پیام عکس‌دار
+                # تبدیل کرد (تلگرام این کار را اجازه نمی‌دهد و خطا می‌دهد).
+                # بنابراین پیام قبلی را پاک کرده و یک پیام جدید با عکس می‌فرستیم.
+                try:
+                    with open(full_path, "rb") as img:
+                        await query.message.reply_photo(
+                            photo=img,
+                            caption=text[:1024],
+                            reply_markup=back_kb
+                        )
+                    await query.message.delete()
+                except Exception:
+                    logger.exception(f"MAFATIH IMAGE SEND ERROR {item_id} ({full_path})")
+                    # اگر ارسال عکس هم شکست خورد، حداقل متن را نشان بده
+                    await query.edit_message_text(text[:4096], reply_markup=back_kb)
                 return
+            else:
+                logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
 
         await query.edit_message_text(
             text[:4096],
