@@ -315,51 +315,30 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             full_path = Path("/app") / image_path
 
             if full_path.exists():
+                # توجه: نمی‌شود یک پیام متنی را با edit_message_media به پیام عکس‌دار
+                # تبدیل کرد (تلگرام این کار را اجازه نمی‌دهد و خطا می‌دهد).
+                # بنابراین پیام قبلی را پاک کرده و یک پیام جدید با عکس می‌فرستیم.
                 try:
-                    if len(text) <= 1024:
-                        with open(full_path, "rb") as img:
-                            await query.message.reply_photo(
-                                photo=img,
-                                caption=text,
-                                reply_markup=back_kb
-                            )
-                    else:
-                        with open(full_path, "rb") as img:
-                            await query.message.reply_photo(
-                                photo=img,
-                                caption=f"✨ {title}"
-                            )
-                        for chunk_start in range(0, len(text), 4096):
-                            chunk = text[chunk_start:chunk_start + 4096]
-                            is_last_chunk = chunk_start + 4096 >= len(text)
-                            await query.message.chat.send_message(
-                                chunk,
-                                reply_markup=back_kb if is_last_chunk else None
-                            )
+                    with open(full_path, "rb") as img:
+                        await query.message.reply_photo(
+                            photo=img,
+                            caption=text[:1024],
+                            reply_markup=back_kb
+                        )
                     await query.message.delete()
                 except Exception:
                     logger.exception(f"MAFATIH IMAGE SEND ERROR {item_id} ({full_path})")
+                    # اگر ارسال عکس هم شکست خورد، حداقل متن را نشان بده
                     await safe_edit_message(query, text[:4096], reply_markup=back_kb)
                 return
             else:
                 logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
 
-        if len(text) <= 4096:
-            await safe_edit_message(
-                query,
-                text,
-                reply_markup=back_kb
-            )
-        else:
-            await safe_edit_message(query, text[:4096], reply_markup=None)
-            remaining = text[4096:]
-            for chunk_start in range(0, len(remaining), 4096):
-                chunk = remaining[chunk_start:chunk_start + 4096]
-                is_last_chunk = chunk_start + 4096 >= len(remaining)
-                await query.message.chat.send_message(
-                    chunk,
-                    reply_markup=back_kb if is_last_chunk else None
-                )
+        await safe_edit_message(
+            query,
+            text[:4096],
+            reply_markup=back_kb
+        )
 
     except Exception as e:
         logger.exception(f"MAFATIH ERROR {item_id}: {e}")
