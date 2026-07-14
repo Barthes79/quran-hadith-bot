@@ -43,7 +43,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    # در اینجا answer() را حذف کردیم تا اگر تابع بعدی هم خواست answer کند تداخل پیش نیاید
+    # یا در صورت نیاز فقط یک بار پاسخ می‌دهیم.
+    try:
+        await query.answer()
+    except:
+        pass
 
     if query.data == "menu_quran":
         from handlers.quran import show_surah_list
@@ -71,8 +76,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_nahj_menu(update, context)
 
     elif query.data == "menu_mafatih":
-        from handlers.mafatih import show_mafatih_menu
-        await show_mafatih_menu(update, context)
+        # این بخش اصلاح شد تا تابع درست را فراخوانی کند
+        from handlers.mafatih import mafatih_menu_callback
+        await mafatih_menu_callback(update, context)
 
     elif query.data == "menu_settings":
         await show_settings(update, context)

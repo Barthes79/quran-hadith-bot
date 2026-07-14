@@ -36,10 +36,11 @@ from handlers.nahj import (
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
     nahj_text_page_callback,
 )
-# اضافه شدن mafatih_subcategory_callback به ایمپورت‌ها
+# توابع مفاتیح الجنان به همراه هندلر متنی جدید اضافه شد
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
     mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
+    mafatih_menu_text_callback
 )
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
@@ -173,7 +174,7 @@ def main():
     app.add_handler(CallbackQueryHandler(nahj_text_page_callback, pattern="^nahjtxt_"))
     app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
-    # کالبک‌های مفاتیح‌الجنان (این بخش کامل و اصلاح شد)
+    # کالبک‌های مفاتیح‌الجنان
     app.add_handler(CallbackQueryHandler(mafatih_menu_callback, pattern="^mafmenu$"))
     app.add_handler(CallbackQueryHandler(mafatih_category_callback, pattern="^mafcat_"))
     app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
@@ -192,7 +193,14 @@ def main():
     # عضویت ربات در گروه جدید
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
 
-    # پیام‌های متنی عادی (فقط چت خصوصی)
+    # ==========================================
+    # هندلر پیام‌های متنی (Text Handlers)
+    # ==========================================
+    
+    # ۱. هندلر دکمه متنی مفاتیح الجنان (حتماً باید بالاتر از general_text_handler باشد)
+    app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
+    
+    # ۲. پیام‌های متنی عادی (فقط چت خصوصی)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
 
     # جاب پست روزانه - هر ساعت یکبار چک می‌کند

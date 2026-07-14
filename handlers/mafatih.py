@@ -306,3 +306,8 @@ async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر برای دستور /addmafatih (مخصوص ادمین‌ها)"""
     await update.message.reply_text("این بخش جهت افزودن دعای جدید توسط ادمین می‌باشد. (در حال توسعه)")
+
+    async def mafatih_menu_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر برای زمانی که کاربر دکمه متنی مفاتیح الجنان را می‌زند"""
+    text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
+    await update.message.reply_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
