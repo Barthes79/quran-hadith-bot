@@ -72,10 +72,10 @@ def get_keyboard_for_post_prayers():
 
 def get_keyboard_for_weekly_days():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("شنبه", callback_data="mafitem_dua_shanbeh"), InlineKeyboardButton("یکشنبه", callback_data="mafitem_dua_yekshanbeh")],
-        [InlineKeyboardButton("دوشنبه", callback_data="mafitem_dua_dushanbeh"), InlineKeyboardButton("سه‌شنبه", callback_data="mafitem_dua_seshanbeh")],
-        [InlineKeyboardButton("چهارشنبه", callback_data="mafitem_dua_chaharshanbeh"), InlineKeyboardButton("پنج‌شنبه", callback_data="mafitem_dua_panjshanbeh")],
-        [InlineKeyboardButton("جمعه", callback_data="mafitem_dua_jomeh")],
+        [InlineKeyboardButton("شنبه", callback_data="mafitem_92"), InlineKeyboardButton("یکشنبه", callback_data="mafitem_93")],
+        [InlineKeyboardButton("دوشنبه", callback_data="mafitem_94"), InlineKeyboardButton("سه‌شنبه", callback_data="mafitem_95")],
+        [InlineKeyboardButton("چهارشنبه", callback_data="mafitem_96"), InlineKeyboardButton("پنج‌شنبه", callback_data="mafitem_97")],
+        [InlineKeyboardButton("جمعه", callback_data="mafitem_98")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_daily_weekly"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
@@ -283,7 +283,21 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 [InlineKeyboardButton("◀️ برگشت به لیست", callback_data=f"mafsub_{item['subcategory_id']}")],
                 [InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")]
             ])
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=back_kb)
+            if "image_path" in item.keys() and item["image_path"]:
+                try:
+                    with open(item["image_path"], "rb") as img:
+                        await query.message.reply_photo(
+                            photo=img,
+                            caption=text,
+                            parse_mode="Markdown",
+                            reply_markup=back_kb
+                        )
+                    await query.message.delete()
+                except Exception as img_error:
+                    logger.error(f"Image error: {img_error}")
+                    await query.edit_message_text(text, parse_mode="Markdown", reply_markup=back_kb)
+            else:
+                await query.edit_message_text(text, parse_mode="Markdown", reply_markup=back_kb)
         else:
             await query.edit_message_text("❌ خطا: اطلاعات این دعا در دیتابیس یافت نشد!", reply_markup=get_main_menu_keyboard())
     except Exception as e:
