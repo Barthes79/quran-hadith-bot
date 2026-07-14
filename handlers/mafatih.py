@@ -72,10 +72,10 @@ def get_keyboard_for_post_prayers():
 
 def get_keyboard_for_weekly_days():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("شنبه", callback_data="mafitem_92"), InlineKeyboardButton("یکشنبه", callback_data="mafitem_93")],
-        [InlineKeyboardButton("دوشنبه", callback_data="mafitem_94"), InlineKeyboardButton("سه‌شنبه", callback_data="mafitem_95")],
-        [InlineKeyboardButton("چهارشنبه", callback_data="mafitem_96"), InlineKeyboardButton("پنج‌شنبه", callback_data="mafitem_97")],
-        [InlineKeyboardButton("جمعه", callback_data="mafitem_98")],
+        [InlineKeyboardButton("شنبه", callback_data="mafitem_85"), InlineKeyboardButton("یکشنبه", callback_data="mafitem_86")],
+        [InlineKeyboardButton("دوشنبه", callback_data="mafitem_87"), InlineKeyboardButton("سه‌شنبه", callback_data="mafitem_88")],
+        [InlineKeyboardButton("چهارشنبه", callback_data="mafitem_89"), InlineKeyboardButton("پنج‌شنبه", callback_data="mafitem_90")],
+        [InlineKeyboardButton("جمعه", callback_data="mafitem_91")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_daily_weekly"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
