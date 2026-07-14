@@ -80,6 +80,13 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from handlers.mafatih import mafatih_menu_callback
         await mafatih_menu_callback(update, context)
 
+    elif query.data == "menu_main":
+        # بازگشت از بخش‌های داخلی به منوی اصلی ربات
+        await query.edit_message_text(
+            "🌙 منوی اصلی ربات:",
+            reply_markup=main_menu_keyboard()
+        )
+
     elif query.data == "menu_settings":
         await show_settings(update, context)
 
