@@ -607,47 +607,14 @@ def get_user_stats(user_id: int):
     ).fetchone()["s"]
     conn.close()
     return {"favorites": favorites, "score": quizzes}
-# در فایل database.py
 
-async def get_mafatih_item(item_id: str):
-    """
-    دریافت اطلاعات یک دعای خاص از دیتابیس با استفاده از ID آن
-    """
-    # فرض بر این است که شما از اتصال دیتابیس خود در اینجا استفاده می‌کنید
-    # db_pool یا conn
-    query = "SELECT * FROM mafatih_items WHERE id = $1"
-    
-    # --- مثال برای asyncpg (PostgreSQL) ---
-    # async with db_pool.acquire() as conn:
-    #     row = await conn.fetchrow(query, item_id)
-    #     return dict(row) if row else None
-    
-    # --- مثال برای aiosqlite (SQLite) ---
-    # async with aiosqlite.connect('your_database.db') as db:
-    #     db.row_factory = aiosqlite.Row
-    #     async with db.execute("SELECT * FROM mafatih_items WHERE id = ?", (item_id,)) as cursor:
-    #         row = await cursor.fetchone()
-    #         return dict(row) if row else None
-    pass
-def get_mafatih_item(item_id: str):
-    """
-    دریافت اطلاعات یک دعای خاص از دیتابیس
-    """
-    import sqlite3
-    try:
-        # نام فایل دیتابیس خود را اینجا بررسی کنید (معمولاً database.db یا bot.db است)
-        conn = sqlite3.connect("database.db")
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM mafatih_items WHERE id = ?", (item_id,))
-        row = cursor.fetchone()
-        
-        conn.close()
-        
-        if row:
-            return dict(row)
-        return None
-    except Exception as e:
-        print(f"Database error in get_mafatih_item: {e}")
-        return None
+
+def get_mafatih_item(item_id: int):
+    """دریافت اطلاعات یک دعای مفاتیح از جدول mafatih."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM mafatih WHERE id = ?",
+        (item_id,)
+    ).fetchone()
+    conn.close()
+    return row
