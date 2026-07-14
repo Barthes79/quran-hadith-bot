@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 import database as db
 
@@ -299,9 +299,11 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
             if full_path.exists():
                 with open(full_path, "rb") as img:
-                    await query.message.reply_photo(
-                        photo=img,
-                        caption=text[:1024],
+                    await query.edit_message_media(
+                        media=InputMediaPhoto(
+                            media=img,
+                            caption=text[:1024]
+                        ),
                         reply_markup=back_kb
                     )
                 return
