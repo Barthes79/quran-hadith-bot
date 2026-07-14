@@ -577,6 +577,15 @@ def update_mafatih_image(item_id: int, image_path: str):
     conn.close()
 
 
+def update_mafatih_translation(item_id: int, translation_text: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE mafatih SET translation_text = ? WHERE id = ?", (translation_text, item_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 # ===== User profile helpers =====
 def register_user(user_id: int, username: str = None):
     conn = get_connection()
