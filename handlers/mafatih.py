@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import RetryAfter
+from telegram.error import RetryAfter, TimedOut, NetworkError
 from telegram.ext import ContextTypes
 from database import (
     get_mafatih_by_category, get_mafatih_by_id, add_mafatih_item,
@@ -187,7 +187,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
     async def _send_with_retry(coro_func, **kwargs):
-        """اگر تلگرام به‌خاطر محدودیت نرخ (Flood control) خطای موقت بدهد،
+        """اگر تلگرام به‌خاطر محدودیت نرخ یا کندی شبکه (Timeout) خطای موقت بدهد،
         یک‌بار بعد از مدت لازم دوباره تلاش می‌کنیم؛ به همین دلیل گاهی همه‌چیز
         درست کار می‌کرد و گاهی هیچ پیامی نمی‌آمد (چون تلاش دوم انجام نمی‌شد)."""
         try:
@@ -196,6 +196,10 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             wait_s = getattr(e, "retry_after", 3) + 0.5
             logger.warning("محدودیت نرخ تلگرام؛ %s ثانیه صبر و تلاش مجدد", wait_s)
             await asyncio.sleep(wait_s)
+            return await coro_func(**kwargs)
+        except (TimedOut, NetworkError) as e:
+            logger.warning("تایم‌اوت/خطای شبکه در ارسال به تلگرام (%s)؛ یک بار دیگر تلاش می‌کنیم", e)
+            await asyncio.sleep(1.5)
             return await coro_func(**kwargs)
 
     async def _send_plain_fallback():

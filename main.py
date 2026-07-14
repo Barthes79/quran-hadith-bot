@@ -4,6 +4,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, InlineQueryHandler, filters, ContextTypes,
 )
+from telegram.request import HTTPXRequest
 
 from config import BOT_TOKEN, PROXY_URL
 from database import init_db
@@ -90,10 +91,26 @@ def main():
 
     builder = Application.builder().token(BOT_TOKEN)
 
+    # پیش‌فرض کتابخانه برای هر درخواست فقط ۵ ثانیه فرصت می‌دهد؛ برای آپلود
+    # عکس (به‌خصوص وقتی از پروکسی رد می‌شود) این زمان کم است و باعث خطای
+    # TimedOut و نمایش‌نشدن گاه‌به‌گاه عکس‌ها می‌شود. این مقادیر را بالا می‌بریم.
+    default_request = HTTPXRequest(
+        connect_timeout=15,
+        read_timeout=30,
+        write_timeout=30,
+        pool_timeout=15,
+        proxy=PROXY_URL,
+    )
+    get_updates_request = HTTPXRequest(
+        connect_timeout=15,
+        read_timeout=40,
+        write_timeout=15,
+        pool_timeout=15,
+        proxy=PROXY_URL,
+    )
+    builder = builder.request(default_request).get_updates_request(get_updates_request)
+
     if PROXY_URL:
-        # برای هاست‌های ایرانی که به تلگرام دسترسی مستقیم ندارند.
-        # هم درخواست‌های عادی و هم دریافت آپدیت‌ها (polling) باید از پروکسی رد شوند.
-        builder = builder.proxy(PROXY_URL).get_updates_proxy(PROXY_URL)
         logger.info("در حال استفاده از پروکسی: %s", PROXY_URL)
 
     app = builder.build()
