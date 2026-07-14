@@ -36,9 +36,10 @@ from handlers.nahj import (
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
     nahj_text_page_callback,
 )
+# اضافه شدن mafatih_subcategory_callback به ایمپورت‌ها
 from handlers.mafatih import (
-    mafatih_category_callback, mafatih_menu_callback, mafatih_item_callback,
-    fav_mafatih_callback, add_mafatih_command,
+    mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
+    mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
 )
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
@@ -172,9 +173,10 @@ def main():
     app.add_handler(CallbackQueryHandler(nahj_text_page_callback, pattern="^nahjtxt_"))
     app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
-    # کالبک‌های مفاتیح‌الجنان
+    # کالبک‌های مفاتیح‌الجنان (این بخش کامل و اصلاح شد)
     app.add_handler(CallbackQueryHandler(mafatih_menu_callback, pattern="^mafmenu$"))
     app.add_handler(CallbackQueryHandler(mafatih_category_callback, pattern="^mafcat_"))
+    app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
     app.add_handler(CallbackQueryHandler(mafatih_item_callback, pattern="^mafitem_"))
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
