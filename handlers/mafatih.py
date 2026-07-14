@@ -176,8 +176,15 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await query.delete_message()
     except Exception:
         pass
-    # این کلید از نسخه‌های قدیمی‌تر باقی مانده و برای اطمینان همچنان پاک می‌شود
-    context.chat_data.pop("maf_photo_msg_id", None)
+    # اگر آیتم قبلی از نوع «عکس + ترجمه در پیام جدا» بود، پیام عکسش را هم پاک می‌کنیم
+    # (چون query.delete_message() فقط پیامی را پاک می‌کند که دکمه رویش کلیک شده، یعنی
+    # پیام ترجمه؛ و پیام عکس که ریپلای‌شده جداگانه باقی می‌ماند)
+    prev_photo_id = context.chat_data.pop("maf_photo_msg_id", None)
+    if prev_photo_id:
+        try:
+            await context.bot.delete_message(chat_id=query.message.chat_id, message_id=prev_photo_id)
+        except Exception:
+            pass
 
     async def _send_with_retry(coro_func, **kwargs):
         """اگر تلگرام به‌خاطر محدودیت نرخ (Flood control) خطای موقت بدهد،
