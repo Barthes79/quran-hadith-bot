@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import RetryAfter
 from telegram.ext import ContextTypes
 from database import (
     get_mafatih_by_category, get_mafatih_by_id, add_mafatih_item,
@@ -177,27 +179,53 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
     # این کلید از نسخه‌های قدیمی‌تر باقی مانده و برای اطمینان همچنان پاک می‌شود
     context.chat_data.pop("maf_photo_msg_id", None)
 
+    async def _send_with_retry(coro_func, **kwargs):
+        """اگر تلگرام به‌خاطر محدودیت نرخ (Flood control) خطای موقت بدهد،
+        یک‌بار بعد از مدت لازم دوباره تلاش می‌کنیم؛ به همین دلیل گاهی همه‌چیز
+        درست کار می‌کرد و گاهی هیچ پیامی نمی‌آمد (چون تلاش دوم انجام نمی‌شد)."""
+        try:
+            return await coro_func(**kwargs)
+        except RetryAfter as e:
+            wait_s = getattr(e, "retry_after", 3) + 0.5
+            logger.warning("محدودیت نرخ تلگرام؛ %s ثانیه صبر و تلاش مجدد", wait_s)
+            await asyncio.sleep(wait_s)
+            return await coro_func(**kwargs)
+
+    async def _send_plain_fallback():
+        """آخرین راه‌حل: اگر همه‌چیز شکست خورد، حداقل یک پیام متنی ساده بفرست
+        تا کاربر هیچ‌وقت با صفحه‌ی خالی مواجه نشود."""
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
+            )
+        except Exception:
+            logger.exception("حتی ارسال متن ساده هم برای آیتم id=%s شکست خورد", row["id"])
+
     if image_path:
         translation = row["translation_text"] or "—"
         caption = f"📗 {row['title']}\n\n🔹 ترجمه:\n{translation}"
         try:
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+
             if len(caption) <= 1024:
                 # عکس و ترجمه در یک پیام واحد (کپشن عکس) فرستاده می‌شود
-                with open(image_path, "rb") as photo_file:
-                    await context.bot.send_photo(
-                        chat_id=chat_id, photo=photo_file, caption=caption, reply_markup=keyboard
-                    )
+                await _send_with_retry(
+                    context.bot.send_photo,
+                    chat_id=chat_id, photo=image_bytes, caption=caption, reply_markup=keyboard,
+                )
             else:
                 # کپشن از حد مجاز تلگرام (۱۰۲۴ کاراکتر) بلندتر است؛ چاره‌ای نیست
                 # جز اینکه ترجمه را در پیام دوم بفرستیم
-                with open(image_path, "rb") as photo_file:
-                    sent_photo = await context.bot.send_photo(
-                        chat_id=chat_id, photo=photo_file, caption=f"📗 {row['title']}"
-                    )
+                sent_photo = await _send_with_retry(
+                    context.bot.send_photo,
+                    chat_id=chat_id, photo=image_bytes, caption=f"📗 {row['title']}",
+                )
                 context.chat_data["maf_photo_msg_id"] = sent_photo.message_id
                 # پیام ترجمه را «ریپلای» به پیام عکس می‌فرستیم تا در تلگرام
                 # به‌صورت بصری به هم متصل نشان داده شوند (نه دو پیام کاملاً جدا)
-                await context.bot.send_message(
+                await _send_with_retry(
+                    context.bot.send_message,
                     chat_id=chat_id,
                     text=f"🔹 ترجمه:\n{translation}",
                     reply_markup=keyboard,
@@ -207,13 +235,16 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             logger.exception("خطا در ارسال عکس مفاتیح برای آیتم id=%s (%s)", row["id"], image_path)
             # اگر ارسال عکس با خطا مواجه شد، حداقل متن دعا را بفرست تا کاربر چیزی دریافت کند
-            await context.bot.send_message(
-                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
-            )
+            await _send_plain_fallback()
     else:
-        await context.bot.send_message(
-            chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard
-        )
+        try:
+            await _send_with_retry(
+                context.bot.send_message,
+                chat_id=chat_id, text=format_mafatih_item(row), reply_markup=keyboard,
+            )
+        except Exception:
+            logger.exception("خطا در ارسال متن مفاتیح برای آیتم id=%s", row["id"])
+            await _send_plain_fallback()
 
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
