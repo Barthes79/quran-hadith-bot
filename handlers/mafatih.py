@@ -304,7 +304,6 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                         caption=text[:1024],
                         reply_markup=back_kb
                     )
-                await query.message.delete()
                 return
 
         await query.edit_message_text(
