@@ -90,6 +90,23 @@ async def mafatih_menu_callback(
 
 
 # =========================
+# دسته بندی مفاتیح (برای سازگاری با main.py)
+# =========================
+
+async def mafatih_category_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    query = update.callback_query
+    await query.answer()
+
+    await query.edit_message_text(
+        text="📖 مفاتیح الجنان\n\nدعای مورد نظر را انتخاب کنید:",
+        reply_markup=get_mafatih_keyboard()
+    )
+
+
+# =========================
 # نمایش دعا
 # =========================
 
