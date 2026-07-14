@@ -274,15 +274,16 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         title = item["title"]
-        text = f"✨ **{title}**\n\n"
 
-        if item.get("arabic_text"):
+        text = f"✨ {title}\n\n"
+
+        if item["arabic_text"]:
             text += f"{item['arabic_text']}\n\n"
 
-        if item.get("translation_text"):
+        if item["translation_text"]:
             text += f"📖 ترجمه:\n{item['translation_text']}\n\n"
 
-        if item.get("tafsir_text"):
+        if item["tafsir_text"]:
             text += f"💡 توضیحات:\n{item['tafsir_text']}"
 
         back_kb = InlineKeyboardMarkup([
@@ -290,30 +291,29 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")]
         ])
 
-        image_path = item.get("image_path")
+        image_path = item["image_path"]
 
         if image_path:
-            try:
-                with open(image_path, "rb") as img:
+            from pathlib import Path
+            full_path = Path("/app") / image_path
+
+            if full_path.exists():
+                with open(full_path, "rb") as img:
                     await query.message.reply_photo(
                         photo=img,
                         caption=text[:1024],
-                        parse_mode="Markdown",
                         reply_markup=back_kb
                     )
                 await query.message.delete()
                 return
-            except Exception as img_error:
-                logger.error(f"Image error: {img_error}")
 
         await query.edit_message_text(
             text[:4096],
-            parse_mode="Markdown",
             reply_markup=back_kb
         )
 
     except Exception as e:
-        logger.error(f"Error fetching mafatih item {item_id}: {e}")
+        logger.exception(f"MAFATIH ERROR {item_id}: {e}")
         await query.edit_message_text(
             "❌ خطایی در نمایش دعا رخ داد.",
             reply_markup=get_main_menu_keyboard()
