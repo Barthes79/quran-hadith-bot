@@ -284,8 +284,7 @@ KUMAYL_TEXT = """«بِسْمِ اللَّهِ الرَّحْمَنِ الرَّ
 
 def main():
     # آماده‌سازی و ارتقای دیتابیس لوکال
-    db.init_db()[cite: 1]
-    
+     db.init_db()    
     # اضافه کردن یا به‌روزرسانی آیتم مفاتیح با شناسه صوتی جدید تلگرام
     item_id = db.add_mafatih_item(
         category="special",
