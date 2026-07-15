@@ -40,7 +40,7 @@ from handlers.nahj import (
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
     mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
-    mafatih_menu_text_callback
+    mafatih_menu_text_callback, mafatih_text_page_callback,
 )
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
@@ -179,6 +179,7 @@ def main():
     app.add_handler(CallbackQueryHandler(mafatih_category_callback, pattern="^mafcat_"))
     app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
     app.add_handler(CallbackQueryHandler(mafatih_item_callback, pattern="^mafitem_"))
+    app.add_handler(CallbackQueryHandler(mafatih_text_page_callback, pattern="^maftxt_"))
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
     # کالبک‌های تنظیمات گروه
