@@ -603,6 +603,15 @@ def get_mafatih_by_id(item_id: int):
     return row
 
 
+def get_mafatih_item(item_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM mafatih WHERE id = ?", (item_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
 def update_mafatih_tafsir(item_id: int, tafsir_text: str):
     conn = get_connection()
     conn.execute(
@@ -651,13 +660,3 @@ def get_user_stats(user_id: int):
     ).fetchone()["s"]
     conn.close()
     return {"favorites": favorites, "score": quizzes}
-
-
-def get_mafatih_item(item_id: int):
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM mafatih WHERE id = ?",
-        (item_id,)
-    ).fetchone()
-    conn.close()
-    return row
