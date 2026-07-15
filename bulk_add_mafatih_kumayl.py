@@ -284,7 +284,7 @@ KUMAYL_TEXT = """«بِسْمِ اللَّهِ الرَّحْمَنِ الرَّ
 
 def main():
     # آماده‌سازی و ارتقای دیتابیس لوکال
-     db.init_db()    
+    db.init_db()
     # اضافه کردن یا به‌روزرسانی آیتم مفاتیح با شناسه صوتی جدید تلگرام
     item_id = db.add_mafatih_item(
         category="special",
@@ -294,9 +294,9 @@ def main():
         tafsir_text=None,
         slug="kumayl",
         audio_file_id=KUMAYL_AUDIO_FILE_ID  # افزودن شناسه صوتی دریافتی
-    )[cite: 1, 2]
-    
-    print(f"✅ دعای کمیل به همراه فایل صوتی با موفقیت ثبت/بروزرسانی شد. ID: {item_id} | Slug: kumayl")[cite: 1]
+    )
+
+    print(f"✅ دعای کمیل به همراه فایل صوتی با موفقیت ثبت/بروزرسانی شد. ID: {item_id} | Slug: kumayl")
 
 
 if __name__ == "__main__":
