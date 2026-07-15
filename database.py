@@ -133,11 +133,13 @@ def init_db():
             arabic_text TEXT NOT NULL,
             translation_text TEXT,
             tafsir_text TEXT,
-            image_path TEXT              -- مسیر فایل تصویر (اختیاری)، مثلاً 'images/shanbe.jpg.png'
+            image_path TEXT,             -- مسیر فایل تصویر (اختیاری)
+            slug TEXT,                   -- شناسه یکتا برای دسترسی مستقیم به آیتم خاص
+            audio_file_id TEXT           -- شناسه فایل صوتی تلگرام (برای پخش صوتی)
         )
     """)
 
-    # سازگاری با دیتابیس‌های قدیمی
+    # سازگاری با دیتابیس‌های قدیمی (در صورتی که جداول از قبل ساخته شده باشند)
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
@@ -148,10 +150,14 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
-    # شناسه‌ی متنی (slug) برای آیتم‌هایی که دکمه‌شان از قبل با یک نام ثابت
-    # مثل mafitem_subh_post تعریف شده، نه با id عددی دیتابیس
     try:
         cur.execute("ALTER TABLE mafatih ADD COLUMN slug TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    # اضافه کردن ستون صوتی به دیتابیس‌های قدیمی در صورت عدم وجود
+    try:
+        cur.execute("ALTER TABLE mafatih ADD COLUMN audio_file_id TEXT")
     except sqlite3.OperationalError:
         pass
 
@@ -252,9 +258,6 @@ def update_hadith_tafsir(hadith_id: int, tafsir_text: str):
 def update_hadith(hadith_id: int, arabic_text=None, translation_text=None,
                    tafsir_text=None, narrator=None, source_book=None,
                    chapter=None, hadith_number=None):
-    """
-    فقط فیلدهایی که مقدار برایشان داده شده (None نباشند) آپدیت می‌شوند.
-    """
     fields = {
         "arabic_text": arabic_text,
         "translation_text": translation_text,
@@ -279,7 +282,6 @@ def update_hadith(hadith_id: int, arabic_text=None, translation_text=None,
 
 
 def set_hadith_topics(hadith_id: int, topics):
-    """موضوعات قبلی حدیث را پاک و موضوعات جدید را جایگزین می‌کند."""
     conn = get_connection()
     conn.execute("DELETE FROM hadith_topics WHERE hadith_id = ?", (hadith_id,))
     for topic in topics:
@@ -294,7 +296,6 @@ def set_hadith_topics(hadith_id: int, topics):
 
 
 def delete_hadith(hadith_id: int):
-    """یک حدیث و موضوعات/علاقه‌مندی‌های مرتبط با آن را حذف می‌کند."""
     conn = get_connection()
     conn.execute("DELETE FROM hadith_topics WHERE hadith_id = ?", (hadith_id,))
     conn.execute(
@@ -308,9 +309,6 @@ def delete_hadith(hadith_id: int):
 
 def list_hadiths(source_book: str = None, narrator: str = None,
                   topic: str = None, limit: int = 50):
-    """
-    برای پیدا کردن شناسه (id) احادیث قبل از حذف/ادیت، با فیلتر اختیاری.
-    """
     conn = get_connection()
     query = "SELECT h.* FROM hadiths h"
     conditions = []
@@ -387,7 +385,7 @@ def get_group_settings(chat_id: int):
 
 def update_group_settings(chat_id: int, **kwargs):
     conn = get_connection()
-    get_group_settings(chat_id)  # اطمینان از وجود ردیف
+    get_group_settings(chat_id)
     for key, value in kwargs.items():
         conn.execute(f"UPDATE group_settings SET {key} = ? WHERE chat_id = ?", (value, chat_id))
     conn.commit()
@@ -481,6 +479,7 @@ def get_ayah_tafsir(surah: int, ayah: int):
     conn.close()
     return row
 
+
 # ---------------- توابع مربوط به نهج‌البلاغه ----------------
 
 NAHJ_CATEGORIES = ("khutbah", "letter", "hekmat")
@@ -513,7 +512,6 @@ def get_nahj_item(category: str, number: int):
 
 
 def get_nahj_numbers(category: str):
-    """شماره‌ی موارد ثبت‌شده‌ی یک دسته (خطبه/نامه/حکمت)، مرتب‌شده."""
     conn = get_connection()
     rows = conn.execute(
         "SELECT number FROM nahj_balagha WHERE category = ? ORDER BY number", (category,)
@@ -539,30 +537,33 @@ MAFATIH_CATEGORIES = ("daily", "ziyarat", "weekly", "monthly", "munajat", "speci
 
 def add_mafatih_item(category: str, title: str, arabic_text: str = "",
                       translation_text: str = None, tafsir_text: str = None,
-                      image_path: str = None, slug: str = None):
+                      image_path: str = None, slug: str = None, audio_file_id: str = None):
+    """
+    ثبت یا بروزرسانی آیتم‌های مفاتیح الجنان همراه با قابلیت پشتیبانی از فایل صوتی.
+    """
     conn = get_connection()
     if slug:
-        # اگر slug از قبل وجود داشته باشد (مثلاً اجرای دوباره‌ی اسکریپت)، رکورد آپدیت می‌شود
         cur = conn.execute(
-            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path, slug)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
+            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path, slug, audio_file_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(slug) DO UPDATE SET
                    category = excluded.category,
                    title = excluded.title,
                    arabic_text = excluded.arabic_text,
                    translation_text = excluded.translation_text,
                    tafsir_text = excluded.tafsir_text,
-                   image_path = excluded.image_path""",
-            (category, title, arabic_text or "", translation_text, tafsir_text, image_path, slug),
+                   image_path = excluded.image_path,
+                   audio_file_id = excluded.audio_file_id""",
+            (category, title, arabic_text or "", translation_text, tafsir_text, image_path, slug, audio_file_id),
         )
         conn.commit()
         row = conn.execute("SELECT id FROM mafatih WHERE slug = ?", (slug,)).fetchone()
         item_id = row["id"] if row else cur.lastrowid
     else:
         cur = conn.execute(
-            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (category, title, arabic_text or "", translation_text, tafsir_text, image_path),
+            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path, audio_file_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (category, title, arabic_text or "", translation_text, tafsir_text, image_path, audio_file_id),
         )
         item_id = cur.lastrowid
         conn.commit()
@@ -578,11 +579,6 @@ def get_mafatih_by_slug(slug: str):
 
 
 def get_mafatih_item_flexible(identifier):
-    """
-    item_id از callback_data می‌آید و می‌تواند عدد (id واقعی دیتابیس، مثل آیتم‌های
-    قدیمی دعاهای هفته) یا یک slug متنی (مثل subh_post) باشد. این تابع هر دو حالت را
-    پشتیبانی می‌کند تا نیازی به تغییر callback_dataهای موجود در کیبوردها نباشد.
-    """
     identifier = str(identifier)
     if identifier.isdigit():
         row = get_mafatih_by_id(int(identifier))
@@ -658,7 +654,6 @@ def get_user_stats(user_id: int):
 
 
 def get_mafatih_item(item_id: int):
-    """دریافت اطلاعات یک دعای مفاتیح از جدول mafatih."""
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM mafatih WHERE id = ?",
