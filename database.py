@@ -148,6 +148,15 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # شناسه‌ی متنی (slug) برای آیتم‌هایی که دکمه‌شان از قبل با یک نام ثابت
+    # مثل mafitem_subh_post تعریف شده، نه با id عددی دیتابیس
+    try:
+        cur.execute("ALTER TABLE mafatih ADD COLUMN slug TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mafatih_slug ON mafatih(slug)")
+
     conn.commit()
     conn.close()
 
@@ -530,17 +539,56 @@ MAFATIH_CATEGORIES = ("daily", "ziyarat", "weekly", "monthly", "munajat", "speci
 
 def add_mafatih_item(category: str, title: str, arabic_text: str = "",
                       translation_text: str = None, tafsir_text: str = None,
-                      image_path: str = None):
+                      image_path: str = None, slug: str = None):
     conn = get_connection()
-    cur = conn.execute(
-        """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (category, title, arabic_text or "", translation_text, tafsir_text, image_path),
-    )
-    item_id = cur.lastrowid
-    conn.commit()
+    if slug:
+        # اگر slug از قبل وجود داشته باشد (مثلاً اجرای دوباره‌ی اسکریپت)، رکورد آپدیت می‌شود
+        cur = conn.execute(
+            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path, slug)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(slug) DO UPDATE SET
+                   category = excluded.category,
+                   title = excluded.title,
+                   arabic_text = excluded.arabic_text,
+                   translation_text = excluded.translation_text,
+                   tafsir_text = excluded.tafsir_text,
+                   image_path = excluded.image_path""",
+            (category, title, arabic_text or "", translation_text, tafsir_text, image_path, slug),
+        )
+        conn.commit()
+        row = conn.execute("SELECT id FROM mafatih WHERE slug = ?", (slug,)).fetchone()
+        item_id = row["id"] if row else cur.lastrowid
+    else:
+        cur = conn.execute(
+            """INSERT INTO mafatih (category, title, arabic_text, translation_text, tafsir_text, image_path)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (category, title, arabic_text or "", translation_text, tafsir_text, image_path),
+        )
+        item_id = cur.lastrowid
+        conn.commit()
     conn.close()
     return item_id
+
+
+def get_mafatih_by_slug(slug: str):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM mafatih WHERE slug = ?", (slug,)).fetchone()
+    conn.close()
+    return row
+
+
+def get_mafatih_item_flexible(identifier):
+    """
+    item_id از callback_data می‌آید و می‌تواند عدد (id واقعی دیتابیس، مثل آیتم‌های
+    قدیمی دعاهای هفته) یا یک slug متنی (مثل subh_post) باشد. این تابع هر دو حالت را
+    پشتیبانی می‌کند تا نیازی به تغییر callback_dataهای موجود در کیبوردها نباشد.
+    """
+    identifier = str(identifier)
+    if identifier.isdigit():
+        row = get_mafatih_by_id(int(identifier))
+        if row:
+            return row
+    return get_mafatih_by_slug(identifier)
 
 
 def get_mafatih_by_category(category: str):

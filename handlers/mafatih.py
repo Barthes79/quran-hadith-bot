@@ -289,6 +289,136 @@ async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEF
     if kb_func:
         await safe_edit_message(query, "📜 لطفاً دعای مورد نظر را انتخاب کنید:", reply_markup=kb_func())
 
+# ==========================================
+# 3.5. صفحه‌بندی متون طولانی (دکمه «ادامه ▶️»)
+# ==========================================
+MAF_TEXT_CHUNK_SIZE = 3500
+
+
+def _split_maf_text(full_text: str, chunk_size: int = MAF_TEXT_CHUNK_SIZE):
+    """متن را بدون شکستن وسط پاراگراف/کلمه به تکه‌های قابل نمایش در تلگرام تقسیم می‌کند."""
+    if len(full_text) <= chunk_size:
+        return [full_text]
+
+    paragraphs = full_text.split("\n")
+    chunks = []
+    current = ""
+
+    def flush():
+        nonlocal current
+        if current:
+            chunks.append(current.strip("\n"))
+            current = ""
+
+    for para in paragraphs:
+        candidate = (current + "\n" + para) if current else para
+        if len(candidate) <= chunk_size:
+            current = candidate
+            continue
+        flush()
+        if len(para) <= chunk_size:
+            current = para
+        else:
+            words = para.split(" ")
+            piece = ""
+            for word in words:
+                cand = (piece + " " + word) if piece else word
+                if len(cand) <= chunk_size:
+                    piece = cand
+                else:
+                    if piece:
+                        chunks.append(piece)
+                    piece = word
+            if piece:
+                current = piece
+    flush()
+    return chunks or [full_text]
+
+
+def build_mafatih_pages(item):
+    """آیتم دیتابیس را به هدر + لیستی از تکه‌های متنی تبدیل می‌کند."""
+    title = item["title"]
+    header = f"✨ {title}\n\n"
+
+    body_parts = []
+    if item["arabic_text"]:
+        body_parts.append(item["arabic_text"])
+    if item["translation_text"]:
+        body_parts.append(f"📖 ترجمه:\n{item['translation_text']}")
+    if item["tafsir_text"]:
+        body_parts.append(f"💡 توضیحات:\n{item['tafsir_text']}")
+
+    full_body = "\n\n".join(body_parts)
+    chunks = _split_maf_text(full_body)
+    return header, chunks
+
+
+def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1):
+    buttons = []
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("◀️ صفحه قبل", callback_data=f"maftxt_{item_id}_{page-1}"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("صفحه بعد ▶️", callback_data=f"maftxt_{item_id}_{page+1}"))
+        if nav_row:
+            buttons.append(nav_row)
+    buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"favmaf_{item_id}")])
+    buttons.append([InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_id: str, page: int = 0):
+    """متن یک آیتم مفاتیح (با در نظر گرفتن صفحه‌بندی) را نمایش می‌دهد."""
+    item = db.get_mafatih_item_flexible(item_id)
+
+    if not item:
+        await safe_edit_message(
+            query,
+            "❌ اطلاعات این دعا در دیتابیس یافت نشد!",
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+
+    header, chunks = build_mafatih_pages(item)
+    total_pages = len(chunks)
+    page = max(0, min(page, total_pages - 1))
+
+    text = header
+    if total_pages > 1:
+        text += f"(صفحه {page + 1} از {total_pages})\n\n"
+    text += chunks[page]
+
+    markup = mafatih_item_keyboard(item_id, page=page, total_pages=total_pages)
+
+    image_path = item["image_path"] if "image_path" in item.keys() else None
+
+    # عکس فقط در صفحه‌ی اول نمایش داده می‌شود
+    if image_path and page == 0:
+        from pathlib import Path
+        full_path = Path("/app") / image_path
+        if full_path.exists():
+            try:
+                if len(text) <= 1024:
+                    # متن کوتاه است: عکس + متن در یک پیام (کپشن)
+                    with open(full_path, "rb") as img:
+                        await query.message.reply_photo(photo=img, caption=text, reply_markup=markup)
+                else:
+                    # متن طولانی است: عکس در یک پیام، متنِ صفحه‌بندی‌شده در پیام بعدی
+                    with open(full_path, "rb") as img:
+                        photo_msg = await query.message.reply_photo(photo=img, caption=f"✨ {item['title']}")
+                    context.user_data["maf_extra_photo_id"] = photo_msg.message_id
+                    await query.message.chat.send_message(text, reply_markup=markup)
+                await query.message.delete()
+                return
+            except Exception:
+                logger.exception(f"MAFATIH IMAGE SEND ERROR {item_id} ({full_path})")
+        else:
+            logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
+
+    await safe_edit_message(query, text, reply_markup=markup)
+
+
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -299,93 +429,30 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
     item_id = query.data.replace("mafitem_", "")
 
     try:
-        item = db.get_mafatih_item(item_id)
-
-        if not item:
-            await safe_edit_message(
-                query,
-                "❌ اطلاعات این دعا در دیتابیس یافت نشد!",
-                reply_markup=get_main_menu_keyboard()
-            )
-            return
-
-        title = item["title"]
-
-        text = f"✨ {title}\n\n"
-
-        if item["arabic_text"]:
-            text += f"{item['arabic_text']}\n\n"
-
-        if item["translation_text"]:
-            text += f"📖 ترجمه:\n{item['translation_text']}\n\n"
-
-        if item["tafsir_text"]:
-            text += f"💡 توضیحات:\n{item['tafsir_text']}"
-
-        back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"favmaf_{item_id}")],
-            [InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")]
-        ])
-
-        image_path = item["image_path"]
-
-        if image_path:
-            from pathlib import Path
-            full_path = Path("/app") / image_path
-
-            if full_path.exists():
-                try:
-                    if len(text) <= 1024:
-                        with open(full_path, "rb") as img:
-                            await query.message.reply_photo(
-                                photo=img,
-                                caption=text,
-                                reply_markup=back_kb
-                            )
-                    else:
-                        with open(full_path, "rb") as img:
-                            photo_msg = await query.message.reply_photo(
-                                photo=img,
-                                caption=f"✨ {title}"
-                            )
-                        # عکس دکمه ندارد؛ آیدی‌اش را نگه می‌داریم تا هروقت کاربر
-                        # برگشت به منو زد، این عکسِ یتیم هم پاک شود
-                        context.user_data["maf_extra_photo_id"] = photo_msg.message_id
-                        for chunk_start in range(0, len(text), 4096):
-                            chunk = text[chunk_start:chunk_start + 4096]
-                            is_last_chunk = chunk_start + 4096 >= len(text)
-                            await query.message.chat.send_message(
-                                chunk,
-                                reply_markup=back_kb if is_last_chunk else None
-                            )
-                    await query.message.delete()
-                except Exception:
-                    logger.exception(f"MAFATIH IMAGE SEND ERROR {item_id} ({full_path})")
-                    await safe_edit_message(query, text[:4096], reply_markup=back_kb)
-                return
-            else:
-                logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
-
-
-        if len(text) <= 4096:
-            await safe_edit_message(
-                query,
-                text,
-                reply_markup=back_kb
-            )
-        else:
-            await safe_edit_message(query, text[:4096], reply_markup=None)
-            remaining = text[4096:]
-            for chunk_start in range(0, len(remaining), 4096):
-                chunk = remaining[chunk_start:chunk_start + 4096]
-                is_last_chunk = chunk_start + 4096 >= len(remaining)
-                await query.message.chat.send_message(
-                    chunk,
-                    reply_markup=back_kb if is_last_chunk else None
-                )
-
+        await _render_mafatih_item(query, context, item_id, page=0)
     except Exception as e:
         logger.exception(f"MAFATIH ERROR {item_id}: {e}")
+        await safe_edit_message(
+            query,
+            "❌ خطایی در نمایش دعا رخ داد.",
+            reply_markup=get_main_menu_keyboard()
+        )
+
+
+async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر دکمه‌ی «صفحه بعد / صفحه قبل» برای دعاهای طولانی."""
+    query = update.callback_query
+    await query.answer()
+
+    # maftxt_{item_id}_{page}  — چون item_id خودش ممکن است شامل _ باشد (مثل subh_post)
+    # فقط آخرین بخش را به‌عنوان شماره صفحه جدا می‌کنیم
+    raw = query.data.replace("maftxt_", "")
+    item_id, page = raw.rsplit("_", 1)
+
+    try:
+        await _render_mafatih_item(query, context, item_id, page=int(page))
+    except Exception as e:
+        logger.exception(f"MAFATIH PAGE ERROR {item_id}: {e}")
         await safe_edit_message(
             query,
             "❌ خطایی در نمایش دعا رخ داد.",
