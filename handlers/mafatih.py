@@ -245,15 +245,30 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
             logger.exception("safe_edit_message: خطا در حذف پیام قبلی")
         await query.message.chat.send_message(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
+async def cleanup_extra_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """
+    وقتی ترجمه‌ی یک دعا طولانی بوده، عکس و متن آن در دو پیام جدا فرستاده شده
+    (عکس بدون دکمه، متن با دکمه). این تابع آن عکسِ بدون دکمه را -در صورت وجود- پاک می‌کند
+    تا هنگام برگشت به منو یا رفتن به بخش دیگر، عکس یتیم روی صفحه باقی نماند.
+    """
+    photo_msg_id = context.user_data.pop("maf_extra_photo_id", None)
+    if photo_msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=photo_msg_id)
+        except Exception:
+            logger.exception("cleanup_extra_photo: خطا در حذف عکس اضافی")
+
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await cleanup_extra_photo(context, query.message.chat.id)
     text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await safe_edit_message(query, text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await cleanup_extra_photo(context, query.message.chat.id)
     
     # mafcat_daily_weekly -> daily_weekly
     cat_id = query.data.replace("mafcat_", "")
@@ -265,6 +280,7 @@ async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAUL
 async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await cleanup_extra_photo(context, query.message.chat.id)
     
     # mafsub_post_prayers -> post_prayers
     sub_id = query.data.replace("mafsub_", "")
@@ -276,6 +292,9 @@ async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEF
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    # اگر از دعای قبلی یک عکسِ یتیم (بدون دکمه) باقی مانده، پاکش کن
+    await cleanup_extra_photo(context, query.message.chat.id)
 
     item_id = query.data.replace("mafitem_", "")
 
@@ -325,10 +344,13 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                             )
                     else:
                         with open(full_path, "rb") as img:
-                            await query.message.reply_photo(
+                            photo_msg = await query.message.reply_photo(
                                 photo=img,
                                 caption=f"✨ {title}"
                             )
+                        # عکس دکمه ندارد؛ آیدی‌اش را نگه می‌داریم تا هروقت کاربر
+                        # برگشت به منو زد، این عکسِ یتیم هم پاک شود
+                        context.user_data["maf_extra_photo_id"] = photo_msg.message_id
                         for chunk_start in range(0, len(text), 4096):
                             chunk = text[chunk_start:chunk_start + 4096]
                             is_last_chunk = chunk_start + 4096 >= len(text)
@@ -343,6 +365,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             else:
                 logger.warning(f"MAFATIH IMAGE NOT FOUND {item_id}: {full_path}")
+
 
         if len(text) <= 4096:
             await safe_edit_message(
