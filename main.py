@@ -72,7 +72,6 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode="Markdown",
             )
 
-app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, get_file_id_debug))
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     در چت خصوصی، هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه
@@ -215,7 +214,6 @@ def main():
 
     logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
