@@ -87,7 +87,11 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not handled:
         await text_search_handler(update, context, text)
 
-
+async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.audio:
+        await update.message.reply_text(f"file_id:\n`{update.message.audio.file_id}`", parse_mode="Markdown")
+    elif update.message.voice:
+        await update.message.reply_text(f"file_id:\n`{update.message.voice.file_id}`", parse_mode="Markdown")
 def main():
     init_db()
 
