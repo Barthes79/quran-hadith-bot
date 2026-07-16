@@ -18,7 +18,7 @@ bulk_add_mafatih_tavassul.py است: عربی + ترجمه‌ی فارسی زی�
 
 from database import add_mafatih_item
 
-SLUG = "mashlul"
+SLUG = "mashlool"
 CATEGORY = "special"
 TITLE = "دعای مشلول"
 
