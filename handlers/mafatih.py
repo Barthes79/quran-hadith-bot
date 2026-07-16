@@ -258,6 +258,13 @@ async def cleanup_extra_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
         except Exception:
             logger.exception("cleanup_extra_photo: خطا در حذف عکس اضافی")
 
+    audio_msg_id = context.user_data.pop("maf_extra_audio_id", None)
+    if audio_msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=audio_msg_id)
+        except Exception:
+            logger.exception("cleanup_extra_photo: خطا در حذف فایل صوتی اضافی")
+
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -353,7 +360,7 @@ def build_mafatih_pages(item):
     return header, chunks
 
 
-def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1):
+def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1, has_audio: bool = False):
     buttons = []
     if total_pages > 1:
         nav_row = []
@@ -363,6 +370,8 @@ def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1):
             nav_row.append(InlineKeyboardButton("صفحه بعد ▶️", callback_data=f"maftxt_{item_id}_{page+1}"))
         if nav_row:
             buttons.append(nav_row)
+    if has_audio:
+        buttons.append([InlineKeyboardButton("🎧 فایل صوتی این دعا", callback_data=f"mafaudio_{item_id}")])
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"favmaf_{item_id}")])
     buttons.append([InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")])
     return InlineKeyboardMarkup(buttons)
@@ -389,21 +398,10 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
         text += f"(صفحه {page + 1} از {total_pages})\n\n"
     text += chunks[page]
 
-    markup = mafatih_item_keyboard(item_id, page=page, total_pages=total_pages)
-
     image_path = item["image_path"] if "image_path" in item.keys() else None
     audio_file_id = item["audio_file_id"] if "audio_file_id" in item.keys() else None
 
-    # فایل صوتی (در صورت وجود) فقط یک‌بار، همراه با صفحه‌ی اول ارسال می‌شود
-    if audio_file_id and page == 0:
-        try:
-            await query.message.chat.send_audio(
-                audio=audio_file_id,
-                title=item["title"],
-                caption=f"🎧 {item['title']}",
-            )
-        except Exception:
-            logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
+    markup = mafatih_item_keyboard(item_id, page=page, total_pages=total_pages, has_audio=bool(audio_file_id))
 
     # عکس فقط در صفحه‌ی اول نمایش داده می‌شود
     if image_path and page == 0:
@@ -470,6 +468,30 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
             "❌ خطایی در نمایش دعا رخ داد.",
             reply_markup=get_main_menu_keyboard()
         )
+
+async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر دکمه‌ی «فایل صوتی این دعا»؛ فقط با کلیک کاربر صدا را جداگانه می‌فرستد
+    و شناسه‌ی پیام آن را ردیابی می‌کند تا هنگام برگشت/رفتن به دعای دیگر پاک شود."""
+    query = update.callback_query
+    item_id = query.data.replace("mafaudio_", "")
+    item = db.get_mafatih_item_flexible(item_id)
+
+    audio_file_id = item["audio_file_id"] if item and "audio_file_id" in item.keys() else None
+    if not audio_file_id:
+        await query.answer("❌ فایل صوتی برای این دعا یافت نشد.", show_alert=True)
+        return
+
+    await query.answer()
+    try:
+        audio_msg = await query.message.chat.send_audio(
+            audio=audio_file_id,
+            title=item["title"],
+            caption=f"🎧 {item['title']}",
+        )
+        context.user_data["maf_extra_audio_id"] = audio_msg.message_id
+    except Exception:
+        logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
+
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
