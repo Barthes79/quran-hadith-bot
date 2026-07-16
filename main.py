@@ -87,44 +87,27 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await text_search_handler(update, context, text)
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر دیباگ هوشمند برای استخراج و چاپ عالی file_id انواع فایل‌ها"""
-    message = update.message
-    if not message:
+    """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد"""
+    if not update.message:
         return
 
-    file_id = None
-    file_type = ""
-
-    # تشخیص هوشمند نوع فایل ارسالی
-    if message.audio:
-        file_id = message.audio.file_id
-        file_type = "Audio (آهنگ/فایل صوتی)"
-    elif message.voice:
-        file_id = message.voice.file_id
-        file_type = "Voice (ویس)"
-    elif message.document:
-        file_id = message.document.file_id
-        file_type = f"Document (فایل/سند) - با نام: {message.document.file_name or 'نامشخص'}"
-    elif message.video:
-        file_id = message.video.file_id
-        file_type = "Video (ویدیو)"
-
-    if file_id:
-        await message.reply_text(
-            f"📥 **فایل با موفقیت توسط ربات شما دریافت شد!**\n\n"
-            f"🔹 **نوع فایل تشخیص داده شده:** {file_type}\n"
-            f"🔸 **شناسه اختصاصی فایل (file_id):**\n"
-            f"`{file_id}`\n\n"
-            f"⚠️ *نکته مهم:* این آیدی منحصراً برای همین ربات شما کار می‌کند. این مقدار را کپی کرده و در فایل اسکریپت `bulk_add_mafatih_mashlul.py` به جای مقدار `AUDIO_FILE_ID` قدیمی بگذارید و اسکریپت را مجدداً اجرا کنید تا دیتابیس بروزرسانی شود.",
-            parse_mode="Markdown",
-        )
+    if update.message.audio:
+        await update.message.reply_text(f"🎧 *Audio file_id:*\n`{update.message.audio.file_id}`", parse_mode="Markdown")
+    elif update.message.voice:
+        await update.message.reply_text(f"🎤 *Voice file_id:*\n`{update.message.voice.file_id}`", parse_mode="Markdown")
+    elif update.message.document:
+        await update.message.reply_text(f"📄 *Document file_id:*\n`{update.message.document.file_id}`", parse_mode="Markdown")
+    elif update.message.video:
+        await update.message.reply_text(f"📹 *Video file_id:*\n`{update.message.video.file_id}`", parse_mode="Markdown")
 
 def main():
     init_db()
 
     builder = Application.builder().token(BOT_TOKEN)
 
-    # تنظیمات درخواست و تایم‌اوت‌ها جهت جلوگیری از قطعی پروکسی و مشکلات آپلود عکس و صوت
+    # پیش‌فرض کتابخانه برای هر درخواست فقط ۵ ثانیه فرصت می‌دهد؛ برای آپلود
+    # عکس (به‌خصوص وقتی از پروکسی رد می‌شود) این زمان کم است و باعث خطای
+    # TimedOut و نمایش‌نشدن گاه‌به‌گاه عکس‌ها می‌شود. این مقادیر را بالا می‌بریم.
     default_request = HTTPXRequest(
         connect_timeout=15,
         read_timeout=30,
@@ -151,7 +134,7 @@ def main():
 
     app.add_error_handler(_global_error_handler)
 
-    # دستورات ادمین و کاربر
+    # دستورات
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
@@ -218,11 +201,13 @@ def main():
     app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
     app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
-    # =========================================================
-    # دریافت دیباگ فایل‌های ارسالی کاربر (پشتیبانی از موزیک، ویس، ویدیو و انواع فایل پیوست شده)
-    # این هندلر باید قبل از هندلرهای متنی عمومی قرار داشته باشد
-    # =========================================================
-    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE | filters.Document | filters.VIDEO, get_file_id_debug))
+    # =========================================================================
+    # دریافت موقت file_id فایل‌های فرستاده‌شده به ربات (پشتیبانی از صوت، داکیومنت و ویدیو)
+    # =========================================================================
+    app.add_handler(MessageHandler(
+        filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, 
+        get_file_id_debug
+    ))
 
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
