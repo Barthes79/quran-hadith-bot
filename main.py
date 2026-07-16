@@ -192,6 +192,12 @@ def main():
     app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
     app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
+    # ==========================================
+    # دریافت موقت file_id فایل‌های صوتی تلگرام
+    # برای گرفتن file_id صحیح جوشن کبیر
+    # ==========================================
+    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, get_file_id_debug))
+
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
