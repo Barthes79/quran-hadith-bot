@@ -2,7 +2,7 @@ import sqlite3
 from database import add_mafatih_item
 
 # جایگذاری فایل آیدی صوتی (اگر دارید)
-AUDIO_FILE_ID = "YOUR_FILE_ID_HERE" 
+AUDIO_FILE_ID = "CQACAgQAAxkBAAIG1GpZGXmSIcNViY5qtysfG5WPOonfAAIiAAM056wJFzpG65nIUxg9BA" 
 
 SLUG = "sabah"
 TITLE = "دعای صباح"
