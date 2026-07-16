@@ -2,7 +2,7 @@ import sqlite3
 from database import add_mafatih_item
 
 # 1. پس از ارسال فایل صوتی به ربات و دریافت file_id، آن را اینجا جایگذاری کنید:
-AUDIO_FILE_ID = "YOUR_FILE_ID_HERE" 
+AUDIO_FILE_ID = "CQACAgQAAxkBAAIGy2pY-7VQ4iBQKzqjkulMVKSv7twpAAJDCwAC-BVIUT_QL6K4IW9ePQQ" 
 
 SLUG = "simat"
 CATEGORY = "special"
