@@ -36,11 +36,11 @@ from handlers.nahj import (
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
     nahj_text_page_callback,
 )
-# توابع مفاتیح الجنان به همراه هندلر متنی جدید اضافه شد
+# توابع مفاتیح الجنان به همراه هندلر متنی و هندلر فایل صوتی اضافه شد
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
     mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
-    mafatih_menu_text_callback, mafatih_text_page_callback,
+    mafatih_menu_text_callback, mafatih_text_page_callback, mafatih_audio_callback,
 )
 from handlers.admin import (
     group_settings_command, toggle_daily_post_callback,
@@ -180,6 +180,7 @@ def main():
     app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
     app.add_handler(CallbackQueryHandler(mafatih_item_callback, pattern="^mafitem_"))
     app.add_handler(CallbackQueryHandler(mafatih_text_page_callback, pattern="^maftxt_"))
+    app.add_handler(CallbackQueryHandler(mafatih_audio_callback, pattern="^mafaudio_"))
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
     # کالبک‌های تنظیمات گروه
