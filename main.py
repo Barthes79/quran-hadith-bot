@@ -87,10 +87,36 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await text_search_handler(update, context, text)
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دریافت انواع فایل‌ها و استخراج دقیق شناسه فایل (file_id) مخصوص ربات شما"""
+    if not update.message:
+        return
+
+    file_id = None
+    file_type = ""
+
     if update.message.audio:
-        await update.message.reply_text(f"file_id:\n`{update.message.audio.file_id}`", parse_mode="Markdown")
+        file_id = update.message.audio.file_id
+        file_type = "آهنگ (Audio)"
     elif update.message.voice:
-        await update.message.reply_text(f"file_id:\n`{update.message.voice.file_id}`", parse_mode="Markdown")
+        file_id = update.message.voice.file_id
+        file_type = "پیام صوتی (Voice)"
+    elif update.message.document:
+        file_id = update.message.document.file_id
+        file_type = "سند/فایل (Document)"
+    elif update.message.video:
+        file_id = update.message.video.file_id
+        file_type = "ویدیو (Video)"
+
+    if file_id:
+        await update.message.reply_text(
+            f"📥 **فایل با موفقیت توسط ربات شما دریافت شد!**\n\n"
+            f"📌 **نوع فایل شناسایی‌شده:** {file_type}\n"
+            f"🔑 **شناسه فایل (file_id) اختصاصی ربات شما:**\n"
+            f"`{file_id}`\n\n"
+            f"⚠️ **راهنما:** این شناسه بالا را کپی کرده و در بخش `AUDIO_FILE_ID` فایل اسکریپت دعای مشلول قرار دهید، سپس اسکریپت را اجرا کنید.",
+            parse_mode="Markdown"
+        )
+
 def main():
     init_db()
 
@@ -193,10 +219,10 @@ def main():
     app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
     # ==========================================
-    # دریافت موقت file_id فایل‌های صوتی تلگرام
-    # برای گرفتن file_id صحیح جوشن کبیر
+    # دریافت موقت file_id فایل‌های ارسالی به ربات
+    # پشتیبانی کامل از فایل صوتی، ویس، داکیومنت و ویدیو
     # ==========================================
-    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, get_file_id_debug))
+    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, get_file_id_debug))
 
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
