@@ -4,7 +4,7 @@ from database import add_mafatih_item
 # 1. پس از ارسال فایل صوتی به ربات و دریافت file_id، آن را اینجا جایگذاری کنید:
 AUDIO_FILE_ID = "YOUR_FILE_ID_HERE" 
 
-SLUG = "samad"
+SLUG = "simat"
 CATEGORY = "special"
 TITLE = "دعای سمات"
 
