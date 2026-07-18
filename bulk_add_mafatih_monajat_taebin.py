@@ -29,7 +29,7 @@ SLUG = "monajat_taebin"
 CATEGORY = "khams_ashar"
 TITLE = "مناجات تائبین"
 
-AUDIO_FILE_ID = "CQACAgQAAxkBAAIHD2paJy-_HjBUPk47wNuzlxOC4YdWAAKyGwACNg3YUivfJnGZbkDKPQ"
+AUDIO_FILE_ID = "CQACAgQAAxkBAAIHD2paJy-_HjBUPk47wNuzlxOC4YdWAAKyGwACNg3YUivfJnGZbkDKPQQ"
 
 ARABIC_TEXT = """بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ
 
