@@ -26,7 +26,7 @@ build_mafatih_pages ترجمه را جدا در انتها نچیند.
 
 from database import add_mafatih_item
 
-SLUG = "monajat_manzoumeh"
+SLUG = "monajat_manzum"
 CATEGORY = "khams_ashar"
 TITLE = "مناجات منظومه"
 
