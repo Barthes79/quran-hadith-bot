@@ -130,13 +130,18 @@ def get_keyboard_for_month_shaban():
 def get_keyboard_for_month_ramadan():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌅 اعمال سحر", callback_data="mafitem_ramadan_sahar"), InlineKeyboardButton("📖 دعای ابوحمزه", callback_data="mafitem_abu_hamzah")],
-        [InlineKeyboardButton("🛡️ شب‌های قدر (کل)", callback_data="mafitem_laylat_alqadr")],
-        [InlineKeyboardButton("🌙 اعمال مشترک شب‌های قدر", callback_data="mafitem_common_laylat_alqadr")],
-        [InlineKeyboardButton("1️⃣9️⃣ اعمال شب قدر ۱۹", callback_data="mafitem_laylat_alqadr_19"), InlineKeyboardButton("2️⃣1️⃣ اعمال شب قدر ۲۱", callback_data="mafitem_laylat_alqadr_21")],
-        [InlineKeyboardButton("2️⃣3️⃣ اعمال شب قدر ۲۳", callback_data="mafitem_laylat_alqadr_23")],
-        [InlineKeyboardButton("📅 دعای روزانه", callback_data="mafitem_ramadan_days")],
+        [InlineKeyboardButton("🛡️ شب‌های قدر", callback_data="mafsub_laylat_alqadr"), InlineKeyboardButton("📅 دعای روزانه", callback_data="mafitem_ramadan_days")],
         [InlineKeyboardButton("👑 دعای افتتاح", callback_data="mafitem_dua_iftitah")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_lunar_months"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
+    ])
+
+def get_keyboard_for_laylat_alqadr():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌙 اعمال شب قدر ۱۹", callback_data="mafitem_qadr_19")],
+        [InlineKeyboardButton("🌙 اعمال شب قدر ۲۱", callback_data="mafitem_qadr_21")],
+        [InlineKeyboardButton("🌙 اعمال شب قدر ۲۳", callback_data="mafitem_qadr_23")],
+        [InlineKeyboardButton("🤝 اعمال مشترک شب قدر", callback_data="mafitem_qadr_common")],
+        [InlineKeyboardButton("◀️ برگشت", callback_data="mafsub_month_ramadan"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
 def get_keyboard_for_other_months():
@@ -220,6 +225,7 @@ SUB_KEYBOARDS = {
     "month_shaban": get_keyboard_for_month_shaban,
     "month_ramadan": get_keyboard_for_month_ramadan,
     "other_months": get_keyboard_for_other_months,
+    "laylat_alqadr": get_keyboard_for_laylat_alqadr,
     "medina_ziyarat": get_keyboard_for_medina_ziyarat,
     "karbala_najaf": get_keyboard_for_karbala_najaf,
     "mosques_deeds": get_keyboard_for_mosques_deeds,
@@ -234,6 +240,12 @@ SUB_KEYBOARDS = {
 # ==========================================
 
 async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
+    """
+    ویرایش امن پیام.
+    اگر پیام فعلی از نوع عکس باشد (مثلاً کاربر تازه یک دعای عکس‌دار را دیده)،
+    edit_message_text با خطا مواجه می‌شود چون تلگرام اجازه تبدیل پیام عکس‌دار
+    به پیام متنی را نمی‌دهد. در این حالت پیام قبلی حذف و یک پیام متنی جدید فرستاده می‌شود.
+    """
     try:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
@@ -244,6 +256,11 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
         await query.message.chat.send_message(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
 async def cleanup_extra_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """
+    وقتی ترجمه‌ی یک دعا طولانی بوده، عکس و متن آن در دو پیام جدا فرستاده شده
+    (عکس بدون دکمه، متن با دکمه). این تابع آن عکسِ بدون دکمه را -در صورت وجود- پاک می‌کند
+    تا هنگام برگشت به منو یا رفتن به بخش دیگر، عکس یتیم روی صفحه باقی نماند.
+    """
     photo_msg_id = context.user_data.pop("maf_extra_photo_id", None)
     if photo_msg_id:
         try:
@@ -269,7 +286,10 @@ async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     await cleanup_extra_photo(context, query.message.chat.id)
+    
+    # mafcat_daily_weekly -> daily_weekly
     cat_id = query.data.replace("mafcat_", "")
+    
     kb_func = CAT_KEYBOARDS.get(cat_id)
     if kb_func:
         await safe_edit_message(query, "📂 لطفاً زیردسته مورد نظر را انتخاب کنید:", reply_markup=kb_func())
@@ -278,14 +298,22 @@ async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEF
     query = update.callback_query
     await query.answer()
     await cleanup_extra_photo(context, query.message.chat.id)
+    
+    # mafsub_post_prayers -> post_prayers
     sub_id = query.data.replace("mafsub_", "")
+    
     kb_func = SUB_KEYBOARDS.get(sub_id)
     if kb_func:
         await safe_edit_message(query, "📜 لطفاً دعای مورد نظر را انتخاب کنید:", reply_markup=kb_func())
 
+# ==========================================
+# 3.5. صفحه‌بندی متون طولانی (دکمه «ادامه ▶️»)
+# ==========================================
 MAF_TEXT_CHUNK_SIZE = 3500
 
+
 def _split_maf_text(full_text: str, chunk_size: int = MAF_TEXT_CHUNK_SIZE):
+    """متن را بدون شکستن وسط پاراگراف/کلمه به تکه‌های قابل نمایش در تلگرام تقسیم می‌کند."""
     if len(full_text) <= chunk_size:
         return [full_text]
 
@@ -323,7 +351,9 @@ def _split_maf_text(full_text: str, chunk_size: int = MAF_TEXT_CHUNK_SIZE):
     flush()
     return chunks or [full_text]
 
+
 def build_mafatih_pages(item):
+    """آیتم دیتابیس را به هدر + لیستی از تکه‌های متنی تبدیل می‌کند."""
     title = item["title"]
     header = f"✨ {title}\n\n"
 
@@ -338,6 +368,7 @@ def build_mafatih_pages(item):
     full_body = "\n\n".join(body_parts)
     chunks = _split_maf_text(full_body)
     return header, chunks
+
 
 def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1, has_audio: bool = False):
     buttons = []
@@ -355,7 +386,9 @@ def mafatih_item_keyboard(item_id, page: int = 0, total_pages: int = 1, has_audi
     buttons.append([InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")])
     return InlineKeyboardMarkup(buttons)
 
+
 async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_id: str, page: int = 0):
+    """متن یک آیتم مفاتیح (با در نظر گرفتن صفحه‌بندی) را نمایش می‌دهد."""
     item = db.get_mafatih_item_flexible(item_id)
 
     if not item:
@@ -380,15 +413,18 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
 
     markup = mafatih_item_keyboard(item_id, page=page, total_pages=total_pages, has_audio=bool(audio_file_id))
 
+    # عکس فقط در صفحه‌ی اول نمایش داده می‌شود
     if image_path and page == 0:
         from pathlib import Path
         full_path = Path("/app") / image_path
         if full_path.exists():
             try:
                 if len(text) <= 1024:
+                    # متن کوتاه است: عکس + متن در یک پیام (کپشن)
                     with open(full_path, "rb") as img:
                         await query.message.reply_photo(photo=img, caption=text, reply_markup=markup)
                 else:
+                    # متن طولانی است: عکس در یک پیام، متنِ صفحه‌بندی‌شده در پیام بعدی
                     with open(full_path, "rb") as img:
                         photo_msg = await query.message.reply_photo(photo=img, caption=f"✨ {item['title']}")
                     context.user_data["maf_extra_photo_id"] = photo_msg.message_id
@@ -402,10 +438,14 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
 
     await safe_edit_message(query, text, reply_markup=markup)
 
+
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    # اگر از دعای قبلی یک عکسِ یتیم (بدون دکمه) باقی مانده، پاکش کن
     await cleanup_extra_photo(context, query.message.chat.id)
+
     item_id = query.data.replace("mafitem_", "")
 
     try:
@@ -418,9 +458,14 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=get_main_menu_keyboard()
         )
 
+
 async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر دکمه‌ی «صفحه بعد / صفحه قبل» برای دعاهای طولانی."""
     query = update.callback_query
     await query.answer()
+
+    # maftxt_{item_id}_{page}  — چون item_id خودش ممکن است شامل _ باشد (مثل subh_post)
+    # فقط آخرین بخش را به‌عنوان شماره صفحه جدا می‌کنیم
     raw = query.data.replace("maftxt_", "")
     item_id, page = raw.rsplit("_", 1)
 
@@ -435,6 +480,8 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
         )
 
 async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر دکمه‌ی «فایل صوتی این دعا»؛ فقط با کلیک کاربر صدا را جداگانه می‌فرستد
+    و شناسه‌ی پیام آن را ردیابی می‌کند تا هنگام برگشت/رفتن به دعای دیگر پاک شود."""
     query = update.callback_query
     item_id = query.data.replace("mafaudio_", "")
     item = db.get_mafatih_item_flexible(item_id)
@@ -455,18 +502,25 @@ async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_T
     except Exception:
         logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
 
+
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     item_id = query.data.replace("favmaf_", "")
+    user_id = query.from_user.id
+    
     try:
+        # اگر در دیتابیس تابعی برای افزودن به علاقه‌مندی‌ها دارید، اینجا فراخوانی کنید
+        # db.add_favorite(user_id, "mafatih", item_id)
         await query.answer("⭐ به علاقه‌مندی‌های شما اضافه شد!", show_alert=True)
     except Exception as e:
         logger.error(f"Error adding fav mafatih {item_id}: {e}")
         await query.answer("❌ خطا در افزودن به علاقه‌مندی‌ها.", show_alert=True)
 
 async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر برای دستور /addmafatih (مخصوص ادمین‌ها)"""
     await update.message.reply_text("این بخش جهت افزودن دعای جدید توسط ادمین می‌باشد. (در حال توسعه)")
 
 async def mafatih_menu_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر برای زمانی که کاربر دکمه متنی مفاتیح الجنان را می‌زند"""
     text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await update.message.reply_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
