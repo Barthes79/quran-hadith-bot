@@ -187,6 +187,17 @@ def get_keyboard_for_sickness_healing():
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_appendices_baqiyat"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
+def get_keyboard_for_month_ramadan():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌅 اعمال سحر", callback_data="mafitem_ramadan_sahar"), InlineKeyboardButton("📖 دعای ابوحمزه", callback_data="mafitem_abu_hamzah")],
+        [InlineKeyboardButton("🛡️ شب‌های قدر (کل)", callback_data="mafitem_laylat_alqadr")],
+        [InlineKeyboardButton("🌙 اعمال مشترک شب‌های قدر", callback_data="mafitem_common_laylat_alqadr")],
+        [InlineKeyboardButton("1️⃣9️⃣ اعمال شب قدر ۱۹", callback_data="mafitem_laylat_alqadr_19"), InlineKeyboardButton("2️⃣1️⃣ اعمال شب قدر ۲۱", callback_data="mafitem_laylat_alqadr_21")],
+        [InlineKeyboardButton("2️⃣3️⃣ اعمال شب قدر ۲۳", callback_data="mafitem_laylat_alqadr_23")],
+        [InlineKeyboardButton("📅 دعای روزانه", callback_data="mafitem_ramadan_days")],
+        [InlineKeyboardButton("👑 دعای افتتاح", callback_data="mafitem_dua_iftitah")],
+        [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_lunar_months"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
+    ])
 def get_keyboard_for_quran_surahs():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏠 حدیث شریف کساء", callback_data="mafitem_hadith_kisa"), InlineKeyboardButton("💎 مکارم الاخلاق", callback_data="mafitem_dua_makarem")],
