@@ -130,7 +130,7 @@ def get_keyboard_for_month_shaban():
 def get_keyboard_for_month_ramadan():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌅 اعمال سحر", callback_data="mafitem_ramadan_sahar"), InlineKeyboardButton("📖 دعای ابوحمزه", callback_data="mafitem_abu_hamzah")],
-        [InlineKeyboardButton("🛡️ شب‌های قدر", callback_data="mafsub_laylat_alqadr"), InlineKeyboardButton("📅 دعای روزانه", callback_data="mafitem_ramadan_days")],
+        [InlineKeyboardButton("🛡️ شب‌های قدر", callback_data="mafsub_laylat_alqadr"), InlineKeyboardButton("📅 دعای روزانه", callback_data="mafsub_ramadan_days")],
         [InlineKeyboardButton("👑 دعای افتتاح", callback_data="mafitem_dua_iftitah")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_lunar_months"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
@@ -141,6 +141,21 @@ def get_keyboard_for_laylat_alqadr():
         [InlineKeyboardButton("🌙 اعمال شب قدر ۲۱", callback_data="mafitem_qadr_21")],
         [InlineKeyboardButton("🌙 اعمال شب قدر ۲۳", callback_data="mafitem_qadr_23")],
         [InlineKeyboardButton("🤝 اعمال مشترک شب قدر", callback_data="mafitem_qadr_common")],
+        [InlineKeyboardButton("◀️ برگشت", callback_data="mafsub_month_ramadan"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
+    ])
+
+def get_keyboard_for_ramadan_days():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 روز ۱", callback_data="mafitem_ramadan_day_1"), InlineKeyboardButton("📅 روز ۲", callback_data="mafitem_ramadan_day_2"), InlineKeyboardButton("📅 روز ۳", callback_data="mafitem_ramadan_day_3")],
+        [InlineKeyboardButton("📅 روز ۴", callback_data="mafitem_ramadan_day_4"), InlineKeyboardButton("📅 روز ۵", callback_data="mafitem_ramadan_day_5"), InlineKeyboardButton("📅 روز ۶", callback_data="mafitem_ramadan_day_6")],
+        [InlineKeyboardButton("📅 روز ۷", callback_data="mafitem_ramadan_day_7"), InlineKeyboardButton("📅 روز ۸", callback_data="mafitem_ramadan_day_8"), InlineKeyboardButton("📅 روز ۹", callback_data="mafitem_ramadan_day_9")],
+        [InlineKeyboardButton("📅 روز ۱۰", callback_data="mafitem_ramadan_day_10"), InlineKeyboardButton("📅 روز ۱۱", callback_data="mafitem_ramadan_day_11"), InlineKeyboardButton("📅 روز ۱۲", callback_data="mafitem_ramadan_day_12")],
+        [InlineKeyboardButton("📅 روز ۱۳", callback_data="mafitem_ramadan_day_13"), InlineKeyboardButton("📅 روز ۱۴", callback_data="mafitem_ramadan_day_14"), InlineKeyboardButton("📅 روز ۱۵", callback_data="mafitem_ramadan_day_15")],
+        [InlineKeyboardButton("📅 روز ۱۶", callback_data="mafitem_ramadan_day_16"), InlineKeyboardButton("📅 روز ۱۷", callback_data="mafitem_ramadan_day_17"), InlineKeyboardButton("📅 روز ۱۸", callback_data="mafitem_ramadan_day_18")],
+        [InlineKeyboardButton("📅 روز ۱۹", callback_data="mafitem_ramadan_day_19"), InlineKeyboardButton("📅 روز ۲۰", callback_data="mafitem_ramadan_day_20"), InlineKeyboardButton("📅 روز ۲۱", callback_data="mafitem_ramadan_day_21")],
+        [InlineKeyboardButton("📅 روز ۲۲", callback_data="mafitem_ramadan_day_22"), InlineKeyboardButton("📅 روز ۲۳", callback_data="mafitem_ramadan_day_23"), InlineKeyboardButton("📅 روز ۲۴", callback_data="mafitem_ramadan_day_24")],
+        [InlineKeyboardButton("📅 روز ۲۵", callback_data="mafitem_ramadan_day_25"), InlineKeyboardButton("📅 روز ۲۶", callback_data="mafitem_ramadan_day_26"), InlineKeyboardButton("📅 روز ۲۷", callback_data="mafitem_ramadan_day_27")],
+        [InlineKeyboardButton("📅 روز ۲۸", callback_data="mafitem_ramadan_day_28"), InlineKeyboardButton("📅 روز ۲۹", callback_data="mafitem_ramadan_day_29"), InlineKeyboardButton("📅 روز ۳۰", callback_data="mafitem_ramadan_day_30")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafsub_month_ramadan"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
@@ -226,6 +241,7 @@ SUB_KEYBOARDS = {
     "month_ramadan": get_keyboard_for_month_ramadan,
     "other_months": get_keyboard_for_other_months,
     "laylat_alqadr": get_keyboard_for_laylat_alqadr,
+    "ramadan_days": get_keyboard_for_ramadan_days,
     "medina_ziyarat": get_keyboard_for_medina_ziyarat,
     "karbala_najaf": get_keyboard_for_karbala_najaf,
     "mosques_deeds": get_keyboard_for_mosques_deeds,
