@@ -130,7 +130,7 @@ def get_keyboard_for_month_shaban():
 def get_keyboard_for_month_ramadan():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌅 اعمال سحر", callback_data="mafitem_ramadan_sahar"), InlineKeyboardButton("📖 دعای ابوحمزه", callback_data="mafitem_abu_hamzah")],
-        [InlineKeyboardButton("🛡️ شب‌های قدر", callback_data="mafsub_laylat_alqadr"), InlineKeyboardButton("📅 دعای روزانه", callback_data="mafitem_ramadan_days")],
+        [InlineKeyboardButton("🛡️ شب‌های قدر", callback_data="mafsub_laylat_alqadr"), InlineKeyboardButton("📅 دعای روزانه", callback_data="mafsub_ramadan_days")],
         [InlineKeyboardButton("👑 دعای افتتاح", callback_data="mafitem_dua_iftitah")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_lunar_months"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
@@ -143,6 +143,25 @@ def get_keyboard_for_laylat_alqadr():
         [InlineKeyboardButton("🤝 اعمال مشترک شب قدر", callback_data="mafitem_qadr_common")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafsub_month_ramadan"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
+
+def get_keyboard_for_ramadan_days():
+    """کیبورد اعداد ۱ تا ۳۰ برای دعاهای روزانه ماه رمضان"""
+    buttons = []
+    row = []
+    for i in range(1, 31):
+        row.append(InlineKeyboardButton(str(i), callback_data=f"mafitem_ramadan_day_{i}"))
+        if len(row) == 5:  # ۵ ستون در هر ردیف
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    
+    # دکمه‌های برگشت
+    buttons.append([
+        InlineKeyboardButton("◀️ برگشت", callback_data="mafsub_month_ramadan"),
+        InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")
+    ])
+    return InlineKeyboardMarkup(buttons)
 
 def get_keyboard_for_other_months():
     return InlineKeyboardMarkup([
@@ -226,6 +245,7 @@ SUB_KEYBOARDS = {
     "month_ramadan": get_keyboard_for_month_ramadan,
     "other_months": get_keyboard_for_other_months,
     "laylat_alqadr": get_keyboard_for_laylat_alqadr,
+    "ramadan_days": get_keyboard_for_ramadan_days,  # اضافه شد
     "medina_ziyarat": get_keyboard_for_medina_ziyarat,
     "karbala_najaf": get_keyboard_for_karbala_najaf,
     "mosques_deeds": get_keyboard_for_mosques_deeds,
@@ -475,52 +495,3 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
         logger.exception(f"MAFATIH PAGE ERROR {item_id}: {e}")
         await safe_edit_message(
             query,
-            "❌ خطایی در نمایش دعا رخ داد.",
-            reply_markup=get_main_menu_keyboard()
-        )
-
-async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر دکمه‌ی «فایل صوتی این دعا»؛ فقط با کلیک کاربر صدا را جداگانه می‌فرستد
-    و شناسه‌ی پیام آن را ردیابی می‌کند تا هنگام برگشت/رفتن به دعای دیگر پاک شود."""
-    query = update.callback_query
-    item_id = query.data.replace("mafaudio_", "")
-    item = db.get_mafatih_item_flexible(item_id)
-
-    audio_file_id = item["audio_file_id"] if item and "audio_file_id" in item.keys() else None
-    if not audio_file_id:
-        await query.answer("❌ فایل صوتی برای این دعا یافت نشد.", show_alert=True)
-        return
-
-    await query.answer()
-    try:
-        audio_msg = await query.message.chat.send_audio(
-            audio=audio_file_id,
-            title=item["title"],
-            caption=f"🎧 {item['title']}",
-        )
-        context.user_data["maf_extra_audio_id"] = audio_msg.message_id
-    except Exception:
-        logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
-
-
-async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    item_id = query.data.replace("favmaf_", "")
-    user_id = query.from_user.id
-    
-    try:
-        # اگر در دیتابیس تابعی برای افزودن به علاقه‌مندی‌ها دارید، اینجا فراخوانی کنید
-        # db.add_favorite(user_id, "mafatih", item_id)
-        await query.answer("⭐ به علاقه‌مندی‌های شما اضافه شد!", show_alert=True)
-    except Exception as e:
-        logger.error(f"Error adding fav mafatih {item_id}: {e}")
-        await query.answer("❌ خطا در افزودن به علاقه‌مندی‌ها.", show_alert=True)
-
-async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر برای دستور /addmafatih (مخصوص ادمین‌ها)"""
-    await update.message.reply_text("این بخش جهت افزودن دعای جدید توسط ادمین می‌باشد. (در حال توسعه)")
-
-async def mafatih_menu_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر برای زمانی که کاربر دکمه متنی مفاتیح الجنان را می‌زند"""
-    text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
-    await update.message.reply_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
