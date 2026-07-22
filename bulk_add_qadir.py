@@ -1,20 +1,21 @@
-# add_ghadir_complete.py
+# add_ghadir_final.py
 import sqlite3
-from config import DATABASE_PATH
+import os
 
-def add_ghadir_complete():
-    """Add complete Ghadir Khum with translation below Arabic"""
+def add_ghadir_to_database():
+    """Add Ghadir Khum to database"""
     
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+    # مسیر دیتابیس
+    db_path = os.environ.get('DATABASE_PATH', 'quran_bot.db')
+    
+    # اتصال به دیتابیس
+    conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     
     # حذف قبلی اگر وجود دارد
     cur.execute("DELETE FROM mafatih WHERE slug = 'ghadir_day'")
     
-    # ============================================
-    # متن کامل عید غدیر با ترجمه زیر عربی
-    # ============================================
+    # متن کامل عید غدیر خم
     full_text = """**👑 عید غدیر خم (۱۸ ذی‌الحجه)**
 
 عید غدیر خم، بزرگ‌ترین عید مسلمانان است. در این روز، پیامبر اکرم (ص) در غدیر خم، حضرت علی (ع) را به عنوان جانشین خود معرفی کرد.
@@ -178,72 +179,49 @@ def add_ghadir_complete():
 
 هُوَ الْیَوْمُ الَّذِی یَزِیدُ اللَّهُ فِی مَالِ مَنْ عَبَدَ اللَّهَ وَ وَسَّعَ عَلَی عِیَالِهِ وَ نَفْسِهِ وَ إِخْوَانِهِ
 
-روز غدیر روزی است که خدای متعال در مال کسی که خدا را عبادت کند و بر خانواده خویشتن و برادران ایمانی اش توسعه دهد فزونی پدید می‌آورد.
+روز غدیر روزی است که خدای متعال در مال کسی که خدا را عبادت کند و بر خانواده، خویشتن و برادران ایمانی اش توسعه دهد فزونی پدید می‌آورد.
 
 رُوِیَ أَنَّ الْعَمَلَ فِیهِ یَعْدِلُ ثَمَانِینَ شَهْراً وَ رُوِیَ أَنَّهُ کَفَّارَةُ سِتِّینَ سَنَةً
 
 روایت شده که کردار نیک در روز غدیر، با عمل هشتاد ماه برابری می‌کند و نیز روایت شده که کردار نیک در این روز کفاره شصت سال است."""
 
-    # ============================================
     # درج در دیتابیس
-    # ============================================
-    try:
-        cur.execute("""
-            INSERT INTO mafatih 
-            (category, title, arabic_text, translation_text, tafsir_text, slug)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            "special",
-            "اعمال عید غدیر خم (۱۸ ذی‌الحجه)",
-            full_text,
-            None,
-            "",  # tafsir_text خالی
-            "ghadir_day"
-        ))
-        
-        item_id = cur.lastrowid
-        conn.commit()
-        
+    cur.execute("""
+        INSERT INTO mafatih 
+        (category, title, arabic_text, translation_text, tafsir_text, slug)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        "special",
+        "اعمال عید غدیر خم (۱۸ ذی‌الحجه)",
+        full_text,
+        None,
+        "",
+        "ghadir_day"
+    ))
+    
+    # ذخیره تغییرات
+    conn.commit()
+    
+    # دریافت ID ثبت شده
+    item_id = cur.lastrowid
+    
+    # تایید
+    item = cur.execute("SELECT id, slug, title FROM mafatih WHERE slug = 'ghadir_day'").fetchone()
+    
+    if item:
+        print("=" * 50)
         print("✅ عید غدیر خم با موفقیت ثبت شد!")
-        print(f"   ID: {item_id}")
-        print(f"   slug: ghadir_day")
-        print(f"   title: اعمال عید غدیر خم (۱۸ ذی‌الحجه)")
-        print(f"   طول متن: {len(full_text)} کاراکتر")
-        print(f"   ✅ توضیحات خالی است - نمایش داده نمی‌شود")
-        
-        conn.close()
-        return item_id
-        
-    except Exception as e:
-        print(f"❌ خطا: {e}")
-        conn.close()
-        return None
+        print(f"   ID: {item[0]}")
+        print(f"   Slug: {item[1]}")
+        print(f"   Title: {item[2]}")
+        print("=" * 50)
+    else:
+        print("❌ ثبت نشد!")
+    
+    # بستن اتصال
+    conn.close()
 
+# اجرا
 if __name__ == "__main__":
-    result = add_ghadir_complete()
-    if result:
-        print("\n✅ انجام شد!")
-        
-        # تایید نهایی
-        conn = sqlite3.connect(DATABASE_PATH)
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        item = cur.execute("""
-            SELECT id, slug, title, 
-                   LENGTH(arabic_text) as len,
-                   LENGTH(tafsir_text) as tafsir_len
-            FROM mafatih 
-            WHERE slug = 'ghadir_day'
-        """).fetchone()
-        if item:
-            print(f"\n🔍 تایید:")   
-            print(f"   ✅ پیدا شد! ID: {item['id']}")
-            print(f"   Title: {item['title']}")
-            print(f"   طول متن: {item['len']} کاراکتر")
-            if item['tafsir_len'] == 0:
-                print(f"   ✅ توضیحات خالی است")
-            else:
-                print(f"   ⚠️ توضیحات: {item['tafsir_len']} کاراکتر")
-        else:
-            print("   ❌ پیدا نشد!")
-        conn.close()
+    print("🚀 شروع افزودن عید غدیر خم به دیتابیس...")
+    add_ghadir_to_database()
