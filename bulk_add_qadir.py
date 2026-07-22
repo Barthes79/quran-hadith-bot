@@ -116,7 +116,7 @@ def add_ghadir_direct():
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             "special",
-            "اعمال عید غدیر خم (۱۸ ذی‌الحجه)",
+            "",
             full_text,
             None,
             tafsir_text,
