@@ -476,8 +476,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
             query,
             "❌ خطایی در نمایش دعا رخ داد.",
             reply_markup=get_main_menu_keyboard()
-        )
-
+        )  # <--- این پرانتز باید بسته بشه
 
 async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر دکمه‌ی «صفحه بعد / صفحه قبل» برای دعاهای طولانی."""
@@ -495,3 +494,6 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
         logger.exception(f"MAFATIH PAGE ERROR {item_id}: {e}")
         await safe_edit_message(
             query,
+            "❌ خطایی در نمایش دعا رخ داد.",
+            reply_markup=get_main_menu_keyboard()
+        )  # <--- این پرانتز باید بسته بشه
