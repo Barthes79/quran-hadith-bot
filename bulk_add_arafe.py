@@ -226,7 +226,7 @@ def add_arafah_deeds():
         arabic_text=full_text,  # متن کامل با ترجمه زیر عربی
         translation_text=None,  # ترجمه در خود متن گنجانده شده
         tafsir_text=tafsir_text,
-        slug="arafah_deeds"
+        slug="arafat_day"
     )
     
     print(f"✅ اعمال شب و روز عرفه با شناسه {item_id} در دیتابیس ثبت شد.")
