@@ -86,7 +86,7 @@ db.add_mafatih_item(
     ),
     translation_text="",
     tafsir_text="زیارت عاشورا از معتبرترین و مهم‌ترین زیارات امام حسین (علیه‌السلام) است که خواندن آن با آداب خاص (از جمله لعن و سلام‌های مکرر و سجده پایانی) فضیلت بسیار زیادی دارد.",
-    slug="ashura",
+    slug="ashura_ziyarat",
     audio_file_id="CQACAgQAAxkBAAIHgmpiHP2AwNUQr1Q8yhVffY4Edv51AAKlHgACE-kQU2u0cM4QnPciPQQ"
 )
 print("Ziyarat Ashura added successfully!")
