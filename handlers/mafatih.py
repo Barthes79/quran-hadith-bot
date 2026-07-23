@@ -185,7 +185,7 @@ def get_keyboard_for_karbala_najaf():
 def get_keyboard_for_mosques_deeds():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏛️ مسجد کوفه", callback_data="mafitem_kufa_mosque"), InlineKeyboardButton("🕌 مسجد سهله", callback_data="mafitem_sahla_mosque")],
-        [InlineKeyboardButton("⛪ مسجد زید", callback_data="mafitem_mosque_deeds_others"), InlineKeyboardButton("🗡️ مسلم و هانی", callback_data="mafitem_muslim_ziyarat")],
+        [InlineKeyboardButton("⛪ مسجد زید", callback_data="mafitem_mosque_deeds_others"), InlineKeyboardButton("🗡️زیارت مسلم", callback_data="mafitem_muslim_ziyarat")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_ziyarats"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
