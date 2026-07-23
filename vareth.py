@@ -23,6 +23,6 @@ db.add_mafatih_item(
     translation_text="متن کامل زیارت وارث، نماز زیارت، زیارت علی بن الحسین (ع) و شهدای کربلا به همراه بخش‌های پایانی و دعای نزد بالاسر مطهر.",
     tafsir_text="زیارت وارث از مشهورترین و پرفضیلت‌ترین زیارت‌های امام حسین (علیه‌السلام) است که از امام صادق (علیه‌السلام) نقل شده و بهترین زمان خواندن آن در روز عاشورا پس از زیارت عاشورا است.",
     slug="ziyarat-wareth-full",
-    audio_file_id=""
+    audio_file_id="CQACAgQAAxkBAAIHiGpiIHIJgVie6Bgevpixul18tcIZAAKzHgACE-kQU-w3lByBkkAgPQQ"
 )
 print("Ziyarat Wareth Full Code added successfully!")
