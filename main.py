@@ -234,3 +234,16 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # اضافه کردن import جدید
+from handlers.search import search_command, search_callback, enhanced_text_search_handler
+
+# بعد از خطوط import دیگر اضافه کنید
+
+# اضافه کردن دستور /search
+app.add_handler(CommandHandler("search", search_command))
+
+# اضافه کردن کالبک‌های جستجو
+app.add_handler(CallbackQueryHandler(search_callback, pattern="^search_"))
+
+# جایگزینی general_text_handler با نسخه پیشرفته
+# کامنت کردن general_text_handler قبلی و اضافه کردن نسخه جدید

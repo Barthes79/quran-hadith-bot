@@ -660,3 +660,35 @@ def get_user_stats(user_id: int):
     ).fetchone()["s"]
     conn.close()
     return {"favorites": favorites, "score": quizzes}
+# اضافه کردن به انتهای فایل database.py
+
+def search_mafatih(query: str, limit: int = 20):
+    """جستجوی ساده در مفاتیح (برای سازگاری)"""
+    conn = get_connection()
+    like = f"%{query}%"
+    rows = conn.execute(
+        """SELECT * FROM mafatih 
+           WHERE title LIKE ? 
+           OR arabic_text LIKE ? 
+           OR translation_text LIKE ?
+           LIMIT ?""",
+        (like, like, like, limit)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def search_nahj(query: str, limit: int = 20):
+    """جستجوی ساده در نهج‌البلاغه (برای سازگاری)"""
+    conn = get_connection()
+    like = f"%{query}%"
+    rows = conn.execute(
+        """SELECT * FROM nahj_balagha 
+           WHERE title LIKE ? 
+           OR arabic_text LIKE ? 
+           OR translation_text LIKE ?
+           LIMIT ?""",
+        (like, like, like, limit)
+    ).fetchall()
+    conn.close()
+    return rows
