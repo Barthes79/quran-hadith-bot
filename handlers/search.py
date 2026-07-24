@@ -91,7 +91,14 @@ class SmartSearch:
             ORDER BY id
         """, (like, like, like, like, like)).fetchall()
         
-        results = [dict(row) for row in rows]
+        results = []
+        for idx, row in enumerate(rows, 1):
+            item = dict(row)
+            # اطمینان از وجود id
+            if not item.get("id"):
+                item["id"] = idx
+            results.append(item)
+        
         conn.close()
         
         for item in results:
@@ -352,8 +359,9 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for i, item in enumerate(page_items, 1):
         idx = start + i - 1
-        # ذخیره آیتم در context.user_data با شناسه
-        item_key = f"{sid}_{cat}_{idx}"
+        # استفاده از id واقعی آیتم یا idx
+        real_id = item.get("id", idx)
+        item_key = f"{sid}_{cat}_{real_id}"
         context.user_data[f"item_{item_key}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
@@ -415,11 +423,32 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
     ]]
     
-    await q.edit_message_text(
-        full_text,
-        reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode=None
-    )
+    # اگر متن طولانی بود، به چند بخش تقسیم کن
+    if len(full_text) > 4000:
+        parts = []
+        current = ""
+        for line in full_text.split("\n"):
+            if len(current) + len(line) > 3500:
+                parts.append(current)
+                current = line + "\n"
+            else:
+                current += line + "\n"
+        if current:
+            parts.append(current)
+        
+        await q.edit_message_text(
+            parts[0][:4000],
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=None
+        )
+        for part in parts[1:]:
+            await q.message.reply_text(part[:4000], parse_mode=None)
+    else:
+        await q.edit_message_text(
+            full_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=None
+        )
 
 
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
