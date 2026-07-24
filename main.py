@@ -88,24 +88,47 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # در گروه: فقط اگر ربات منشن شده بود پاسخ بده
     if update.effective_chat.type != "private":
         bot_username = (await context.bot.get_me()).username
-        # چک کردن منشن ربات
-        mention = f"@{bot_username}"
-        if mention not in text:
+        
+        # لاگ برای دیباگ
+        logger.info(f"🔍 Group message: '{text}'")
+        logger.info(f"🤖 Bot username: @{bot_username}")
+        
+        # بررسی منشن با فرمت‌های مختلف
+        mention1 = f"@{bot_username}"
+        mention2 = f"@ {bot_username}"
+        mention3 = f"@{bot_username.lower()}"
+        mention4 = f"@{bot_username.upper()}"
+        
+        # چک کردن همه فرمت‌ها
+        has_mention = False
+        clean_text = text
+        
+        for mention in [mention1, mention2, mention3, mention4]:
+            if mention in text:
+                has_mention = True
+                clean_text = text.replace(mention, "").strip()
+                break
+        
+        # همچنین چک کردن بدون @
+        if not has_mention and bot_username in text.lower():
+            has_mention = True
+            clean_text = text.replace(bot_username, "").replace("@", "").strip()
+        
+        if not has_mention:
+            logger.info(f"⏭️ No mention found in: '{text}'")
             return
-        # پاک کردن منشن از متن
-        text = text.replace(mention, "").strip()
-        if not text:
+        
+        if not clean_text:
             await update.message.reply_text(
                 "🔍 لطفاً عبارت جستجو را بعد از منشن وارد کنید.\n"
-                "مثال: `@نام_ربات حدیث صبر`"
+                f"مثال: `@{bot_username} حدیث صبر`"
             )
             return
         
-        # لاگ برای دیباگ
-        logger.info(f"Group search: {text}")
+        logger.info(f"✅ Clean text: '{clean_text}'")
         
         # جستجو در همه بخش‌ها
-        await search_command(update, context, text)
+        await search_command(update, context, clean_text)
         return
     
     # در چت خصوصی: جستجوی عمومی
