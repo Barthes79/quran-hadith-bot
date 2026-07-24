@@ -158,7 +158,7 @@ def main():
     # ===== کالبک‌های جستجو =====
     app.add_handler(CallbackQueryHandler(search_callback, pattern="^s_"))
     app.add_handler(CallbackQueryHandler(back_callback, pattern="^sb_"))
-    app.add_handler(CallbackQueryHandler(view_full_callback, pattern="^vi_"))  # این خط جدید
+    app.add_handler(CallbackQueryHandler(view_full_callback, pattern="^view_"))  # تغییر به view_
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
 
     # ===== کالبک‌های علاقه‌مندی‌ها =====
