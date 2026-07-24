@@ -137,17 +137,30 @@ class SmartSearch:
             ORDER BY id
         """, (like, like, like, like, like)).fetchall()
         
-        results = [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            item = dict(row)
+            # اطمینان از وجود id
+            if item.get("id") is None:
+                item["id"] = len(results) + 1
+            results.append(item)
+        
         conn.close()
         
         if len(results) < 5:
             fuzzy_results = self._fuzzy_search_mafatih(q)
-            existing = {r["id"] for r in results}
+            existing = {r.get("id", i) for i, r in enumerate(results)}
             for item in fuzzy_results:
-                if item["id"] not in existing:
+                item_id = item.get("id", len(results) + 1)
+                if item_id not in existing:
+                    if item.get("id") is None:
+                        item["id"] = len(results) + 1
                     results.append(item)
         
-        for item in results:
+        for idx, item in enumerate(results):
+            if item.get("id") is None:
+                item["id"] = idx + 1
+            
             snippet = ""
             if item.get("translation_text"):
                 snippet = self._get_context(item["translation_text"], q)
@@ -184,6 +197,8 @@ class SmartSearch:
         scored = []
         for item in all_items:
             item = dict(item)
+            if item.get("id") is None:
+                item["id"] = len(scored) + 1
             best = 0
             for field in ["title", "translation_text", "arabic_text", "tafsir_text"]:
                 if item.get(field):
@@ -425,9 +440,11 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(parts) < 4:
         return
     
-    sid, cat, page = parts[1], parts[2], int(parts[3])
-    results = SEARCH_CACHE.get(sid)
+    sid = parts[1]
+    cat = parts[2]
+    page = int(parts[3])
     
+    results = SEARCH_CACHE.get(sid)
     if not results:
         await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
         return
@@ -449,7 +466,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for i, item in enumerate(page_items, 1):
         idx = start + i - 1
-        # ذخیره با شناسه یکتا
+        # استفاده از idx به عنوان شناسه
         item_key = f"{sid}_{cat}_{idx}"
         SEARCH_CACHE[item_key] = {"item": item, "cat": cat}
         
@@ -462,7 +479,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         text += "─" * 30 + "\n"
     
-    # دکمه‌های ناوبری - اینجا مهمه
+    # دکمه‌های ناوبری
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"s_{sid}_{cat}_{page-1}"))
@@ -486,12 +503,9 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     q = update.callback_query
     await q.answer()
     
-    # دریافت شناسه از دکمه
     item_key = q.data.replace("vi_", "")
     
-    # پیدا کردن در کش
     cached = SEARCH_CACHE.get(item_key)
-    
     if not cached:
         await q.edit_message_text(
             "🔍 محتوای این مورد منقضی شده است.\n"
@@ -507,9 +521,7 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     text = format_full_item(item, cat)
     
-    # استخراج sid برای دکمه برگشت
     sid = item_key.split("_")[0]
-    
     buttons = [[
         InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
     ]]
