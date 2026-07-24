@@ -156,6 +156,20 @@ async def fav_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer("به علاقه‌مندی‌ها اضافه شد ⭐")
 
 
+async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش کامل یک حدیث با شناسه مشخص (استفاده‌شده از جمله در دکمه‌ی
+    «مشاهده کامل» زیر نتایج سرچ اینلاین، وقتی متن حدیث طولانی بوده و در
+    پیام اینلاین جا نشده است)."""
+    query = update.callback_query
+    await query.answer()
+    hadith_id = int(query.data.replace("hadithview_", ""))
+    row = get_hadith_by_id(hadith_id)
+    if not row:
+        await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
+        return
+    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+
+
 async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     favs = get_favorites(query.from_user.id)

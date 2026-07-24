@@ -1,5 +1,8 @@
 import uuid
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
+from telegram import (
+    Update, InlineQueryResultArticle, InputTextMessageContent,
+    InlineKeyboardButton, InlineKeyboardMarkup,
+)
 from telegram.ext import ContextTypes
 from database import search_all
 from services.quran_api import get_ayah
@@ -14,8 +17,20 @@ MAFATIH_CATEGORY_FA = {
     "special": "✨ مناسبت خاص",
 }
 
-# سقف تعداد نتیجه‌ای که در هر اینلاین‌کوئری برمی‌گردانیم (سرعت + خوانایی)
-RESULT_LIMIT = 15
+# تلگرام حداکثر ۵۰ نتیجه در هر پاسخ اینلاین قبول می‌کند؛ برای دیدن نتایج بعدی
+# کاربر باید در لیست نتایج اسکرول کند تا batch بعدی خودکار لود شود (offset‌محور)
+PAGE_SIZE = 50
+# سقف کل نتایجی که برای یک عبارت واکشی می‌کنیم (برای جلوگیری از سنگین شدن
+# روی عبارت‌های خیلی پرتکرار مثل «خدا»؛ با PAGE_SIZE=50 یعنی حداکثر ۴ صفحه اسکرول)
+MAX_RESULTS = 200
+
+# پیام‌های تلگرام حداکثر ۴۰۹۶ کاراکتر می‌پذیرند. برای حدیث (که معمولاً کوتاه
+# است) اگر رد شد، متن را می‌بریم و دکمه‌ی «مشاهده کامل» می‌گذاریم.
+HADITH_CONTENT_LIMIT = 3800
+# برای نهج‌البلاغه/مفاتیح (که اغلب طولانی‌اند و در بات صفحه‌بندی دارند) به‌جای
+# دامپ متن کامل در پیام اینلاین، فقط یک پیش‌نمایش کوتاه می‌فرستیم و همیشه دکمه‌ی
+# «مشاهده کامل» را می‌گذاریم که کاربر را به نسخه‌ی صفحه‌بندی‌شده‌ی خود ربات می‌برد
+PREVIEW_LENGTH = 500
 
 
 def _snippet(text: str, length: int = 100) -> str:
@@ -25,8 +40,10 @@ def _snippet(text: str, length: int = 100) -> str:
     return text if len(text) <= length else text[:length].rstrip() + "…"
 
 
-def _build_result(item: dict) -> InlineQueryResultArticle:
+def _build_result(item: dict):
     """یک آیتم استانداردشده (خروجی search_all) را به نتیجه‌ی اینلاین تلگرام تبدیل می‌کند."""
+    reply_markup = None
+
     if item["type"] == "hadith":
         row = item["row"]
         title = f"📿 حدیث — {row['narrator'] or 'معصومین'}"
@@ -34,6 +51,11 @@ def _build_result(item: dict) -> InlineQueryResultArticle:
         content = f"{row['arabic_text']}\n\n🔹 ترجمه:\n{row['translation_text']}"
         if row["source_book"]:
             content += f"\n\n📚 منبع: {row['source_book']}"
+        if len(content) > HADITH_CONTENT_LIMIT:
+            content = content[:HADITH_CONTENT_LIMIT].rstrip() + "…"
+            reply_markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"hadithview_{row['id']}")]]
+            )
 
     elif item["type"] == "nahj":
         row = item["row"]
@@ -43,29 +65,31 @@ def _build_result(item: dict) -> InlineQueryResultArticle:
         title_suffix = f" — {row['title']}" if row["title"] else ""
         title = f"{cat_label} — {item_label} {row['number']}{title_suffix}"
         description = _snippet(row["translation_text"])
-        content_parts = []
-        if row["arabic_text"]:
-            content_parts.append(row["arabic_text"])
-        content_parts.append(row["translation_text"])
-        content = "\n\n".join(content_parts)
+        content = _snippet(row["translation_text"], PREVIEW_LENGTH)
+        content += "\n\n📖 برای مشاهده‌ی متن کامل (همراه عربی و امکان ورق‌زدن) روی دکمه‌ی زیر بزنید 👇"
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"nahjitem_{category}_{row['number']}")]]
+        )
 
     else:  # mafatih
         row = item["row"]
         cat_label = MAFATIH_CATEGORY_FA.get(row["category"], "📿 مفاتیح‌الجنان")
         title = f"{cat_label} — {row['title']}"
-        description = _snippet(row["translation_text"] or row["arabic_text"])
-        content_parts = []
-        if row["arabic_text"]:
-            content_parts.append(row["arabic_text"])
-        if row["translation_text"]:
-            content_parts.append(f"🔹 ترجمه:\n{row['translation_text']}")
-        content = "\n\n".join(content_parts)
+        preview_source = row["translation_text"] or row["arabic_text"]
+        description = _snippet(preview_source)
+        content = _snippet(preview_source, PREVIEW_LENGTH)
+        content += "\n\n📖 برای مشاهده‌ی متن کامل (همراه صوت/تصویر در صورت وجود) روی دکمه‌ی زیر بزنید 👇"
+        identifier = row["slug"] if row["slug"] else row["id"]
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"mafitem_{identifier}")]]
+        )
 
     return InlineQueryResultArticle(
         id=str(uuid.uuid4()),
         title=title,
         description=description,
         input_message_content=InputTextMessageContent(content[:4096]),
+        reply_markup=reply_markup,
     )
 
 
@@ -74,17 +98,22 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     کاربر در هر چت/گروهی می‌نویسد: @نام_ربات عبارت
     و نتایج جستجوی یکپارچه (حدیث + نهج‌البلاغه + مفاتیح‌الجنان + آیه در صورت فرمت شماره)
     نمایش داده می‌شود. این جستجو نسبت به تفاوت حروف عربی/فارسی، اعراب، و غلط‌های
-    تایپی رایج مقاوم است.
+    تایپی رایج مقاوم است. با اسکرول‌کردن نتایج در تلگرام، صفحه‌ی بعدی (تا سقف
+    MAX_RESULTS) خودکار لود می‌شود.
     """
     query_text = update.inline_query.query.strip()
-    results = []
 
     if not query_text:
-        await update.inline_query.answer(results, cache_time=1, is_personal=False)
+        await update.inline_query.answer([], cache_time=1, is_personal=False)
         return
 
-    # اگر فرمت شماره آیه بود (مثلا 2:255)
-    if ":" in query_text and query_text.replace(":", "").isdigit():
+    offset_raw = update.inline_query.offset
+    offset = int(offset_raw) if offset_raw.isdigit() else 0
+
+    results = []
+
+    # لینک مستقیم آیه فقط در صفحه‌ی اول نشان داده می‌شود (برای جلوگیری از تکرار در صفحات بعدی)
+    if offset == 0 and ":" in query_text and query_text.replace(":", "").isdigit():
         surah, ayah = query_text.split(":")
         try:
             data = await get_ayah(int(surah), int(ayah))
@@ -101,13 +130,17 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
 
-    # جستجوی یکپارچه‌ی محتوا (حدیث + نهج‌البلاغه + مفاتیح‌الجنان)
-    items = search_all(query_text, limit=RESULT_LIMIT)
-    for item in items:
+    # جستجوی یکپارچه‌ی محتوا (حدیث + نهج‌البلاغه + مفاتیح‌الجنان) — تا سقف MAX_RESULTS واکشی می‌شود
+    all_items = search_all(query_text, limit=MAX_RESULTS)
+    page_items = all_items[offset: offset + PAGE_SIZE]
+
+    for item in page_items:
         try:
             results.append(_build_result(item))
         except Exception:
             # اگر یک آیتم به هر دلیلی مشکل فرمت داشت، کل نتایج را خراب نکند
             continue
 
-    await update.inline_query.answer(results, cache_time=1, is_personal=False)
+    next_offset = str(offset + PAGE_SIZE) if offset + PAGE_SIZE < len(all_items) else ""
+
+    await update.inline_query.answer(results, cache_time=1, is_personal=False, next_offset=next_offset)
