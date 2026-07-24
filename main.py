@@ -51,7 +51,7 @@ from handlers.quiz import (
 from handlers.search import (
     search_command, search_callback, enhanced_text_search_handler
 )
-
+from handlers.search import search_command, search_callback, back_callback, noop
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
