@@ -9,7 +9,7 @@ from thefuzz import fuzz
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
-MIN_FUZZY_SCORE = 40
+MIN_FUZZY_SCORE = 30
 
 
 class SmartSearch:
@@ -17,17 +17,14 @@ class SmartSearch:
         self.db_path = db_path
     
     def _get_context(self, text: str, keyword: str, context_chars: int = 60) -> str:
-        """پیدا کردن کلمه جستجو شده در متن و برگرداندن چند کلمه قبل و بعد"""
         if not text:
             return ""
         
         keyword_lower = keyword.lower()
         text_lower = text.lower()
         
-        # پیدا کردن موقعیت کلمه
         pos = text_lower.find(keyword_lower)
         if pos == -1:
-            # اگر دقیقاً پیدا نشد، جستجوی جزئی
             for word in keyword.split():
                 if len(word) > 2:
                     pos = text_lower.find(word.lower())
@@ -37,7 +34,6 @@ class SmartSearch:
         if pos == -1:
             return text[:200] + "..."
         
-        # پیدا کردن شروع و پایان
         start = max(0, pos - context_chars)
         end = min(len(text), pos + len(keyword) + context_chars)
         
@@ -51,7 +47,6 @@ class SmartSearch:
         
         snippet = text[start:end].strip()
         
-        # هایلایت کردن کلمه جستجو شده
         for word in keyword.split():
             if len(word) > 2:
                 pattern = re.compile(re.escape(word), re.IGNORECASE)
@@ -77,7 +72,6 @@ class SmartSearch:
         results = [dict(row) for row in rows]
         conn.close()
         
-        # اگر نتیجه کم بود، جستجوی فازی
         if len(results) < 5:
             fuzzy_results = self._fuzzy_search_hadiths(q)
             existing = {r["id"] for r in results}
@@ -85,7 +79,6 @@ class SmartSearch:
                 if item["id"] not in existing:
                     results.append(item)
         
-        # اضافه کردن snippet و آدرس
         for item in results:
             if item.get("translation_text"):
                 item["snippet"] = self._get_context(item["translation_text"], q)
@@ -302,7 +295,6 @@ def make_id(q: str) -> str:
 
 
 def format_result_summary(item: Dict, cat: str, index: int) -> str:
-    """نمایش خلاصه نتیجه با قطعه و آدرس"""
     emojis = {"hadiths": "📿", "mafatih": "📗", "nahj": "🕌"}
     emoji = emojis.get(cat, "🔍")
     
@@ -322,7 +314,7 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
             text += f"📍 {item['address']}\n"
         return text
     
-    else:  # nahj
+    else:
         text = f"{emoji} **{item.get('address', 'نهج‌البلاغه')}**\n"
         if item.get("snippet"):
             text += f"📝 {item['snippet']}\n"
@@ -330,7 +322,6 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
 
 
 def format_full_item(item: Dict, cat: str) -> str:
-    """نمایش متن کامل"""
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -355,7 +346,7 @@ def format_full_item(item: Dict, cat: str) -> str:
             text += f"📍 {item['address']}"
         return text
     
-    else:  # nahj
+    else:
         cat_name = {
             "khutbah": "خطبه",
             "letter": "نامه",
@@ -384,7 +375,6 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
         )
         return
     
-    # بررسی اگر فرمت آیه بود
     if ":" in query and query.replace(":", "").isdigit():
         try:
             from services.quran_api import get_ayah
@@ -408,11 +398,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
     sid = make_id(query)
     SEARCH_CACHE[sid] = results
     
+    # همچنین برای هر آیتم جداگانه کش کن
+    for cat, items in results.items():
+        for i, item in enumerate(items):
+            item_id = f"{sid}_{cat}_{item.get('id', i)}"
+            SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
+    
     text = f"🔍 **نتایج جستجوی «{query}»**\n"
     text += f"📊 **{total}** نتیجه یافت شد:\n\n"
     
     buttons = []
-    
     for cat, items in results.items():
         if items:
             label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج‌البلاغه"}.get(cat, cat)
@@ -463,6 +458,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for i, item in enumerate(page_items, 1):
         item_id = f"{sid}_{cat}_{item.get('id', i)}"
+        # اطمینان از ذخیره در کش
         SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
@@ -494,15 +490,26 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش متن کامل یک نتیجه"""
     q = update.callback_query
     await q.answer()
     
-    item_id = q.data.split("_")[1]
+    parts = q.data.split("_")
+    if len(parts) < 2:
+        await q.edit_message_text("❌ خطا در شناسایی مورد.")
+        return
+    
+    item_id = parts[1]
     cached = SEARCH_CACHE.get(f"item_{item_id}")
     
     if not cached:
-        await q.edit_message_text("🔍 محتوای این مورد منقضی شده است.")
+        # تلاش برای پیدا کردن دوباره
+        await q.edit_message_text(
+            "🔍 محتوای این مورد منقضی شده است.\n"
+            "لطفاً دوباره جستجو کنید.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="menu_search")
+            ]])
+        )
         return
     
     item = cached["item"]
@@ -515,23 +522,23 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ]]
     
     if len(text) > 4000:
-        parts = []
+        parts_text = []
         current = ""
         for line in text.split("\n"):
             if len(current) + len(line) > 3500:
-                parts.append(current)
+                parts_text.append(current)
                 current = line + "\n"
             else:
                 current += line + "\n"
         if current:
-            parts.append(current)
+            parts_text.append(current)
         
         await q.edit_message_text(
-            parts[0][:4000],
+            parts_text[0][:4000],
             reply_markup=InlineKeyboardMarkup(buttons),
             parse_mode="Markdown"
         )
-        for part in parts[1:]:
+        for part in parts_text[1:]:
             await q.message.reply_text(part[:4000], parse_mode="Markdown")
     else:
         await q.edit_message_text(
@@ -549,7 +556,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = SEARCH_CACHE.get(sid)
     
     if not results:
-        await q.edit_message_text("🔍 نتایج منقضی شد.")
+        await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
         return
     
     total = sum(len(x) for x in results.values())
