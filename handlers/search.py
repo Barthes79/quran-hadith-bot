@@ -4,17 +4,19 @@ import re
 from typing import List, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from thefuzz import fuzz
 
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
+MIN_FUZZY_SCORE = 40
 
 
 class SmartSearch:
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
     
-    def _get_context(self, text: str, keyword: str, context_chars: int = 50) -> str:
+    def _get_context(self, text: str, keyword: str, context_chars: int = 60) -> str:
         """پیدا کردن کلمه جستجو شده در متن و برگرداندن چند کلمه قبل و بعد"""
         if not text:
             return ""
@@ -27,19 +29,18 @@ class SmartSearch:
         if pos == -1:
             # اگر دقیقاً پیدا نشد، جستجوی جزئی
             for word in keyword.split():
-                pos = text_lower.find(word.lower())
-                if pos != -1:
-                    break
+                if len(word) > 2:
+                    pos = text_lower.find(word.lower())
+                    if pos != -1:
+                        break
         
         if pos == -1:
-            # اگر هیچ‌کدام پیدا نشد، ۲۰۰ کاراکتر اول رو نشون بده
             return text[:200] + "..."
         
-        # پیدا کردن شروع و پایان جمله
+        # پیدا کردن شروع و پایان
         start = max(0, pos - context_chars)
         end = min(len(text), pos + len(keyword) + context_chars)
         
-        # پیدا کردن مرز جمله (نقطه، خط جدید یا فضای خالی)
         while start > 0 and text[start] not in ".،\n":
             start -= 1
         if start > 0:
@@ -67,25 +68,32 @@ class SmartSearch:
             SELECT * FROM hadiths 
             WHERE translation_text LIKE ? 
             OR arabic_text LIKE ? 
+            OR tafsir_text LIKE ?
             OR narrator LIKE ? 
             OR source_book LIKE ?
             ORDER BY id
-        """, (like, like, like, like)).fetchall()
+        """, (like, like, like, like, like)).fetchall()
         
-        results = []
-        for row in rows:
-            item = dict(row)
-            # پیدا کردن قطعه از متن ترجمه
+        results = [dict(row) for row in rows]
+        conn.close()
+        
+        # اگر نتیجه کم بود، جستجوی فازی
+        if len(results) < 5:
+            fuzzy_results = self._fuzzy_search_hadiths(q)
+            existing = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing:
+                    results.append(item)
+        
+        # اضافه کردن snippet و آدرس
+        for item in results:
             if item.get("translation_text"):
-                snippet = self._get_context(item["translation_text"], q)
-                item["snippet"] = snippet
+                item["snippet"] = self._get_context(item["translation_text"], q)
             elif item.get("arabic_text"):
-                snippet = self._get_context(item["arabic_text"], q)
-                item["snippet"] = snippet
+                item["snippet"] = self._get_context(item["arabic_text"], q)
             else:
                 item["snippet"] = "متن موجود نیست"
             
-            # تعیین آدرس دقیق
             address = ""
             if item.get("source_book"):
                 address += f"📚 {item['source_book']}"
@@ -96,41 +104,73 @@ class SmartSearch:
             if item.get("narrator"):
                 address += f"\n👤 راوی: {item['narrator']}"
             item["address"] = address or "حدیث"
-            
-            results.append(item)
         
-        conn.close()
         return results
+    
+    def _fuzzy_search_hadiths(self, q: str) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        all_items = conn.execute("SELECT * FROM hadiths").fetchall()
+        conn.close()
+        
+        q_lower = q.lower()
+        scored = []
+        for item in all_items:
+            item = dict(item)
+            best = 0
+            for field in ["translation_text", "arabic_text", "tafsir_text", "narrator", "source_book"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q_lower, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
+        
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored]
     
     def search_mafatih(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
         
+        # جستجو در همه فیلدها
         rows = conn.execute("""
             SELECT * FROM mafatih 
             WHERE title LIKE ? 
             OR arabic_text LIKE ? 
             OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
             ORDER BY id
-        """, (like, like, like)).fetchall()
+        """, (like, like, like, like, like)).fetchall()
         
-        results = []
-        for row in rows:
-            item = dict(row)
-            # پیدا کردن قطعه
+        results = [dict(row) for row in rows]
+        conn.close()
+        
+        # اگر نتیجه کم بود، جستجوی فازی
+        if len(results) < 5:
+            fuzzy_results = self._fuzzy_search_mafatih(q)
+            existing = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing:
+                    results.append(item)
+        
+        # اضافه کردن snippet و آدرس
+        for item in results:
             snippet = ""
             if item.get("translation_text"):
                 snippet = self._get_context(item["translation_text"], q)
             elif item.get("arabic_text"):
                 snippet = self._get_context(item["arabic_text"], q)
+            elif item.get("title"):
+                snippet = f"📗 {item['title']}"
             
             if not snippet:
-                snippet = f"📗 {item.get('title', 'دعا')}"
+                snippet = item.get("title", "دعا")
             
             item["snippet"] = snippet
             
-            # آدرس دقیق
             cat_names = {
                 "daily": "اعمال روزانه",
                 "weekly": "اعمال هفتگی", 
@@ -141,11 +181,30 @@ class SmartSearch:
             }
             category = cat_names.get(item.get("category", ""), item.get("category", ""))
             item["address"] = f"📂 {category} - {item.get('title', 'دعا')}"
-            
-            results.append(item)
         
-        conn.close()
         return results
+    
+    def _fuzzy_search_mafatih(self, q: str) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        all_items = conn.execute("SELECT * FROM mafatih").fetchall()
+        conn.close()
+        
+        q_lower = q.lower()
+        scored = []
+        for item in all_items:
+            item = dict(item)
+            best = 0
+            for field in ["title", "translation_text", "arabic_text", "tafsir_text"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q_lower, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
+        
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored]
     
     def search_nahj(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
@@ -157,27 +216,35 @@ class SmartSearch:
             WHERE title LIKE ? 
             OR arabic_text LIKE ? 
             OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
             ORDER BY category, number
-        """, (like, like, like)).fetchall()
+        """, (like, like, like, like, like)).fetchall()
         
-        results = []
-        for row in rows:
-            item = dict(row)
-            # پیدا کردن قطعه
+        results = [dict(row) for row in rows]
+        conn.close()
+        
+        if len(results) < 5:
+            fuzzy_results = self._fuzzy_search_nahj(q)
+            existing = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing:
+                    results.append(item)
+        
+        for item in results:
             snippet = ""
             if item.get("translation_text"):
                 snippet = self._get_context(item["translation_text"], q)
             elif item.get("arabic_text"):
                 snippet = self._get_context(item["arabic_text"], q)
-            
-            if not snippet and item.get("title"):
+            elif item.get("title"):
                 snippet = f"📌 {item['title']}"
-            elif not snippet:
+            
+            if not snippet:
                 snippet = "متن موجود نیست"
             
             item["snippet"] = snippet
             
-            # آدرس دقیق
             cat_name = {
                 "khutbah": "خطبه",
                 "letter": "نامه",
@@ -188,11 +255,30 @@ class SmartSearch:
             if item.get("title"):
                 address += f" - {item['title']}"
             item["address"] = address
-            
-            results.append(item)
         
-        conn.close()
         return results
+    
+    def _fuzzy_search_nahj(self, q: str) -> List[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        all_items = conn.execute("SELECT * FROM nahj_balagha").fetchall()
+        conn.close()
+        
+        q_lower = q.lower()
+        scored = []
+        for item in all_items:
+            item = dict(item)
+            best = 0
+            for field in ["title", "translation_text", "arabic_text", "tafsir_text"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q_lower, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
+        
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored]
     
     def search_all(self, q: str) -> Dict:
         return {
@@ -365,7 +451,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("موردی یافت نشد.")
         return
     
-    # ۵ نتیجه در هر صفحه با خلاصه
     per_page = 5
     start = page * per_page
     page_items = items[start:start + per_page]
@@ -375,10 +460,8 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"🔍 **نتایج {label}** (صفحه {page+1} از {total_pages})\n"
     text += f"📊 {len(items)} مورد یافت شد\n\n"
     
-    # نمایش خلاصه هر نتیجه با دکمه مشاهده کامل
     buttons = []
     for i, item in enumerate(page_items, 1):
-        # ذخیره آیتم در کش با شناسه یکتا
         item_id = f"{sid}_{cat}_{item.get('id', i)}"
         SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
         
@@ -391,7 +474,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         text += "─" * 30 + "\n"
     
-    # دکمه‌های صفحه‌بندی
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"s_{sid}_{cat}_{page-1}"))
@@ -428,12 +510,10 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     text = format_full_item(item, cat)
     
-    # دکمه برگشت
     buttons = [[
         InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{item_id.split('_')[0]}")
     ]]
     
-    # اگر متن طولانی بود، به چند پیام تقسیم کن
     if len(text) > 4000:
         parts = []
         current = ""
