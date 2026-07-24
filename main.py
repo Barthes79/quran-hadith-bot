@@ -75,13 +75,23 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر متنی - فقط در چت خصوصی"""
-    if update.effective_chat.type != "private":
-        return
-    
+    """
+    هندلر پیام‌های متنی - هم در چت خصوصی و هم در گروه
+    """
     text = update.message.text.strip()
     if not text:
         return
+    
+    # اگر دستور بود، نادیده بگیر
+    if text.startswith('/'):
+        return
+    
+    # اگر در گروه بود و پیام به ربات اشاره نداشت، نادیده بگیر (اختیاری)
+    # اگر میخواید ربات به همه پیام‌های گروه پاسخ بده، این بخش رو کامنت کنید
+    # if update.effective_chat.type != "private":
+    #     bot_username = (await context.bot.get_me()).username
+    #     if f"@{bot_username}" not in text:
+    #         return
     
     # اول بررسی کن اگر آیه بود
     handled = await ayah_direct_lookup(update, context, text)
@@ -89,7 +99,7 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     # در غیراینصورت جستجو
-    await search_command(update, context, text)
+    await enhanced_text_search_handler(update, context, text)
 
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
