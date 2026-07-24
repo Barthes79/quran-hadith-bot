@@ -1,5 +1,6 @@
 import sqlite3
 from config import DATABASE_PATH
+from text_utils import normalize_for_search
 
 
 def get_connection():
@@ -163,8 +164,265 @@ def init_db():
 
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mafatih_slug ON mafatih(slug)")
 
+    # ---------------------------------------------------------------
+    # موتور جستجوی یکپارچه (حدیث + نهج‌البلاغه + مفاتیح‌الجنان)
+    # از FTS5 استفاده می‌کنیم چون نسبت به LIKE هم بسیار سریع‌تر است
+    # (index-based) و هم امکان رتبه‌بندی نتایج (bm25) و جستجوی
+    # پیشوندی/چندکلمه‌ای را می‌دهد. متن قبل از ایندکس شدن با
+    # normalize_for_search پاک‌سازی می‌شود تا اختلاف عربی/فارسی و
+    # اعراب باعث پیدا نشدن نتیجه‌ی درست نشود.
+    # ---------------------------------------------------------------
+    cur.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+            source_type UNINDEXED,
+            source_id UNINDEXED,
+            content
+        )
+    """)
+
     conn.commit()
     conn.close()
+
+
+# =====================================================================
+# موتور جستجوی یکپارچه — توابع داخلی برای هم‌گام نگه‌داشتن ایندکس FTS
+# =====================================================================
+
+def _index_item(source_type: str, source_id: int, text_parts):
+    """محتوای یک آیتم (حدیث/نهج/مفاتیح) را نرمال‌سازی کرده و در ایندکس جستجو ثبت/به‌روزرسانی می‌کند."""
+    content = normalize_for_search(" \n ".join(str(p) for p in text_parts if p))
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
+        (source_type, source_id),
+    )
+    if content.strip():
+        conn.execute(
+            "INSERT INTO search_fts (source_type, source_id, content) VALUES (?, ?, ?)",
+            (source_type, source_id, content),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _remove_from_index(source_type: str, source_id: int):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
+        (source_type, source_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _reindex_hadith(hadith_id: int):
+    row = get_hadith_by_id(hadith_id)
+    if not row:
+        _remove_from_index("hadith", hadith_id)
+        return
+    topics = get_hadith_topics(hadith_id)
+    _index_item(
+        "hadith",
+        hadith_id,
+        [
+            row["arabic_text"], row["translation_text"], row["tafsir_text"],
+            row["narrator"], row["source_book"], row["chapter"], row["hadith_number"],
+        ] + topics,
+    )
+
+
+def _reindex_nahj(category: str, number: int):
+    row = get_nahj_item(category, number)
+    if not row:
+        return
+    _index_item(
+        "nahj",
+        row["id"],
+        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
+    )
+
+
+def _reindex_mafatih(item_id: int):
+    row = get_mafatih_by_id(item_id)
+    if not row:
+        _remove_from_index("mafatih", item_id)
+        return
+    _index_item(
+        "mafatih",
+        item_id,
+        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
+    )
+
+
+def rebuild_search_index():
+    """بازسازی کامل ایندکس جستجو از روی ۳ جدول اصلی. برای اجرای یک‌بارهٔ اولیه
+    (یا وقتی داده‌ای مستقیم/دستی در دیتابیس تغییر کرده) استفاده کنید."""
+    conn = get_connection()
+    conn.execute("DELETE FROM search_fts")
+    conn.commit()
+    conn.close()
+
+    conn = get_connection()
+    hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
+    nahj_rows = conn.execute("SELECT * FROM nahj_balagha").fetchall()
+    maf_rows = conn.execute("SELECT * FROM mafatih").fetchall()
+    conn.close()
+
+    for h in hadiths:
+        topics = get_hadith_topics(h["id"])
+        _index_item(
+            "hadith", h["id"],
+            [h["arabic_text"], h["translation_text"], h["tafsir_text"],
+             h["narrator"], h["source_book"], h["chapter"], h["hadith_number"]] + topics,
+        )
+    for n in nahj_rows:
+        _index_item("nahj", n["id"], [n["title"], n["arabic_text"], n["translation_text"], n["tafsir_text"]])
+    for m in maf_rows:
+        _index_item("mafatih", m["id"], [m["title"], m["arabic_text"], m["translation_text"], m["tafsir_text"]])
+
+    print(f"✅ ایندکس جستجو بازسازی شد: {len(hadiths)} حدیث، {len(nahj_rows)} نهج‌البلاغه، {len(maf_rows)} مفاتیح.")
+
+
+def ensure_search_index():
+    """اگر ایندکس خالی است (اولین اجرا بعد از این آپدیت، یا دیتابیس تازه)، یک‌بار می‌سازدش.
+    بعد از آن، ایندکس با هر add/update به‌صورت خودکار هم‌گام نگه داشته می‌شود."""
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) AS c FROM search_fts").fetchone()["c"]
+    conn.close()
+    if count == 0:
+        rebuild_search_index()
+
+
+def _fts_query(match_expr: str, types=None, limit: int = 15):
+    conn = get_connection()
+    sql = "SELECT source_type, source_id, bm25(search_fts) AS rank FROM search_fts WHERE search_fts MATCH ?"
+    params = [match_expr]
+    if types:
+        placeholders = ", ".join("?" for _ in types)
+        sql += f" AND source_type IN ({placeholders})"
+        params.extend(types)
+    sql += " ORDER BY rank LIMIT ?"
+    params.append(limit)
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return rows
+
+
+def _fuzzy_fallback(norm_query: str, types=None, limit: int = 15):
+    """وقتی FTS هیچ نتیجه‌ای پیدا نکرد (مثلاً به‌خاطر غلط تایپی)، با تطبیق فازی
+    (rapidfuzz) بین عبارت کاربر و کل محتوای ایندکس‌شده نزدیک‌ترین‌ها را برمی‌گرداند."""
+    try:
+        from rapidfuzz import process, fuzz
+    except ImportError:
+        return []
+
+    conn = get_connection()
+    sql = "SELECT source_type, source_id, content FROM search_fts"
+    params = []
+    if types:
+        placeholders = ", ".join("?" for _ in types)
+        sql += f" WHERE source_type IN ({placeholders})"
+        params.extend(types)
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    if not rows:
+        return []
+
+    choices = {i: r["content"] for i, r in enumerate(rows)}
+    # از partial_ratio استفاده می‌کنیم چون معمولاً عبارت جستجو خیلی کوتاه‌تر از
+    # متن کامل حدیث/دعا است؛ token_set_ratio در این حالت امتیاز واقعی را کم نشان می‌دهد
+    matches = process.extract(
+        norm_query, choices, scorer=fuzz.partial_ratio, limit=limit, score_cutoff=78
+    )
+    results = []
+    for _, _score, idx in matches:
+        r = rows[idx]
+        results.append({"source_type": r["source_type"], "source_id": r["source_id"]})
+    return results
+
+
+def _hydrate_results(raw_results):
+    """نتایج خام (source_type/source_id) را به داده‌ی کامل و آماده‌ی نمایش تبدیل می‌کند."""
+    hydrated = []
+    seen = set()
+    for r in raw_results:
+        key = (r["source_type"], r["source_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+
+        stype, sid = r["source_type"], r["source_id"]
+        if stype == "hadith":
+            row = get_hadith_by_id(sid)
+            if not row:
+                continue
+            hydrated.append({
+                "type": "hadith", "id": sid, "row": row,
+                "title": row["narrator"] or "حدیث",
+                "arabic": row["arabic_text"], "translation": row["translation_text"],
+                "extra": row["source_book"] or "",
+            })
+        elif stype == "nahj":
+            row = get_nahj_item_by_id(sid)
+            if not row:
+                continue
+            hydrated.append({
+                "type": "nahj", "id": sid, "row": row,
+                "title": row["title"] or "",
+                "arabic": row["arabic_text"], "translation": row["translation_text"],
+                "extra": {"category": row["category"], "number": row["number"]},
+            })
+        elif stype == "mafatih":
+            row = get_mafatih_by_id(sid)
+            if not row:
+                continue
+            hydrated.append({
+                "type": "mafatih", "id": sid, "row": row,
+                "title": row["title"] or "",
+                "arabic": row["arabic_text"], "translation": row["translation_text"] or "",
+                "extra": row["category"] or "",
+            })
+    return hydrated
+
+
+def search_all(query: str, limit: int = 15, types=None):
+    """
+    جستجوی یکپارچه روی حدیث/نهج‌البلاغه/مفاتیح.
+    types: تاپل اختیاری برای محدود کردن به یک یا چند نوع، مثلاً ("hadith",)
+    خروجی: لیستی از دیکشنری‌های آماده‌ی نمایش (به ترتیب ارتباط/رتبه).
+    """
+    norm_q = normalize_for_search(query)
+    tokens = [t for t in norm_q.split() if t]
+    if not tokens:
+        return []
+
+    rows = []
+
+    # ۱) عبارت دقیق (برای عبارت‌های چندکلمه‌ای، بیشترین دقت)
+    if len(tokens) > 1:
+        phrase = '"' + " ".join(tokens) + '"'
+        rows = _fts_query(phrase, types=types, limit=limit)
+
+    # ۲) همه‌ی کلمات باید باشند (پیشوندی) — خوب برای عبارت‌های چندکلمه‌ای که ترتیب دقیق ندارند
+    if not rows and len(tokens) > 1:
+        and_expr = " AND ".join(f"{t}*" for t in tokens)
+        rows = _fts_query(and_expr, types=types, limit=limit)
+
+    # ۳) حداقل یکی از کلمات (پیشوندی) — همچنین مسیر اصلی برای عبارت تک‌کلمه‌ای
+    if not rows:
+        or_expr = " OR ".join(f"{t}*" for t in tokens)
+        rows = _fts_query(or_expr, types=types, limit=limit)
+
+    results = [{"source_type": r["source_type"], "source_id": r["source_id"]} for r in rows]
+
+    # ۴) اگر همچنان چیزی پیدا نشد (مثلاً غلط تایپی)، سراغ تطبیق فازی می‌رویم
+    if not results:
+        results = _fuzzy_fallback(norm_q, types=types, limit=limit)
+
+    return _hydrate_results(results)
 
 
 def get_user_translation(user_id: int) -> str:
@@ -236,6 +494,7 @@ def add_hadith(arabic_text, translation_text, narrator, source_book, chapter,
             )
     conn.commit()
     conn.close()
+    _reindex_hadith(hadith_id)
     return hadith_id
 
 
@@ -246,6 +505,15 @@ def get_hadith_by_id(hadith_id: int):
     return row
 
 
+def get_hadith_topics(hadith_id: int):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT topic_name FROM hadith_topics WHERE hadith_id = ?", (hadith_id,)
+    ).fetchall()
+    conn.close()
+    return [r["topic_name"] for r in rows]
+
+
 def update_hadith_tafsir(hadith_id: int, tafsir_text: str):
     conn = get_connection()
     conn.execute(
@@ -253,6 +521,7 @@ def update_hadith_tafsir(hadith_id: int, tafsir_text: str):
     )
     conn.commit()
     conn.close()
+    _reindex_hadith(hadith_id)
 
 
 def update_hadith(hadith_id: int, arabic_text=None, translation_text=None,
@@ -279,6 +548,7 @@ def update_hadith(hadith_id: int, arabic_text=None, translation_text=None,
     )
     conn.commit()
     conn.close()
+    _reindex_hadith(hadith_id)
 
 
 def set_hadith_topics(hadith_id: int, topics):
@@ -293,6 +563,7 @@ def set_hadith_topics(hadith_id: int, topics):
             )
     conn.commit()
     conn.close()
+    _reindex_hadith(hadith_id)
 
 
 def delete_hadith(hadith_id: int):
@@ -305,6 +576,7 @@ def delete_hadith(hadith_id: int):
     conn.execute("DELETE FROM hadiths WHERE id = ?", (hadith_id,))
     conn.commit()
     conn.close()
+    _remove_from_index("hadith", hadith_id)
 
 
 def list_hadiths(source_book: str = None, narrator: str = None,
@@ -361,15 +633,12 @@ def get_random_hadith():
     return row
 
 
-def search_hadiths(query: str):
-    conn = get_connection()
-    like = f"%{query}%"
-    rows = conn.execute(
-        "SELECT * FROM hadiths WHERE translation_text LIKE ? OR arabic_text LIKE ? LIMIT 20",
-        (like, like),
-    ).fetchall()
-    conn.close()
-    return rows
+def search_hadiths(query: str, limit: int = 20):
+    """جستجوی احادیث با موتور یکپارچه (نرمال‌سازی عربی/فارسی + FTS + فال‌بک فازی).
+    برای سازگاری با کدهای قبلی (findhadith، چت خصوصی و...) خروجی همچنان
+    لیستی از ردیف‌های خام جدول hadiths است."""
+    results = search_all(query, limit=limit, types=("hadith",))
+    return [r["row"] for r in results]
 
 
 def get_group_settings(chat_id: int):
@@ -500,6 +769,7 @@ def add_nahj_item(category: str, number: int, arabic_text: str, translation_text
     )
     conn.commit()
     conn.close()
+    _reindex_nahj(category, number)
 
 
 def get_nahj_item(category: str, number: int):
@@ -507,6 +777,13 @@ def get_nahj_item(category: str, number: int):
     row = conn.execute(
         "SELECT * FROM nahj_balagha WHERE category = ? AND number = ?", (category, number)
     ).fetchone()
+    conn.close()
+    return row
+
+
+def get_nahj_item_by_id(item_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM nahj_balagha WHERE id = ?", (item_id,)).fetchone()
     conn.close()
     return row
 
@@ -528,6 +805,7 @@ def update_nahj_tafsir(category: str, number: int, tafsir_text: str):
     )
     conn.commit()
     conn.close()
+    _reindex_nahj(category, number)
 
 
 # ---------------- توابع مربوط به مفاتیح‌الجنان ----------------
@@ -568,6 +846,7 @@ def add_mafatih_item(category: str, title: str, arabic_text: str = "",
         item_id = cur.lastrowid
         conn.commit()
     conn.close()
+    _reindex_mafatih(item_id)
     return item_id
 
 
@@ -619,6 +898,7 @@ def update_mafatih_tafsir(item_id: int, tafsir_text: str):
     )
     conn.commit()
     conn.close()
+    _reindex_mafatih(item_id)
 
 
 def update_mafatih_image(item_id: int, image_path: str):
@@ -637,6 +917,7 @@ def update_mafatih_translation(item_id: int, translation_text: str):
     )
     conn.commit()
     conn.close()
+    _reindex_mafatih(item_id)
 
 
 # ===== User profile helpers =====
@@ -660,35 +941,3 @@ def get_user_stats(user_id: int):
     ).fetchone()["s"]
     conn.close()
     return {"favorites": favorites, "score": quizzes}
-# اضافه کردن به انتهای فایل database.py
-
-def search_mafatih(query: str, limit: int = 20):
-    """جستجوی ساده در مفاتیح (برای سازگاری)"""
-    conn = get_connection()
-    like = f"%{query}%"
-    rows = conn.execute(
-        """SELECT * FROM mafatih 
-           WHERE title LIKE ? 
-           OR arabic_text LIKE ? 
-           OR translation_text LIKE ?
-           LIMIT ?""",
-        (like, like, like, limit)
-    ).fetchall()
-    conn.close()
-    return rows
-
-
-def search_nahj(query: str, limit: int = 20):
-    """جستجوی ساده در نهج‌البلاغه (برای سازگاری)"""
-    conn = get_connection()
-    like = f"%{query}%"
-    rows = conn.execute(
-        """SELECT * FROM nahj_balagha 
-           WHERE title LIKE ? 
-           OR arabic_text LIKE ? 
-           OR translation_text LIKE ?
-           LIMIT ?""",
-        (like, like, like, limit)
-    ).fetchall()
-    conn.close()
-    return rows

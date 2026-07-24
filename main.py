@@ -7,7 +7,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 
 from config import BOT_TOKEN, PROXY_URL
-from database import init_db
+from database import init_db, ensure_search_index
 
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
 from handlers.quran import (
@@ -36,6 +36,7 @@ from handlers.nahj import (
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
     nahj_text_page_callback,
 )
+# توابع مفاتیح الجنان به همراه هندلر متنی و هندلر فایل صوتی اضافه شد
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
     mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
@@ -48,10 +49,6 @@ from handlers.admin import (
 from handlers.quiz import (
     quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
 )
-from handlers.search import (
-    search_command, search_callback, back_callback, 
-    view_full_callback, enhanced_text_search_handler
-)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -61,102 +58,57 @@ logger = logging.getLogger(__name__)
 
 
 async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """وقتی ربات به یک گروه جدید اضافه می‌شود، پیام معرفی بفرستد."""
     for member in update.message.new_chat_members:
         if member.id == context.bot.id:
             await update.message.reply_text(
                 "سلام 🌙\n"
                 "از اضافه کردن من به این گروه خوشحالم!\n\n"
+                "برای دیدن قابلیت‌های گروهی از دستور /groupsettings استفاده کنید "
+                "(فقط ادمین‌ها).\n"
                 "برای جستجوی سریع، کافیست بنویسید:\n"
-                "• `@نام_ربات حدیث صبر`\n"
-                "• `@نام_ربات مفاتیح مشلول`\n"
-                "• `@نام_ربات نهج البلاغه خطبه 191`\n"
-                "• `@نام_ربات صبر` (جستجوی عمومی)\n\n"
-                "همچنین می‌توانید در چت خصوصی من /start را بزنید.",
+                "`@نام_ربات صبر` یا `@نام_ربات 2:255`\n\n"
+                "همچنین می‌توانید در چت خصوصی من /start را بزنید تا از منوی کامل استفاده کنید.",
                 parse_mode="Markdown",
             )
 
-
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر پیام‌های متنی - هم در چت خصوصی و هم در گروه"""
-    text = update.message.text.strip()
-    if not text:
-        return
-    
-    if text.startswith('/'):
-        return
-    
-    # در گروه
+    """
+    در چت خصوصی، هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه
+    (مثل 2:255) و در غیر این‌صورت به‌عنوان عبارت جستجوی حدیث بررسی می‌شود.
+    در گروه‌ها فقط به دستورات صریح پاسخ می‌دهیم تا اسپم نشود.
+    """
     if update.effective_chat.type != "private":
-        bot_username = (await context.bot.get_me()).username
-        
-        logger.info(f"🔍 Group message: '{text}'")
-        logger.info(f"🤖 Bot username: @{bot_username}")
-        
-        # روش تشخیص منشن با استفاده از entities تلگرام
-        has_mention = False
-        clean_text = text
-        
-        # چک کردن entities برای منشن
-        if update.message.entities:
-            for entity in update.message.entities:
-                if entity.type == "mention":
-                    # استخراج متن منشن شده
-                    mention_text = text[entity.offset:entity.offset + entity.length]
-                    logger.info(f"📌 Mention found: '{mention_text}'")
-                    if mention_text.lower() == f"@{bot_username}".lower():
-                        has_mention = True
-                        # حذف منشن از متن
-                        clean_text = text[:entity.offset] + text[entity.offset + entity.length:]
-                        clean_text = clean_text.strip()
-                        break
-        
-        # اگر entity پیدا نشد، با روش قبلی چک کن
-        if not has_mention:
-            mention1 = f"@{bot_username}"
-            mention2 = f"@{bot_username.lower()}"
-            mention3 = f"@{bot_username.upper()}"
-            
-            for mention in [mention1, mention2, mention3]:
-                if mention in text:
-                    has_mention = True
-                    clean_text = text.replace(mention, "").strip()
-                    break
-        
-        if not has_mention:
-            logger.info(f"⏭️ No mention found in: '{text}'")
-            return
-        
-        if not clean_text:
-            await update.message.reply_text(
-                f"🔍 لطفاً عبارت جستجو را بعد از منشن وارد کنید.\n"
-                f"مثال: `@{bot_username} حدیث صبر`"
-            )
-            return
-        
-        logger.info(f"✅ Clean text: '{clean_text}'")
-        
-        # جستجو در همه بخش‌ها
-        await search_command(update, context, clean_text)
-        return
-    
-    # در چت خصوصی: جستجوی عمومی
-    await search_command(update, context, text)
+        return  # در گروه فقط دستورات/inline کار می‌کند
 
+    text = update.message.text.strip()
+    handled = await ayah_direct_lookup(update, context, text)
+    if not handled:
+        await text_search_handler(update, context, text)
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد"""
     if not update.message:
         return
+
     if update.message.audio:
         await update.message.reply_text(f"🎧 *Audio file_id:*\n`{update.message.audio.file_id}`", parse_mode="Markdown")
     elif update.message.voice:
         await update.message.reply_text(f"🎤 *Voice file_id:*\n`{update.message.voice.file_id}`", parse_mode="Markdown")
-
+    elif update.message.document:
+        await update.message.reply_text(f"📄 *Document file_id:*\n`{update.message.document.file_id}`", parse_mode="Markdown")
+    elif update.message.video:
+        await update.message.reply_text(f"📹 *Video file_id:*\n`{update.message.video.file_id}`", parse_mode="Markdown")
 
 def main():
     init_db()
+    ensure_search_index()  # ایندکس جستجو را (فقط اولین بار) می‌سازد؛ بعد از آن خودکار هم‌گام می‌ماند
 
     builder = Application.builder().token(BOT_TOKEN)
 
+    # پیش‌فرض کتابخانه برای هر درخواست فقط ۵ ثانیه فرصت می‌دهد؛ برای آپلود
+    # عکس (به‌خصوص وقتی از پروکسی رد می‌شود) این زمان کم است و باعث خطای
+    # TimedOut و نمایش‌نشدن گاه‌به‌گاه عکس‌ها می‌شود. این مقادیر را بالا می‌بریم.
     default_request = HTTPXRequest(
         connect_timeout=15,
         read_timeout=30,
@@ -185,9 +137,13 @@ def main():
 
     # دستورات
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
+    app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
+    app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
+    app.add_handler(CallbackQueryHandler(favorites_nahj_callback, pattern="^favorites_nahj$"))
+    app.add_handler(CallbackQueryHandler(favorites_mafatih_callback, pattern="^favorites_mafatih$"))
+    app.add_handler(CallbackQueryHandler(favorites_back_callback, pattern="^favorites_back$"))
     app.add_handler(CommandHandler("addnahj", add_nahj_command))
     app.add_handler(CommandHandler("addmafatih", add_mafatih_command))
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
@@ -200,24 +156,12 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
+    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 
     # کالبک‌های منو
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
     app.add_handler(CallbackQueryHandler(set_translation_callback, pattern="^set_translation_"))
-
-    # کالبک‌های جستجو
-    app.add_handler(CallbackQueryHandler(search_callback, pattern="^s_"))
-    app.add_handler(CallbackQueryHandler(back_callback, pattern="^sb_"))
-    app.add_handler(CallbackQueryHandler(view_full_callback, pattern="^view_"))
-    app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
-
-    # کالبک‌های علاقه‌مندی‌ها
-    app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
-    app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
-    app.add_handler(CallbackQueryHandler(favorites_nahj_callback, pattern="^favorites_nahj$"))
-    app.add_handler(CallbackQueryHandler(favorites_mafatih_callback, pattern="^favorites_mafatih$"))
-    app.add_handler(CallbackQueryHandler(favorites_back_callback, pattern="^favorites_back$"))
 
     # کالبک‌های قرآن
     app.add_handler(CallbackQueryHandler(surah_page_callback, pattern="^surah_page_"))
@@ -235,7 +179,7 @@ def main():
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))
     app.add_handler(CallbackQueryHandler(fav_hadith_callback, pattern="^fav_hadith_"))
 
-    # کالبک‌های نهج
+    # کالبک‌های نهج‌البلاغه
     app.add_handler(CallbackQueryHandler(nahj_menu_callback, pattern="^nahjmenu$"))
     app.add_handler(CallbackQueryHandler(nahj_category_callback, pattern="^nahjcat_"))
     app.add_handler(CallbackQueryHandler(nahj_page_callback, pattern="^nahjpage_"))
@@ -243,7 +187,7 @@ def main():
     app.add_handler(CallbackQueryHandler(nahj_text_page_callback, pattern="^nahjtxt_"))
     app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
-    # کالبک‌های مفاتیح
+    # کالبک‌های مفاتیح‌الجنان
     app.add_handler(CallbackQueryHandler(mafatih_menu_callback, pattern="^mafmenu$"))
     app.add_handler(CallbackQueryHandler(mafatih_category_callback, pattern="^mafcat_"))
     app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
@@ -252,38 +196,42 @@ def main():
     app.add_handler(CallbackQueryHandler(mafatih_audio_callback, pattern="^mafaudio_"))
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
-    # کالبک‌های کوییز
-    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
-
-    # کالبک‌های گروه
+    # کالبک‌های تنظیمات گروه
     app.add_handler(CallbackQueryHandler(toggle_daily_post_callback, pattern="^toggle_daily_post$"))
     app.add_handler(CallbackQueryHandler(group_send_now_callback, pattern="^group_send_now$"))
     app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
     app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
-    # file_id debug
+    # =========================================================================
+    # دریافت موقت file_id فایل‌های فرستاده‌شده به ربات (پشتیبانی از صوت، داکیومنت و ویدیو)
+    # =========================================================================
     app.add_handler(MessageHandler(
         filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, 
         get_file_id_debug
     ))
 
-    # Inline Mode
+    # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    # عضویت در گروه
+    # عضویت ربات در گروه جدید
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
 
-    # هندلرهای متنی
+    # ==========================================
+    # هندلر پیام‌های متنی (Text Handlers)
+    # ==========================================
+    
+    # ۱. هندلر دکمه متنی مفاتیح الجنان (حتماً باید بالاتر از general_text_handler باشد)
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
+    
+    # ۲. پیام‌های متنی عادی (فقط چت خصوصی)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
 
-    # جاب روزانه
+    # جاب پست روزانه - هر ساعت یکبار چک می‌کند
     if app.job_queue:
         app.job_queue.run_repeating(daily_post_job, interval=3600, first=10)
 
-    logger.info("🚀 Bot started polling...")
+    logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
