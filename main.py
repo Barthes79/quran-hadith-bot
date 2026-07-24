@@ -49,9 +49,10 @@ from handlers.quiz import (
     quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
 )
 
-# ===== اضافه کردن جستجو =====
+# ===== جستجو =====
 from handlers.search import (
-    search_command, search_callback, back_callback, enhanced_text_search_handler
+    search_command, search_callback, back_callback, 
+    view_full_callback, enhanced_text_search_handler
 )
 
 logging.basicConfig(
@@ -74,7 +75,7 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر متنی ساده - فقط در چت خصوصی"""
+    """هندلر متنی - فقط در چت خصوصی"""
     if update.effective_chat.type != "private":
         return
     
@@ -87,7 +88,7 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if handled:
         return
     
-    # در غیر اینصورت جستجو
+    # در غیراینصورت جستجو
     await search_command(update, context, text)
 
 
@@ -133,7 +134,7 @@ def main():
 
     # ===== دستورات =====
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("search", search_command))  # دستور جدید
+    app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CommandHandler("addnahj", add_nahj_command))
@@ -156,8 +157,8 @@ def main():
 
     # ===== کالبک‌های جستجو =====
     app.add_handler(CallbackQueryHandler(search_callback, pattern="^s_"))
-    app.add_handler(CallbackQueryHandler(view_full_callback, pattern="^vi_"))
     app.add_handler(CallbackQueryHandler(back_callback, pattern="^sb_"))
+    app.add_handler(CallbackQueryHandler(view_full_callback, pattern="^vi_"))  # این خط جدید
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
 
     # ===== کالبک‌های علاقه‌مندی‌ها =====
