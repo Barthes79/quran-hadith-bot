@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+import re
 from typing import List, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -13,38 +14,185 @@ class SmartSearch:
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
     
+    def _get_context(self, text: str, keyword: str, context_chars: int = 50) -> str:
+        """پیدا کردن کلمه جستجو شده در متن و برگرداندن چند کلمه قبل و بعد"""
+        if not text:
+            return ""
+        
+        keyword_lower = keyword.lower()
+        text_lower = text.lower()
+        
+        # پیدا کردن موقعیت کلمه
+        pos = text_lower.find(keyword_lower)
+        if pos == -1:
+            # اگر دقیقاً پیدا نشد، جستجوی جزئی
+            for word in keyword.split():
+                pos = text_lower.find(word.lower())
+                if pos != -1:
+                    break
+        
+        if pos == -1:
+            # اگر هیچ‌کدام پیدا نشد، ۲۰۰ کاراکتر اول رو نشون بده
+            return text[:200] + "..."
+        
+        # پیدا کردن شروع و پایان جمله
+        start = max(0, pos - context_chars)
+        end = min(len(text), pos + len(keyword) + context_chars)
+        
+        # پیدا کردن مرز جمله (نقطه، خط جدید یا فضای خالی)
+        while start > 0 and text[start] not in ".،\n":
+            start -= 1
+        if start > 0:
+            start += 1
+        
+        while end < len(text) and text[end] not in ".،\n":
+            end += 1
+        
+        snippet = text[start:end].strip()
+        
+        # هایلایت کردن کلمه جستجو شده
+        for word in keyword.split():
+            if len(word) > 2:
+                pattern = re.compile(re.escape(word), re.IGNORECASE)
+                snippet = pattern.sub(f"**{word}**", snippet)
+        
+        return snippet
+    
     def search_hadiths(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
+        
         rows = conn.execute("""
             SELECT * FROM hadiths 
-            WHERE translation_text LIKE ? OR arabic_text LIKE ? OR narrator LIKE ? OR source_book LIKE ?
+            WHERE translation_text LIKE ? 
+            OR arabic_text LIKE ? 
+            OR narrator LIKE ? 
+            OR source_book LIKE ?
+            ORDER BY id
         """, (like, like, like, like)).fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            # پیدا کردن قطعه از متن ترجمه
+            if item.get("translation_text"):
+                snippet = self._get_context(item["translation_text"], q)
+                item["snippet"] = snippet
+            elif item.get("arabic_text"):
+                snippet = self._get_context(item["arabic_text"], q)
+                item["snippet"] = snippet
+            else:
+                item["snippet"] = "متن موجود نیست"
+            
+            # تعیین آدرس دقیق
+            address = ""
+            if item.get("source_book"):
+                address += f"📚 {item['source_book']}"
+            if item.get("chapter"):
+                address += f" - باب {item['chapter']}"
+            if item.get("hadith_number"):
+                address += f" - حدیث {item['hadith_number']}"
+            if item.get("narrator"):
+                address += f"\n👤 راوی: {item['narrator']}"
+            item["address"] = address or "حدیث"
+            
+            results.append(item)
+        
         conn.close()
-        return [dict(r) for r in rows]
+        return results
     
     def search_mafatih(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
+        
         rows = conn.execute("""
             SELECT * FROM mafatih 
-            WHERE title LIKE ? OR arabic_text LIKE ? OR translation_text LIKE ?
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ? 
+            OR translation_text LIKE ?
+            ORDER BY id
         """, (like, like, like)).fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            # پیدا کردن قطعه
+            snippet = ""
+            if item.get("translation_text"):
+                snippet = self._get_context(item["translation_text"], q)
+            elif item.get("arabic_text"):
+                snippet = self._get_context(item["arabic_text"], q)
+            
+            if not snippet:
+                snippet = f"📗 {item.get('title', 'دعا')}"
+            
+            item["snippet"] = snippet
+            
+            # آدرس دقیق
+            cat_names = {
+                "daily": "اعمال روزانه",
+                "weekly": "اعمال هفتگی", 
+                "monthly": "اعمال ماهانه",
+                "ziyarat": "زیارات",
+                "munajat": "مناجات",
+                "special": "اعمال ویژه"
+            }
+            category = cat_names.get(item.get("category", ""), item.get("category", ""))
+            item["address"] = f"📂 {category} - {item.get('title', 'دعا')}"
+            
+            results.append(item)
+        
         conn.close()
-        return [dict(r) for r in rows]
+        return results
     
     def search_nahj(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
+        
         rows = conn.execute("""
             SELECT * FROM nahj_balagha 
-            WHERE title LIKE ? OR arabic_text LIKE ? OR translation_text LIKE ?
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ? 
+            OR translation_text LIKE ?
+            ORDER BY category, number
         """, (like, like, like)).fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            # پیدا کردن قطعه
+            snippet = ""
+            if item.get("translation_text"):
+                snippet = self._get_context(item["translation_text"], q)
+            elif item.get("arabic_text"):
+                snippet = self._get_context(item["arabic_text"], q)
+            
+            if not snippet and item.get("title"):
+                snippet = f"📌 {item['title']}"
+            elif not snippet:
+                snippet = "متن موجود نیست"
+            
+            item["snippet"] = snippet
+            
+            # آدرس دقیق
+            cat_name = {
+                "khutbah": "خطبه",
+                "letter": "نامه",
+                "hekmat": "حکمت"
+            }.get(item.get("category", ""), "")
+            
+            address = f"🕌 {cat_name} {item.get('number', '')}"
+            if item.get("title"):
+                address += f" - {item['title']}"
+            item["address"] = address
+            
+            results.append(item)
+        
         conn.close()
-        return [dict(r) for r in rows]
+        return results
     
     def search_all(self, q: str) -> Dict:
         return {
@@ -67,49 +215,75 @@ def make_id(q: str) -> str:
     return hashlib.md5(q.encode()).hexdigest()[:6]
 
 
-def fmt_item(item: Dict, cat: str) -> str:
-    """نمایش کامل متن - بدون برش"""
+def format_result_summary(item: Dict, cat: str, index: int) -> str:
+    """نمایش خلاصه نتیجه با قطعه و آدرس"""
+    emojis = {"hadiths": "📿", "mafatih": "📗", "nahj": "🕌"}
+    emoji = emojis.get(cat, "🔍")
+    
     if cat == "hadiths":
-        text = "📿 **حدیث**\n"
-        if item.get("arabic_text"):
-            text += f"📖 {item['arabic_text']}\n\n"  # کامل
-        if item.get("translation_text"):
-            text += f"🔹 {item['translation_text']}\n"  # کامل
-        if item.get("narrator"):
-            text += f"\n👤 راوی: {item['narrator']}"
-        if item.get("source_book"):
-            text += f"\n📚 منبع: {item['source_book']}"
-        if item.get("id"):
-            text += f"\n🆔 شناسه: {item['id']}"
+        text = f"{emoji} **حدیث {index}**\n"
+        if item.get("snippet"):
+            text += f"📝 {item['snippet']}\n"
+        if item.get("address"):
+            text += f"📍 {item['address']}\n"
         return text
     
     elif cat == "mafatih":
-        text = f"📗 **{item.get('title', 'دعا')}**\n"
-        if item.get("arabic_text"):
-            text += f"\n🌿 {item['arabic_text']}\n"  # کامل
-        if item.get("translation_text"):
-            text += f"\n🔹 {item['translation_text']}\n"  # کامل
-        if item.get("category"):
-            cat_names = {
-                "daily": "اعمال روزانه",
-                "weekly": "اعمال هفتگی",
-                "monthly": "اعمال ماهانه",
-                "ziyarat": "زیارات",
-                "munajat": "مناجات",
-                "special": "اعمال ویژه"
-            }
-            text += f"\n📂 دسته: {cat_names.get(item['category'], item['category'])}"
+        text = f"{emoji} **{item.get('title', 'دعا')}**\n"
+        if item.get("snippet"):
+            text += f"📝 {item['snippet']}\n"
+        if item.get("address"):
+            text += f"📍 {item['address']}\n"
         return text
     
     else:  # nahj
-        cat_name = {"khutbah": "خطبه", "letter": "نامه", "hekmat": "حکمت"}.get(item.get("category", ""), "")
-        text = f"🕌 **{cat_name} {item.get('number', '')}**"
-        if item.get("title"):
-            text += f"\n📌 {item['title']}"
+        text = f"{emoji} **{item.get('address', 'نهج‌البلاغه')}**\n"
+        if item.get("snippet"):
+            text += f"📝 {item['snippet']}\n"
+        return text
+
+
+def format_full_item(item: Dict, cat: str) -> str:
+    """نمایش متن کامل"""
+    if cat == "hadiths":
+        text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
-            text += f"\n\n🌿 {item['arabic_text']}\n"  # کامل
+            text += f"🌿 {item['arabic_text']}\n\n"
         if item.get("translation_text"):
-            text += f"\n🔹 {item['translation_text']}\n"  # کامل
+            text += f"🔹 {item['translation_text']}\n\n"
+        if item.get("tafsir_text"):
+            text += f"📝 شرح: {item['tafsir_text']}\n\n"
+        if item.get("address"):
+            text += f"📍 {item['address']}"
+        return text
+    
+    elif cat == "mafatih":
+        text = f"📗 **{item.get('title', 'دعا')}**\n\n"
+        if item.get("arabic_text"):
+            text += f"🌿 {item['arabic_text']}\n\n"
+        if item.get("translation_text"):
+            text += f"🔹 {item['translation_text']}\n\n"
+        if item.get("tafsir_text"):
+            text += f"📝 شرح: {item['tafsir_text']}\n\n"
+        if item.get("address"):
+            text += f"📍 {item['address']}"
+        return text
+    
+    else:  # nahj
+        cat_name = {
+            "khutbah": "خطبه",
+            "letter": "نامه",
+            "hekmat": "حکمت"
+        }.get(item.get("category", ""), "")
+        text = f"🕌 **{cat_name} {item.get('number', '')}**\n\n"
+        if item.get("title"):
+            text += f"📌 {item['title']}\n\n"
+        if item.get("arabic_text"):
+            text += f"🌿 {item['arabic_text']}\n\n"
+        if item.get("translation_text"):
+            text += f"🔹 {item['translation_text']}\n\n"
+        if item.get("tafsir_text"):
+            text += f"📝 شرح: {item['tafsir_text']}\n\n"
         return text
 
 
@@ -118,7 +292,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
         await update.message.reply_text(
             "🔍 **جستجوی هوشمند**\n\n"
             "عبارت مورد نظر را وارد کنید.\n"
-            "مثال: `صبر` یا `توحید` یا `2:255`\n\n"
+            "مثال: `خدا` یا `توحید` یا `2:255`\n\n"
             "📿 احادیث\n📗 مفاتیح\n🕌 نهج‌البلاغه",
             parse_mode="Markdown"
         )
@@ -148,20 +322,27 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
     sid = make_id(query)
     SEARCH_CACHE[sid] = results
     
-    text = f"🔍 **نتایج «{query}»**\n📊 {total} مورد:\n\n"
+    text = f"🔍 **نتایج جستجوی «{query}»**\n"
+    text += f"📊 **{total}** نتیجه یافت شد:\n\n"
+    
     buttons = []
     
     for cat, items in results.items():
         if items:
-            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
-            text += f"• {label}: {len(items)}\n"
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج‌البلاغه"}.get(cat, cat)
+            text += f"• {label}: {len(items)} مورد\n"
             buttons.append([InlineKeyboardButton(
                 f"{label} ({len(items)})",
                 callback_data=f"s_{sid}_{cat}_0"
             )])
     
-    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="Markdown"
+    )
 
 
 async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,22 +365,34 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("موردی یافت نشد.")
         return
     
-    # هر صفحه فقط 3 مورد (چون متن کامل طولانیه)
-    per_page = 3
+    # ۵ نتیجه در هر صفحه با خلاصه
+    per_page = 5
     start = page * per_page
     page_items = items[start:start + per_page]
-    
-    text = f"🔍 **نتایج {cat}** (صفحه {page+1} از {(len(items)+per_page-1)//per_page})\n\n"
-    text += "─" * 30 + "\n\n"
-    
-    for item in page_items:
-        text += fmt_item(item, cat) + "\n\n"
-        text += "═" * 30 + "\n\n"
-    
-    buttons = []
-    nav = []
     total_pages = (len(items) + per_page - 1) // per_page
     
+    label = {"hadiths": "احادیث", "mafatih": "مفاتیح", "nahj": "نهج‌البلاغه"}.get(cat, cat)
+    text = f"🔍 **نتایج {label}** (صفحه {page+1} از {total_pages})\n"
+    text += f"📊 {len(items)} مورد یافت شد\n\n"
+    
+    # نمایش خلاصه هر نتیجه با دکمه مشاهده کامل
+    buttons = []
+    for i, item in enumerate(page_items, 1):
+        # ذخیره آیتم در کش با شناسه یکتا
+        item_id = f"{sid}_{cat}_{item.get('id', i)}"
+        SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
+        
+        text += format_result_summary(item, cat, i) + "\n"
+        buttons.append([
+            InlineKeyboardButton(
+                f"📖 مشاهده کامل {i}",
+                callback_data=f"vi_{item_id}"
+            )
+        ])
+        text += "─" * 30 + "\n"
+    
+    # دکمه‌های صفحه‌بندی
+    nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"s_{sid}_{cat}_{page-1}"))
     nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
@@ -208,35 +401,64 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if nav:
         buttons.append(nav)
     
-    buttons.append([InlineKeyboardButton("🔙 برگشت به دسته‌ها", callback_data=f"sb_{sid}")])
-    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data=f"sb_{sid}")])
+    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
     
-    # اگر متن خیلی طولانی شد، به چند پیام تقسیم کن
+    await q.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="Markdown"
+    )
+
+
+async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش متن کامل یک نتیجه"""
+    q = update.callback_query
+    await q.answer()
+    
+    item_id = q.data.split("_")[1]
+    cached = SEARCH_CACHE.get(f"item_{item_id}")
+    
+    if not cached:
+        await q.edit_message_text("🔍 محتوای این مورد منقضی شده است.")
+        return
+    
+    item = cached["item"]
+    cat = cached["cat"]
+    
+    text = format_full_item(item, cat)
+    
+    # دکمه برگشت
+    buttons = [[
+        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{item_id.split('_')[0]}")
+    ]]
+    
+    # اگر متن طولانی بود، به چند پیام تقسیم کن
     if len(text) > 4000:
-        # برش به چند بخش
-        parts_text = []
+        parts = []
         current = ""
         for line in text.split("\n"):
             if len(current) + len(line) > 3500:
-                parts_text.append(current)
+                parts.append(current)
                 current = line + "\n"
             else:
                 current += line + "\n"
         if current:
-            parts_text.append(current)
+            parts.append(current)
         
-        # ارسال بخش اول با کیبورد
         await q.edit_message_text(
-            parts_text[0][:4000],
-            reply_markup=InlineKeyboardMarkup(buttons) if len(parts_text) == 1 else None,
+            parts[0][:4000],
+            reply_markup=InlineKeyboardMarkup(buttons),
             parse_mode="Markdown"
         )
-        
-        # ارسال بخش‌های بعدی بدون کیبورد
-        for i, part in enumerate(parts_text[1:], 1):
+        for part in parts[1:]:
             await q.message.reply_text(part[:4000], parse_mode="Markdown")
     else:
-        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        await q.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode="Markdown"
+        )
 
 
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,14 +478,14 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     for cat, items in results.items():
         if items:
-            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج‌البلاغه"}.get(cat, cat)
             text += f"• {label}: {len(items)}\n"
             buttons.append([InlineKeyboardButton(
                 f"{label} ({len(items)})",
                 callback_data=f"s_{sid}_{cat}_0"
             )])
     
-    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
