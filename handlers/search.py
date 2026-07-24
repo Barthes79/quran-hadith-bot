@@ -7,8 +7,6 @@ from telegram.ext import ContextTypes
 
 from config import DATABASE_PATH
 
-SEARCH_CACHE = {}
-
 
 class SmartSearch:
     def __init__(self, db_path: str = DATABASE_PATH):
@@ -217,7 +215,6 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
 
 
 def format_full_item(item: Dict, cat: str) -> str:
-    """متن کامل بدون صفحه‌بندی"""
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -292,7 +289,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
         return
     
     sid = make_id(query)
-    SEARCH_CACHE[sid] = results
+    
+    # ذخیره در context.user_data
+    context.user_data["search_results"] = results
+    context.user_data["search_sid"] = sid
     
     text = f"🔍 **نتایج جستجوی «{query}»**\n"
     text += f"📊 **{total}** نتیجه یافت شد:\n\n"
@@ -328,7 +328,8 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat = parts[2]
     page = int(parts[3])
     
-    results = SEARCH_CACHE.get(sid)
+    # دریافت از context.user_data
+    results = context.user_data.get("search_results")
     if not results:
         await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
         return
@@ -350,14 +351,16 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     buttons = []
     for i, item in enumerate(page_items, 1):
-        item_key = f"{sid}_{cat}_{start + i - 1}"
-        SEARCH_CACHE[item_key] = {"item": item, "cat": cat}
+        idx = start + i - 1
+        # ذخیره آیتم در context.user_data با شناسه
+        item_key = f"{sid}_{cat}_{idx}"
+        context.user_data[f"item_{item_key}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
         buttons.append([
             InlineKeyboardButton(
                 f"📖 مشاهده کامل {i}",
-                callback_data=f"view_{item_key}"  # تغییر به view به جای vi
+                callback_data=f"view_{item_key}"
             )
         ])
         text += "─" * 30 + "\n"
@@ -386,12 +389,19 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     q = update.callback_query
     await q.answer()
     
+    # دریافت item_key از دکمه
     item_key = q.data.replace("view_", "")
     
-    cached = SEARCH_CACHE.get(item_key)
+    # دریافت از context.user_data
+    cached = context.user_data.get(f"item_{item_key}")
+    
     if not cached:
         await q.edit_message_text(
-            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید."
+            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="menu_search")
+            ]]),
+            parse_mode=None
         )
         return
     
@@ -417,7 +427,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     
     sid = q.data.split("_")[1]
-    results = SEARCH_CACHE.get(sid)
+    results = context.user_data.get("search_results")
     
     if not results:
         await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
