@@ -4,12 +4,10 @@ import re
 from typing import List, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from thefuzz import fuzz
 
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
-MIN_FUZZY_SCORE = 60  # افزایش آستانه فازی برای دقت بیشتر
 
 
 class SmartSearch:
@@ -25,23 +23,13 @@ class SmartSearch:
         
         # پیدا کردن موقعیت کلمه
         pos = text_lower.find(keyword_lower)
-        if pos == -1:
-            # اگر کلمه دقیقاً پیدا نشد، تک تک کلمات رو بررسی کن
-            for word in keyword.split():
-                if len(word) > 2:
-                    pos = text_lower.find(word.lower())
-                    if pos != -1:
-                        break
         
         if pos == -1:
-            # اگر هیچ‌کدام پیدا نشد، ۲۰۰ کاراکتر اول رو برگردون
             return text[:200] + "..."
         
-        # پیدا کردن شروع و پایان
-        start = max(0, pos - 60)
-        end = min(len(text), pos + len(keyword) + 60)
+        start = max(0, pos - context_chars)
+        end = min(len(text), pos + len(keyword) + context_chars)
         
-        # پیدا کردن مرز جمله
         while start > 0 and text[start] not in ".،\n":
             start -= 1
         if start > 0:
@@ -50,52 +38,27 @@ class SmartSearch:
         while end < len(text) and text[end] not in ".،\n":
             end += 1
         
-        snippet = text[start:end].strip()
-        return snippet
-    
-    def _exact_search(self, cursor, table: str, fields: List[str], keyword: str) -> List[Dict]:
-        """جستجوی دقیق کلمه در فیلدها"""
-        conditions = []
-        params = []
-        for field in fields:
-            conditions.append(f"{field} LIKE ?")
-            params.append(f"%{keyword}%")
-        
-        # همچنین جستجوی کلمات جداگانه
-        words = keyword.split()
-        if len(words) > 1:
-            for word in words:
-                if len(word) > 2:
-                    for field in fields:
-                        conditions.append(f"{field} LIKE ?")
-                        params.append(f"%{word}%")
-        
-        query = f"SELECT * FROM {table} WHERE " + " OR ".join(conditions) + " ORDER BY id"
-        rows = cursor.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        return text[start:end].strip()
     
     def search_hadiths(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        like = f"%{q}%"
         
-        # ۱. جستجوی دقیق
-        results = self._exact_search(
-            conn, "hadiths", 
-            ["translation_text", "arabic_text", "tafsir_text", "narrator", "source_book"], 
-            q
-        )
+        # فقط جستجوی دقیق با LIKE
+        rows = conn.execute("""
+            SELECT * FROM hadiths 
+            WHERE translation_text LIKE ? 
+            OR arabic_text LIKE ? 
+            OR tafsir_text LIKE ?
+            OR narrator LIKE ? 
+            OR source_book LIKE ?
+            ORDER BY id
+        """, (like, like, like, like, like)).fetchall()
         
-        # ۲. اگر نتیجه کم بود، جستجوی فازی با آستانه بالا
-        if len(results) < 3:
-            fuzzy_results = self._fuzzy_search_hadiths(q)
-            existing = {r["id"] for r in results}
-            for item in fuzzy_results:
-                if item["id"] not in existing:
-                    results.append(item)
-        
+        results = [dict(row) for row in rows]
         conn.close()
         
-        # اضافه کردن snippet و آدرس
         for item in results:
             if item.get("translation_text"):
                 item["snippet"] = self._get_context(item["translation_text"], q)
@@ -117,47 +80,22 @@ class SmartSearch:
         
         return results
     
-    def _fuzzy_search_hadiths(self, q: str) -> List[Dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        all_items = conn.execute("SELECT * FROM hadiths").fetchall()
-        conn.close()
-        
-        q_lower = q.lower()
-        scored = []
-        for item in all_items:
-            item = dict(item)
-            best = 0
-            # بررسی در فیلدهای مختلف
-            for field in ["translation_text", "arabic_text", "narrator", "source_book"]:
-                if item.get(field):
-                    score = fuzz.partial_ratio(q_lower, item[field].lower())
-                    if score > best:
-                        best = score
-            # فقط نتایج با امتیاز بالا
-            if best >= MIN_FUZZY_SCORE:
-                scored.append((item, best))
-        
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [item for item, _ in scored[:20]]  # حداکثر ۲۰ نتیجه فازی
-    
     def search_mafatih(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        like = f"%{q}%"
         
-        results = self._exact_search(
-            conn, "mafatih",
-            ["title", "arabic_text", "translation_text", "tafsir_text", "category"],
-            q
-        )
+        rows = conn.execute("""
+            SELECT * FROM mafatih 
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ? 
+            OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
+            ORDER BY id
+        """, (like, like, like, like, like)).fetchall()
         
-        if len(results) < 3:
-            fuzzy_results = self._fuzzy_search_mafatih(q)
-            existing = {r.get("id", i) for i, r in enumerate(results, 1)}
-            for item in fuzzy_results:
-                if item.get("id") not in existing:
-                    results.append(item)
-        
+        results = [dict(row) for row in rows]
         conn.close()
         
         for item in results:
@@ -187,45 +125,22 @@ class SmartSearch:
         
         return results
     
-    def _fuzzy_search_mafatih(self, q: str) -> List[Dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        all_items = conn.execute("SELECT * FROM mafatih").fetchall()
-        conn.close()
-        
-        q_lower = q.lower()
-        scored = []
-        for item in all_items:
-            item = dict(item)
-            best = 0
-            for field in ["title", "translation_text", "arabic_text"]:
-                if item.get(field):
-                    score = fuzz.partial_ratio(q_lower, item[field].lower())
-                    if score > best:
-                        best = score
-            if best >= MIN_FUZZY_SCORE:
-                scored.append((item, best))
-        
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [item for item, _ in scored[:20]]
-    
     def search_nahj(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        like = f"%{q}%"
         
-        results = self._exact_search(
-            conn, "nahj_balagha",
-            ["title", "arabic_text", "translation_text", "tafsir_text", "category"],
-            q
-        )
+        rows = conn.execute("""
+            SELECT * FROM nahj_balagha 
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ? 
+            OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
+            ORDER BY category, number
+        """, (like, like, like, like, like)).fetchall()
         
-        if len(results) < 3:
-            fuzzy_results = self._fuzzy_search_nahj(q)
-            existing = {r["id"] for r in results}
-            for item in fuzzy_results:
-                if item["id"] not in existing:
-                    results.append(item)
-        
+        results = [dict(row) for row in rows]
         conn.close()
         
         for item in results:
@@ -254,28 +169,6 @@ class SmartSearch:
             item["address"] = address
         
         return results
-    
-    def _fuzzy_search_nahj(self, q: str) -> List[Dict]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        all_items = conn.execute("SELECT * FROM nahj_balagha").fetchall()
-        conn.close()
-        
-        q_lower = q.lower()
-        scored = []
-        for item in all_items:
-            item = dict(item)
-            best = 0
-            for field in ["title", "translation_text", "arabic_text"]:
-                if item.get(field):
-                    score = fuzz.partial_ratio(q_lower, item[field].lower())
-                    if score > best:
-                        best = score
-            if best >= MIN_FUZZY_SCORE:
-                scored.append((item, best))
-        
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [item for item, _ in scored[:20]]
     
     def search_all(self, q: str) -> Dict:
         return {
