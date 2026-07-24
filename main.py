@@ -96,15 +96,18 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         text = text.replace(f"@{bot_username}", "").strip()
         if not text:
             return
+        
+        # در گروه: جستجو در همه بخش‌ها
+        await search_command(update, context, text)
+        return
     
-    # اول بررسی کن اگر آیه بود (فقط در چت خصوصی)
-    if update.effective_chat.type == "private":
-        handled = await ayah_direct_lookup(update, context, text)
-        if handled:
-            return
+    # در چت خصوصی: اول بررسی کن اگر آیه بود
+    handled = await ayah_direct_lookup(update, context, text)
+    if handled:
+        return
     
-    # در غیراینصورت جستجو
-    await enhanced_text_search_handler(update, context, text)
+    # در چت خصوصی: جستجو در همه بخش‌ها
+    await search_command(update, context, text)
 
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
