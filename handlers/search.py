@@ -8,7 +8,6 @@ from telegram.ext import ContextTypes
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
-TEXT_CACHE = {}
 
 
 class SmartSearch:
@@ -217,30 +216,8 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
         return text
 
 
-def split_text(text: str, chunk_size: int = 3500) -> List[str]:
-    """تقسیم متن طولانی به چند بخش"""
-    if len(text) <= chunk_size:
-        return [text]
-    
-    parts = []
-    lines = text.split("\n")
-    current = ""
-    
-    for line in lines:
-        if len(current) + len(line) + 1 > chunk_size:
-            parts.append(current)
-            current = line + "\n"
-        else:
-            current += line + "\n"
-    
-    if current:
-        parts.append(current)
-    
-    return parts
-
-
 def format_full_item(item: Dict, cat: str) -> str:
-    """تولید متن کامل بدون صفحه‌بندی"""
+    """متن کامل بدون صفحه‌بندی"""
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -380,7 +357,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([
             InlineKeyboardButton(
                 f"📖 مشاهده کامل {i}",
-                callback_data=f"vi_{item_key}_0"  # صفحه 0
+                callback_data=f"view_{item_key}"  # تغییر به view به جای vi
             )
         ])
         text += "─" * 30 + "\n"
@@ -405,66 +382,31 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش متن کامل با صفحه‌بندی"""
+    """نمایش متن کامل"""
     q = update.callback_query
     await q.answer()
     
-    # دریافت اطلاعات از دکمه: vi_{item_key}_{page}
-    parts = q.data.split("_")
-    if len(parts) < 3:
-        await q.edit_message_text("❌ خطا در شناسایی مورد.")
-        return
+    item_key = q.data.replace("view_", "")
     
-    item_key = parts[1]
-    page = int(parts[2]) if len(parts) > 2 else 0
-    
-    # پیدا کردن آیتم در کش
     cached = SEARCH_CACHE.get(item_key)
     if not cached:
         await q.edit_message_text(
-            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="menu_search")
-            ]]),
-            parse_mode=None
+            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید."
         )
         return
     
     item = cached["item"]
     cat = cached["cat"]
     
-    # تولید متن کامل
     full_text = format_full_item(item, cat)
     
-    # تقسیم به بخش‌ها
-    text_parts = split_text(full_text, chunk_size=3500)
-    total_pages = len(text_parts)
-    
-    # اگر صفحه بیشتر از کل صفحات بود، آخرین صفحه رو نشون بده
-    if page >= total_pages:
-        page = total_pages - 1
-    
-    current_text = text_parts[page]
-    
-    # ساخت دکمه‌های صفحه‌بندی برای متن
     sid = item_key.split("_")[0]
-    buttons = []
-    
-    # دکمه‌های ناوبری برای متن
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("◀️ صفحه قبل", callback_data=f"vi_{item_key}_{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("صفحه بعد ▶️", callback_data=f"vi_{item_key}_{page+1}"))
-    if nav:
-        buttons.append(nav)
-    
-    buttons.append([InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")])
-    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
+    buttons = [[
+        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
+    ]]
     
     await q.edit_message_text(
-        current_text,
+        full_text,
         reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode=None
     )
