@@ -12,8 +12,8 @@ from config import DATABASE_PATH
 
 logger = logging.getLogger(__name__)
 
-SEARCH_RESULTS_PER_PAGE = 10
-MIN_FUZZY_SCORE = 40
+SEARCH_RESULTS_PER_PAGE = 20  # افزایش به ۲۰ نتیجه در هر صفحه
+MIN_FUZZY_SCORE = 30  # کاهش آستانه برای پیدا کردن نتایج بیشتر
 
 
 class SmartSearch:
@@ -21,255 +21,220 @@ class SmartSearch:
     
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
-        self._init_fts_tables()
     
-    def _init_fts_tables(self):
-        """ایجاد جداول FTS برای جستجوی تمام‌متن"""
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        
-        cur.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS hadiths_fts USING fts5(
-                id UNINDEXED,
-                arabic_text,
-                translation_text,
-                tafsir_text,
-                narrator,
-                source_book,
-                chapter,
-                topic_names
-            )
-        """)
-        
-        cur.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS mafatih_fts USING fts5(
-                id UNINDEXED,
-                title,
-                arabic_text,
-                translation_text,
-                tafsir_text,
-                category
-            )
-        """)
-        
-        cur.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS nahj_fts USING fts5(
-                id UNINDEXED,
-                category,
-                number UNINDEXED,
-                title,
-                arabic_text,
-                translation_text,
-                tafsir_text
-            )
-        """)
-        
-        conn.commit()
-        self._sync_fts_tables()
-        conn.close()
-    
-    def _sync_fts_tables(self):
-        """همگام‌سازی جداول FTS با داده‌های اصلی"""
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        
-        # همگام‌سازی احادیث
-        cur.execute("""
-            INSERT OR REPLACE INTO hadiths_fts(
-                id, arabic_text, translation_text, tafsir_text, 
-                narrator, source_book, chapter, topic_names
-            )
-            SELECT 
-                h.id, h.arabic_text, h.translation_text, 
-                COALESCE(h.tafsir_text, ''),
-                COALESCE(h.narrator, ''),
-                COALESCE(h.source_book, ''),
-                COALESCE(h.chapter, ''),
-                COALESCE(GROUP_CONCAT(t.topic_name, ' '), '')
-            FROM hadiths h
-            LEFT JOIN hadith_topics t ON h.id = t.hadith_id
-            GROUP BY h.id
-        """)
-        
-        # همگام‌سازی مفاتیح
-        cur.execute("""
-            INSERT OR REPLACE INTO mafatih_fts(
-                id, title, arabic_text, translation_text, tafsir_text, category
-            )
-            SELECT 
-                id, title, arabic_text, 
-                COALESCE(translation_text, ''),
-                COALESCE(tafsir_text, ''),
-                category
-            FROM mafatih
-        """)
-        
-        # همگام‌سازی نهج‌البلاغه
-        cur.execute("""
-            INSERT OR REPLACE INTO nahj_fts(
-                id, category, number, title, arabic_text, translation_text, tafsir_text
-            )
-            SELECT 
-                id, category, number, 
-                COALESCE(title, ''),
-                arabic_text, translation_text,
-                COALESCE(tafsir_text, '')
-            FROM nahj_balagha
-        """)
-        
-        conn.commit()
-        conn.close()
-    
-    def fts_search(self, table: str, query: str, limit: int = 30) -> List[Dict]:
-        """جستجوی تمام‌متن با FTS5"""
+    def search_hadiths_advanced(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی پیشرفته احادیث - بدون محدودیت"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        words = query.strip().split()
-        fts_query = " AND ".join([f'"{w}"' for w in words]) if len(words) > 1 else f'"{query}"'
+        # جستجوی مستقیم با LIKE (دقیق‌تر از FTS)
+        like = f"%{query}%"
+        like_arabic = f"%{query}%"
         
-        try:
-            rows = conn.execute(f"""
-                SELECT 
-                    {table}.*,
-                    rank as relevance
-                FROM {table}_fts fts
-                JOIN {table} ON {table}.id = fts.id
-                WHERE {table}_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?
-            """, (fts_query, limit)).fetchall()
-        except sqlite3.OperationalError:
-            rows = []
+        # جستجو در ترجمه و عربی
+        rows = conn.execute("""
+            SELECT * FROM hadiths 
+            WHERE translation_text LIKE ? 
+            OR arabic_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR narrator LIKE ?
+            OR source_book LIKE ?
+            OR chapter LIKE ?
+            ORDER BY id
+            LIMIT ?
+        """, (like, like_arabic, like, like, like, like, limit)).fetchall()
         
+        results = [dict(row) for row in rows]
         conn.close()
-        return [dict(row) for row in rows]
+        
+        # اگر نتیجه کم بود، جستجوی فازی انجام بده
+        if len(results) < 10:
+            fuzzy_results = self._fuzzy_search_hadiths(query)
+            # ترکیب و حذف تکراری
+            existing_ids = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing_ids:
+                    results.append(item)
+                    if len(results) >= limit:
+                        break
+        
+        return results
     
-    def fuzzy_search(self, items: List[Dict], query: str, 
-                     text_fields: List[str], limit: int = 30) -> List[Tuple[Dict, int]]:
-        """جستجوی فازی با امتیازدهی"""
-        results = []
-        query_lower = query.lower()
-        
-        for item in items:
-            best_score = 0
-            best_match = ""
-            
-            for field in text_fields:
-                text = item.get(field, "")
-                if not text:
-                    continue
-                
-                if query_lower in text.lower():
-                    score = 100
-                else:
-                    score = fuzz.partial_ratio(query_lower, text.lower())
-                
-                if score > best_score:
-                    best_score = score
-                    best_match = text
-            
-            if best_score >= MIN_FUZZY_SCORE:
-                results.append((item, best_score, best_match))
-        
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:limit]
-    
-    def search_hadiths_advanced(self, query: str, limit: int = 30) -> List[Dict]:
-        """جستجوی پیشرفته احادیث"""
-        fts_results = self.fts_search("hadiths", query, limit=limit)
-        
-        if len(fts_results) >= limit:
-            return fts_results
-        
+    def _fuzzy_search_hadiths(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی فازی در احادیث"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         all_hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
         conn.close()
         
-        fuzzy_results = self.fuzzy_search(
-            [dict(row) for row in all_hadiths],
-            query,
-            ["arabic_text", "translation_text", "tafsir_text", "narrator", "source_book", "chapter"],
-            limit=limit
-        )
+        query_lower = query.lower()
+        scored = []
         
-        fts_ids = {r["id"] for r in fts_results}
-        combined = list(fts_results)
+        for item in all_hadiths:
+            item_dict = dict(item)
+            best_score = 0
+            
+            # بررسی در ترجمه
+            if item_dict.get("translation_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            # بررسی در عربی
+            if item_dict.get("arabic_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["arabic_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            # بررسی در راوی و منبع
+            if item_dict.get("narrator"):
+                score = fuzz.partial_ratio(query_lower, item_dict["narrator"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if best_score >= MIN_FUZZY_SCORE:
+                scored.append((item_dict, best_score))
         
-        for item, score, _ in fuzzy_results:
-            if item["id"] not in fts_ids:
-                item["relevance"] = score
-                combined.append(item)
-                if len(combined) >= limit:
-                    break
-        
-        return combined
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored[:limit]]
     
-    def search_mafatih_advanced(self, query: str, limit: int = 30) -> List[Dict]:
-        """جستجوی پیشرفته مفاتیح"""
-        fts_results = self.fts_search("mafatih", query, limit=limit)
+    def search_mafatih_advanced(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی پیشرفته مفاتیح - بدون محدودیت"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
         
-        if len(fts_results) >= limit:
-            return fts_results
+        like = f"%{query}%"
         
+        rows = conn.execute("""
+            SELECT * FROM mafatih 
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ?
+            OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
+            ORDER BY id
+            LIMIT ?
+        """, (like, like, like, like, like, limit)).fetchall()
+        
+        results = [dict(row) for row in rows]
+        conn.close()
+        
+        # اگر نتیجه کم بود، جستجوی فازی
+        if len(results) < 10:
+            fuzzy_results = self._fuzzy_search_mafatih(query)
+            existing_ids = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing_ids:
+                    results.append(item)
+                    if len(results) >= limit:
+                        break
+        
+        return results
+    
+    def _fuzzy_search_mafatih(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی فازی در مفاتیح"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         all_items = conn.execute("SELECT * FROM mafatih").fetchall()
         conn.close()
         
-        fuzzy_results = self.fuzzy_search(
-            [dict(row) for row in all_items],
-            query,
-            ["title", "arabic_text", "translation_text", "tafsir_text"],
-            limit=limit
-        )
+        query_lower = query.lower()
+        scored = []
         
-        fts_ids = {r["id"] for r in fts_results}
-        combined = list(fts_results)
+        for item in all_items:
+            item_dict = dict(item)
+            best_score = 0
+            
+            if item_dict.get("title"):
+                score = fuzz.partial_ratio(query_lower, item_dict["title"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if item_dict.get("translation_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if item_dict.get("arabic_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["arabic_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if best_score >= MIN_FUZZY_SCORE:
+                scored.append((item_dict, best_score))
         
-        for item, score, _ in fuzzy_results:
-            if item["id"] not in fts_ids:
-                item["relevance"] = score
-                combined.append(item)
-                if len(combined) >= limit:
-                    break
-        
-        return combined
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored[:limit]]
     
-    def search_nahj_advanced(self, query: str, limit: int = 30) -> List[Dict]:
-        """جستجوی پیشرفته نهج‌البلاغه"""
-        fts_results = self.fts_search("nahj_balagha", query, limit=limit)
+    def search_nahj_advanced(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی پیشرفته نهج‌البلاغه - بدون محدودیت"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
         
-        if len(fts_results) >= limit:
-            return fts_results
+        like = f"%{query}%"
         
+        rows = conn.execute("""
+            SELECT * FROM nahj_balagha 
+            WHERE title LIKE ? 
+            OR arabic_text LIKE ?
+            OR translation_text LIKE ?
+            OR tafsir_text LIKE ?
+            OR category LIKE ?
+            ORDER BY id
+            LIMIT ?
+        """, (like, like, like, like, like, limit)).fetchall()
+        
+        results = [dict(row) for row in rows]
+        conn.close()
+        
+        if len(results) < 10:
+            fuzzy_results = self._fuzzy_search_nahj(query)
+            existing_ids = {r["id"] for r in results}
+            for item in fuzzy_results:
+                if item["id"] not in existing_ids:
+                    results.append(item)
+                    if len(results) >= limit:
+                        break
+        
+        return results
+    
+    def _fuzzy_search_nahj(self, query: str, limit: int = 100) -> List[Dict]:
+        """جستجوی فازی در نهج‌البلاغه"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         all_items = conn.execute("SELECT * FROM nahj_balagha").fetchall()
         conn.close()
         
-        fuzzy_results = self.fuzzy_search(
-            [dict(row) for row in all_items],
-            query,
-            ["title", "arabic_text", "translation_text", "tafsir_text"],
-            limit=limit
-        )
+        query_lower = query.lower()
+        scored = []
         
-        fts_ids = {r["id"] for r in fts_results}
-        combined = list(fts_results)
+        for item in all_items:
+            item_dict = dict(item)
+            best_score = 0
+            
+            if item_dict.get("title"):
+                score = fuzz.partial_ratio(query_lower, item_dict["title"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if item_dict.get("translation_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if item_dict.get("arabic_text"):
+                score = fuzz.partial_ratio(query_lower, item_dict["arabic_text"].lower())
+                if score > best_score:
+                    best_score = score
+            
+            if best_score >= MIN_FUZZY_SCORE:
+                scored.append((item_dict, best_score))
         
-        for item, score, _ in fuzzy_results:
-            if item["id"] not in fts_ids:
-                item["relevance"] = score
-                combined.append(item)
-                if len(combined) >= limit:
-                    break
-        
-        return combined
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [item for item, _ in scored[:limit]]
     
-    def search_all(self, query: str, limit_per_category: int = 10) -> Dict[str, List]:
-        """جستجو در همه بخش‌ها"""
+    def search_all(self, query: str, limit_per_category: int = 100) -> Dict[str, List]:
+        """جستجو در همه بخش‌ها - بدون محدودیت"""
         return {
             "hadiths": self.search_hadiths_advanced(query, limit=limit_per_category),
             "mafatih": self.search_mafatih_advanced(query, limit=limit_per_category),
@@ -305,7 +270,7 @@ def format_search_result(item: Dict, category: str) -> str:
     if category == "hadiths":
         text = f"{emoji} **حدیث**\n"
         text += f"📖 {item.get('arabic_text', '')[:300]}\n\n"
-        text += f"🔹 ترجمه: {item.get('translation_text', '')[:200]}"
+        text += f"🔹 ترجمه: {item.get('translation_text', '')[:300]}"
         if item.get("narrator"):
             text += f"\n👤 راوی: {item['narrator']}"
         if item.get("source_book"):
@@ -317,8 +282,17 @@ def format_search_result(item: Dict, category: str) -> str:
         if item.get("arabic_text"):
             text += f"\n🌿 {item['arabic_text'][:300]}"
         if item.get("translation_text"):
-            text += f"\n\n🔹 ترجمه: {item['translation_text'][:200]}"
-        text += f"\n📂 دسته: {item.get('category', '-')}"
+            text += f"\n\n🔹 ترجمه: {item['translation_text'][:300]}"
+        if item.get("category"):
+            cat_names = {
+                "daily": "اعمال روزانه",
+                "weekly": "اعمال هفتگی",
+                "monthly": "اعمال ماهانه",
+                "ziyarat": "زیارات",
+                "munajat": "مناجات",
+                "special": "اعمال ویژه"
+            }
+            text += f"\n📂 دسته: {cat_names.get(item['category'], item['category'])}"
         
     elif category == "nahj" or category in ["khutbah", "letter", "hekmat"]:
         cat_name = {
@@ -333,7 +307,7 @@ def format_search_result(item: Dict, category: str) -> str:
         if item.get("arabic_text"):
             text += f"\n\n🌿 {item['arabic_text'][:300]}"
         if item.get("translation_text"):
-            text += f"\n\n🔹 ترجمه: {item['translation_text'][:200]}"
+            text += f"\n\n🔹 ترجمه: {item['translation_text'][:300]}"
     
     return text
 
@@ -383,6 +357,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
         )
         return
     
+    # بررسی اگر فرمت آیه بود
     if ":" in query and query.replace(":", "").isdigit():
         try:
             surah, ayah = query.split(":")
@@ -396,8 +371,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
         except:
             pass
     
+    # جستجوی پیشرفته - بدون محدودیت
     engine = get_search_engine()
-    results = engine.search_all(query, limit_per_category=10)
+    results = engine.search_all(query, limit_per_category=200)  # افزایش به ۲۰۰
     
     total_results = sum(len(items) for items in results.values())
     if total_results == 0:
@@ -523,11 +499,11 @@ async def get_suggestion(query: str) -> str:
         "صبر", "توحید", "اخلاق", "نماز", "روزه", "حج", "زکات", "جهاد",
         "توبه", "استغفار", "توکل", "ایمان", "اسلام", "قرآن", "حدیث",
         "امام", "علی", "حسین", "فاطمه", "محمد", "نبوت", "معاد", "عدل",
-        "دعا", "زیارت", "مناجات", "مفاتیح", "نهج", "بلاغه"
+        "دعا", "زیارت", "مناجات", "مفاتیح", "نهج", "بلاغه", "نماز", "شب"
     ]
     
     best_match = process.extractOne(query, common_words, scorer=fuzz.partial_ratio)
-    if best_match and best_match[1] > 60:
+    if best_match and best_match[1] > 50:
         return best_match[0]
     
     return None
@@ -536,10 +512,10 @@ async def get_suggestion(query: str) -> str:
 async def enhanced_text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     if update.effective_chat.type != "private":
         engine = get_search_engine()
-        results = engine.search_hadiths_advanced(text, limit=10)
+        results = engine.search_hadiths_advanced(text, limit=50)
         
         if not results:
-            all_results = engine.search_all(text, limit_per_category=3)
+            all_results = engine.search_all(text, limit_per_category=50)
             total = sum(len(items) for items in all_results.values())
             
             if total == 0:
