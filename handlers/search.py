@@ -81,21 +81,21 @@ class SmartSearch:
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
         
+        # فقط فیلدهای اصلی رو جستجو کن (نه category و tafsir)
         rows = conn.execute("""
             SELECT * FROM mafatih 
             WHERE title LIKE ? 
             OR arabic_text LIKE ? 
             OR translation_text LIKE ?
-            OR tafsir_text LIKE ?
-            OR category LIKE ?
             ORDER BY id
-        """, (like, like, like, like, like)).fetchall()
+        """, (like, like, like, like)).fetchall()
         
         results = [dict(row) for row in rows]
         conn.close()
         
         for item in results:
             snippet = ""
+            # اولویت با ترجمه، سپس عربی، سپس عنوان
             if item.get("translation_text"):
                 snippet = self._get_context(item["translation_text"], q)
             elif item.get("arabic_text"):
@@ -131,10 +131,8 @@ class SmartSearch:
             WHERE title LIKE ? 
             OR arabic_text LIKE ? 
             OR translation_text LIKE ?
-            OR tafsir_text LIKE ?
-            OR category LIKE ?
             ORDER BY category, number
-        """, (like, like, like, like, like)).fetchall()
+        """, (like, like, like)).fetchall()
         
         results = [dict(row) for row in rows]
         conn.close()
@@ -350,7 +348,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for i, item in enumerate(page_items, 1):
         idx = start + i - 1
-        # استفاده از ایندکس به عنوان شناسه
         item_key = f"{sid}_{cat}_{idx}"
         context.user_data[f"item_{item_key}"] = {"item": item, "cat": cat}
         
@@ -383,7 +380,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش متن کامل - ساده و بدون مشکل"""
     q = update.callback_query
     await q.answer()
     
@@ -407,7 +403,6 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
     ]]
     
-    # اگر متن خیلی طولانی بود، به چند پیام تقسیم کن
     if len(full_text) > 4000:
         parts = []
         current = ""
@@ -420,13 +415,11 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if current:
             parts.append(current)
         
-        # ارسال بخش اول با دکمه
         await q.message.reply_text(
             parts[0][:4000],
             reply_markup=InlineKeyboardMarkup(buttons),
             parse_mode=None
         )
-        # ارسال بخش‌های بعدی بدون دکمه
         for part in parts[1:]:
             await q.message.reply_text(part[:4000], parse_mode=None)
     else:
