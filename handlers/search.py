@@ -91,13 +91,7 @@ class SmartSearch:
             ORDER BY id
         """, (like, like, like, like, like)).fetchall()
         
-        results = []
-        for idx, row in enumerate(rows, 1):
-            item = dict(row)
-            if not item.get("id"):
-                item["id"] = idx
-            results.append(item)
-        
+        results = [dict(row) for row in rows]
         conn.close()
         
         for item in results:
@@ -296,7 +290,6 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
     
     sid = make_id(query)
     
-    # ذخیره در context.user_data
     context.user_data["search_results"] = results
     context.user_data["search_sid"] = sid
     
@@ -357,8 +350,8 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for i, item in enumerate(page_items, 1):
         idx = start + i - 1
-        real_id = item.get("id", idx)
-        item_key = f"{sid}_{cat}_{real_id}"
+        # استفاده از ایندکس به عنوان شناسه
+        item_key = f"{sid}_{cat}_{idx}"
         context.user_data[f"item_{item_key}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
@@ -414,12 +407,34 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
     ]]
     
-    # ارسال پیام جدید (نه ادیت کردن)
-    await q.message.reply_text(
-        full_text,
-        reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode=None
-    )
+    # اگر متن خیلی طولانی بود، به چند پیام تقسیم کن
+    if len(full_text) > 4000:
+        parts = []
+        current = ""
+        for line in full_text.split("\n"):
+            if len(current) + len(line) > 3500:
+                parts.append(current)
+                current = line + "\n"
+            else:
+                current += line + "\n"
+        if current:
+            parts.append(current)
+        
+        # ارسال بخش اول با دکمه
+        await q.message.reply_text(
+            parts[0][:4000],
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=None
+        )
+        # ارسال بخش‌های بعدی بدون دکمه
+        for part in parts[1:]:
+            await q.message.reply_text(part[:4000], parse_mode=None)
+    else:
+        await q.message.reply_text(
+            full_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=None
+        )
 
 
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
