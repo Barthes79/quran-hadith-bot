@@ -138,29 +138,25 @@ class SmartSearch:
         """, (like, like, like, like, like)).fetchall()
         
         results = []
-        for row in rows:
+        for idx, row in enumerate(rows, 1):
             item = dict(row)
-            # اطمینان از وجود id
-            if item.get("id") is None:
-                item["id"] = len(results) + 1
+            # اگر id نداشت، از idx استفاده کن
+            if not item.get("id"):
+                item["id"] = idx
             results.append(item)
         
         conn.close()
         
         if len(results) < 5:
             fuzzy_results = self._fuzzy_search_mafatih(q)
-            existing = {r.get("id", i) for i, r in enumerate(results)}
+            existing = {r.get("id", i) for i, r in enumerate(results, 1)}
             for item in fuzzy_results:
-                item_id = item.get("id", len(results) + 1)
-                if item_id not in existing:
-                    if item.get("id") is None:
+                if item.get("id") not in existing:
+                    if not item.get("id"):
                         item["id"] = len(results) + 1
                     results.append(item)
         
-        for idx, item in enumerate(results):
-            if item.get("id") is None:
-                item["id"] = idx + 1
-            
+        for item in results:
             snippet = ""
             if item.get("translation_text"):
                 snippet = self._get_context(item["translation_text"], q)
@@ -195,10 +191,10 @@ class SmartSearch:
         
         q_lower = q.lower()
         scored = []
-        for item in all_items:
+        for idx, item in enumerate(all_items, 1):
             item = dict(item)
-            if item.get("id") is None:
-                item["id"] = len(scored) + 1
+            if not item.get("id"):
+                item["id"] = idx
             best = 0
             for field in ["title", "translation_text", "arabic_text", "tafsir_text"]:
                 if item.get(field):
@@ -444,6 +440,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat = parts[2]
     page = int(parts[3])
     
+    # دریافت نتایج از کش
     results = SEARCH_CACHE.get(sid)
     if not results:
         await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
@@ -456,7 +453,8 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     per_page = 5
     start = page * per_page
-    page_items = items[start:start + per_page]
+    end = start + per_page
+    page_items = items[start:end]
     total_pages = (len(items) + per_page - 1) // per_page
     
     label = {"hadiths": "احادیث", "mafatih": "مفاتیح", "nahj": "نهج‌البلاغه"}.get(cat, cat)
@@ -465,9 +463,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     buttons = []
     for i, item in enumerate(page_items, 1):
-        idx = start + i - 1
-        # استفاده از idx به عنوان شناسه
-        item_key = f"{sid}_{cat}_{idx}"
+        item_key = f"{sid}_{cat}_{start + i - 1}"
         SEARCH_CACHE[item_key] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
