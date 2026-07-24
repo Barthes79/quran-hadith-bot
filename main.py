@@ -85,34 +85,42 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if text.startswith('/'):
         return
     
-    # در گروه: فقط اگر ربات منشن شده بود پاسخ بده
+    # در گروه
     if update.effective_chat.type != "private":
         bot_username = (await context.bot.get_me()).username
         
-        # لاگ برای دیباگ
         logger.info(f"🔍 Group message: '{text}'")
         logger.info(f"🤖 Bot username: @{bot_username}")
         
-        # بررسی منشن با فرمت‌های مختلف
-        mention1 = f"@{bot_username}"
-        mention2 = f"@ {bot_username}"
-        mention3 = f"@{bot_username.lower()}"
-        mention4 = f"@{bot_username.upper()}"
-        
-        # چک کردن همه فرمت‌ها
+        # روش تشخیص منشن با استفاده از entities تلگرام
         has_mention = False
         clean_text = text
         
-        for mention in [mention1, mention2, mention3, mention4]:
-            if mention in text:
-                has_mention = True
-                clean_text = text.replace(mention, "").strip()
-                break
+        # چک کردن entities برای منشن
+        if update.message.entities:
+            for entity in update.message.entities:
+                if entity.type == "mention":
+                    # استخراج متن منشن شده
+                    mention_text = text[entity.offset:entity.offset + entity.length]
+                    logger.info(f"📌 Mention found: '{mention_text}'")
+                    if mention_text.lower() == f"@{bot_username}".lower():
+                        has_mention = True
+                        # حذف منشن از متن
+                        clean_text = text[:entity.offset] + text[entity.offset + entity.length:]
+                        clean_text = clean_text.strip()
+                        break
         
-        # همچنین چک کردن بدون @
-        if not has_mention and bot_username in text.lower():
-            has_mention = True
-            clean_text = text.replace(bot_username, "").replace("@", "").strip()
+        # اگر entity پیدا نشد، با روش قبلی چک کن
+        if not has_mention:
+            mention1 = f"@{bot_username}"
+            mention2 = f"@{bot_username.lower()}"
+            mention3 = f"@{bot_username.upper()}"
+            
+            for mention in [mention1, mention2, mention3]:
+                if mention in text:
+                    has_mention = True
+                    clean_text = text.replace(mention, "").strip()
+                    break
         
         if not has_mention:
             logger.info(f"⏭️ No mention found in: '{text}'")
@@ -120,7 +128,7 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if not clean_text:
             await update.message.reply_text(
-                "🔍 لطفاً عبارت جستجو را بعد از منشن وارد کنید.\n"
+                f"🔍 لطفاً عبارت جستجو را بعد از منشن وارد کنید.\n"
                 f"مثال: `@{bot_username} حدیث صبر`"
             )
             return
