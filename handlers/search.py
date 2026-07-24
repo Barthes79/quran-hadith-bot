@@ -1,5 +1,6 @@
 import hashlib
 import sqlite3
+import re
 from typing import List, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -11,18 +12,42 @@ class SmartSearch:
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
     
+    def _highlight_text(self, text: str, keyword: str) -> str:
+        """هایلایت کردن کلمه کلیدی در متن با ** **"""
+        if not text or not keyword:
+            return text
+        
+        # جدا کردن کلمات کلیدی
+        keywords = keyword.split()
+        
+        # برای هر کلمه، هایلایت کن
+        result = text
+        for kw in keywords:
+            if len(kw) < 2:
+                continue
+            # ایجاد الگوی case-insensitive
+            pattern = re.compile(re.escape(kw), re.IGNORECASE)
+            # جایگزینی با هایلایت
+            result = pattern.sub(lambda m: f"**{m.group(0)}**", result)
+        
+        return result
+    
     def _get_snippet(self, text: str, keyword: str, length: int = 150) -> str:
-        """گرفتن بخشی از متن که کلمه کلیدی در آن است"""
+        """گرفتن بخشی از متن که کلمه کلیدی در آن است با هایلایت"""
         if not text:
             return ""
         
         keyword_lower = keyword.lower()
         text_lower = text.lower()
         
+        # پیدا کردن اولین occurrence
         pos = text_lower.find(keyword_lower)
         if pos == -1:
             # اگر کلمه پیدا نشد، ابتدای متن رو نشون بده
-            return text[:length] + "..."
+            snippet = text[:length]
+            if len(text) > length:
+                snippet += "..."
+            return self._highlight_text(snippet, keyword)
         
         # شروع و پایان
         start = max(0, pos - 50)
@@ -37,7 +62,12 @@ class SmartSearch:
         while end < len(text) and text[end] not in ".،\n":
             end += 1
         
-        return text[start:end].strip()
+        snippet = text[start:end].strip()
+        if len(snippet) < len(text):
+            snippet += "..."
+        
+        # هایلایت کردن کلمه کلیدی
+        return self._highlight_text(snippet, keyword)
     
     def search_hadiths(self, q: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
@@ -54,6 +84,7 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
+            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             elif item.get("arabic_text"):
@@ -88,10 +119,11 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
+            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             elif item.get("title"):
-                item["snippet"] = item["title"]
+                item["snippet"] = self._highlight_text(item["title"], q)
             else:
                 item["snippet"] = "متن موجود نیست"
             
@@ -124,6 +156,7 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
+            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             else:
@@ -168,24 +201,24 @@ def format_summary(item: Dict, cat: str, idx: int) -> str:
     if cat == "hadiths":
         text = f"{emoji} **حدیث {idx}**\n"
         if item.get("snippet"):
-            text += f"{item['snippet']}\n"
+            text += f"📝 {item['snippet']}\n"
         if item.get("address"):
-            text += f"{item['address']}"
+            text += f"📍 {item['address']}"
         return text
     
     elif cat == "mafatih":
         title = item.get("title", "دعا")
         text = f"{emoji} **{title}**\n"
         if item.get("snippet"):
-            text += f"{item['snippet']}\n"
+            text += f"📝 {item['snippet']}\n"
         if item.get("address"):
-            text += f"{item['address']}"
+            text += f"📍 {item['address']}"
         return text
     
     else:
         text = f"{emoji} **{item.get('address', 'نهج‌البلاغه')}**\n"
         if item.get("snippet"):
-            text += f"{item['snippet']}"
+            text += f"📝 {item['snippet']}"
         return text
 
 
