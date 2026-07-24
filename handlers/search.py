@@ -448,16 +448,16 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     buttons = []
     for i, item in enumerate(page_items, 1):
-        # استفاده از شناسه ساده‌تر: sid_cat_index
         idx = start + i - 1
-        item_id = f"{sid}_{cat}_{idx}"
-        SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
+        # ذخیره با شناسه یکتا
+        item_key = f"{sid}_{cat}_{idx}"
+        SEARCH_CACHE[item_key] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
         buttons.append([
             InlineKeyboardButton(
                 f"📖 مشاهده کامل {i}",
-                callback_data=f"vi_{item_id}"
+                callback_data=f"vi_{item_key}"
             )
         ])
         text += "─" * 30 + "\n"
@@ -485,18 +485,11 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     q = update.callback_query
     await q.answer()
     
-    parts = q.data.split("_")
-    if len(parts) < 2:
-        await q.edit_message_text("❌ خطا در شناسایی مورد.")
-        return
+    # دریافت شناسه از دکمه
+    item_key = q.data.replace("vi_", "")
     
-    item_id = parts[1]
-    
-    # چاپ برای دیباگ
-    print(f"🔍 Looking for item: {item_id}")
-    print(f"🔍 Cache keys: {list(SEARCH_CACHE.keys())[:10]}")
-    
-    cached = SEARCH_CACHE.get(f"item_{item_id}")
+    # پیدا کردن در کش
+    cached = SEARCH_CACHE.get(item_key)
     
     if not cached:
         await q.edit_message_text(
@@ -513,8 +506,11 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     text = format_full_item(item, cat)
     
+    # استخراج sid برای دکمه برگشت
+    sid = item_key.split("_")[0]
+    
     buttons = [[
-        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{item_id.split('_')[0]}")
+        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
     ]]
     
     if len(text) > 4000:
