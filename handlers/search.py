@@ -220,30 +220,7 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
         return text
 
 
-def split_text_into_pages(text: str, chunk_size: int = 3500) -> List[str]:
-    """تقسیم متن به صفحات با اندازه مشخص"""
-    if len(text) <= chunk_size:
-        return [text]
-    
-    pages = []
-    lines = text.split("\n")
-    current = ""
-    
-    for line in lines:
-        if len(current) + len(line) + 1 > chunk_size:
-            pages.append(current)
-            current = line + "\n"
-        else:
-            current += line + "\n"
-    
-    if current:
-        pages.append(current)
-    
-    return pages
-
-
-def format_full_item(item: Dict, cat: str, page: int = 0) -> str:
-    """تولید متن کامل با شماره صفحه"""
+def format_full_item(item: Dict, cat: str) -> str:
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -319,6 +296,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
     
     sid = make_id(query)
     
+    # ذخیره در context.user_data
     context.user_data["search_results"] = results
     context.user_data["search_sid"] = sid
     
@@ -381,13 +359,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idx = start + i - 1
         real_id = item.get("id", idx)
         item_key = f"{sid}_{cat}_{real_id}"
-        
-        # ذخیره کامل آیتم و شماره صفحه فعلی
-        context.user_data[f"item_{item_key}"] = {
-            "item": item, 
-            "cat": cat,
-            "page": 0  # صفحه اول
-        }
+        context.user_data[f"item_{item_key}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
         buttons.append([
@@ -418,68 +390,33 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش متن کامل با صفحه‌بندی"""
+    """نمایش متن کامل - ساده و بدون مشکل"""
     q = update.callback_query
     await q.answer()
     
-    parts = q.data.split("_")
-    if len(parts) < 2:
-        await q.edit_message_text("❌ خطا در شناسایی مورد.")
-        return
-    
-    item_key = parts[1]
-    page = int(parts[2]) if len(parts) > 2 else 0
+    item_key = q.data.replace("view_", "")
     
     cached = context.user_data.get(f"item_{item_key}")
     
     if not cached:
-        await q.edit_message_text(
-            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="menu_search")
-            ]]),
-            parse_mode=None
+        await q.message.reply_text(
+            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید."
         )
         return
     
     item = cached["item"]
     cat = cached["cat"]
     
-    # تولید متن کامل
     full_text = format_full_item(item, cat)
     
-    # تقسیم به صفحات
-    pages = split_text_into_pages(full_text, chunk_size=3500)
-    total_pages = len(pages)
-    
-    # اگر صفحه بیشتر از کل صفحات بود، آخرین صفحه
-    if page >= total_pages:
-        page = total_pages - 1
-    
-    current_text = pages[page]
-    
-    # به روز رسانی صفحه فعلی در کش
-    cached["page"] = page
-    context.user_data[f"item_{item_key}"] = cached
-    
     sid = item_key.split("_")[0]
-    buttons = []
+    buttons = [[
+        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
+    ]]
     
-    # دکمه‌های صفحه‌بندی متن
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("◀️ صفحه قبل", callback_data=f"view_{item_key}_{page-1}"))
-    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("صفحه بعد ▶️", callback_data=f"view_{item_key}_{page+1}"))
-    if nav:
-        buttons.append(nav)
-    
-    buttons.append([InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")])
-    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
-    
-    await q.edit_message_text(
-        current_text,
+    # ارسال پیام جدید (نه ادیت کردن)
+    await q.message.reply_text(
+        full_text,
         reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode=None
     )
