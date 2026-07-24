@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
-TEXT_CACHE = {}  # کش مخصوص متن‌های طولانی
+TEXT_CACHE = {}
 
 
 class SmartSearch:
@@ -239,8 +239,8 @@ def split_text(text: str, chunk_size: int = 3500) -> List[str]:
     return parts
 
 
-def format_full_item(item: Dict, cat: str, page: int = 0, total_pages: int = 1) -> str:
-    """نمایش متن کامل با صفحه‌بندی"""
+def format_full_item(item: Dict, cat: str) -> str:
+    """تولید متن کامل بدون صفحه‌بندی"""
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -380,7 +380,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([
             InlineKeyboardButton(
                 f"📖 مشاهده کامل {i}",
-                callback_data=f"vi_{item_key}_0"  # اضافه کردن صفحه 0
+                callback_data=f"vi_{item_key}_0"  # صفحه 0
             )
         ])
         text += "─" * 30 + "\n"
@@ -412,11 +412,13 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # دریافت اطلاعات از دکمه: vi_{item_key}_{page}
     parts = q.data.split("_")
     if len(parts) < 3:
+        await q.edit_message_text("❌ خطا در شناسایی مورد.")
         return
     
     item_key = parts[1]
     page = int(parts[2]) if len(parts) > 2 else 0
     
+    # پیدا کردن آیتم در کش
     cached = SEARCH_CACHE.get(item_key)
     if not cached:
         await q.edit_message_text(
