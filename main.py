@@ -67,13 +67,17 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 "سلام 🌙\n"
                 "از اضافه کردن من به این گروه خوشحالم!\n\n"
                 "برای جستجوی سریع، کافیست بنویسید:\n"
-                "`@نام_ربات صبر` یا `@نام_ربات 2:255`\n\n"
-                "همچنین می‌توانید در چت خصوصی من /start را بزنید تا از منوی کامل استفاده کنید.",
+                "• `@نام_ربات حدیث صبر`\n"
+                "• `@نام_ربات مفاتیح مشلول`\n"
+                "• `@نام_ربات نهج البلاغه خطبه 191`\n"
+                "• `@نام_ربات صبر` (جستجوی عمومی)\n\n"
+                "همچنین می‌توانید در چت خصوصی من /start را بزنید.",
                 parse_mode="Markdown",
             )
 
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هندلر پیام‌های متنی - هم در چت خصوصی و هم در گروه"""
     text = update.message.text.strip()
     if not text:
         return
@@ -84,13 +88,27 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # در گروه: فقط اگر ربات منشن شده بود پاسخ بده
     if update.effective_chat.type != "private":
         bot_username = (await context.bot.get_me()).username
-        if f"@{bot_username}" not in text:
+        # چک کردن منشن ربات
+        mention = f"@{bot_username}"
+        if mention not in text:
             return
-        text = text.replace(f"@{bot_username}", "").strip()
+        # پاک کردن منشن از متن
+        text = text.replace(mention, "").strip()
         if not text:
+            await update.message.reply_text(
+                "🔍 لطفاً عبارت جستجو را بعد از منشن وارد کنید.\n"
+                "مثال: `@نام_ربات حدیث صبر`"
+            )
             return
+        
+        # لاگ برای دیباگ
+        logger.info(f"Group search: {text}")
+        
+        # جستجو در همه بخش‌ها
+        await search_command(update, context, text)
+        return
     
-    # جستجو در همه بخش‌ها
+    # در چت خصوصی: جستجوی عمومی
     await search_command(update, context, text)
 
 
