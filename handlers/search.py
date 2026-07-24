@@ -156,6 +156,71 @@ class SmartSearch:
         
         conn.close()
         return results
+
+    def search_hadiths_by_keyword(self, keyword: str) -> List[Dict]:
+        """جستجوی حدیث با کلمه کلیدی - فقط حدیث"""
+        return self.search_hadiths(keyword)
+    
+    def search_mafatih_by_title(self, title: str) -> List[Dict]:
+        """جستجوی مفاتیح با عنوان - فقط مفاتیح"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        like = f"%{title}%"
+        
+        rows = conn.execute("""
+            SELECT * FROM mafatih 
+            WHERE title LIKE ? 
+            ORDER BY id
+        """, (like,)).fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            if item.get("title"):
+                item["snippet"] = self._highlight_text(item["title"], title)
+            if item.get("translation_text"):
+                item["snippet"] = self._get_snippet(item["translation_text"], title)
+            else:
+                item["snippet"] = "متن موجود نیست"
+            
+            cat_names = {
+                "daily": "اعمال روزانه",
+                "weekly": "اعمال هفتگی", 
+                "monthly": "اعمال ماهانه",
+                "ziyarat": "زیارات",
+                "munajat": "مناجات",
+                "special": "اعمال ویژه"
+            }
+            category = cat_names.get(item.get("category", ""), item.get("category", ""))
+            item["address"] = f"📂 {category}"
+            results.append(item)
+        
+        conn.close()
+        return results
+    
+    def search_nahj_by_number(self, category: str, number: int) -> Dict:
+        """جستجوی نهج‌البلاغه با شماره - دقیق"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        row = conn.execute("""
+            SELECT * FROM nahj_balagha 
+            WHERE category = ? AND number = ?
+        """, (category, number)).fetchone()
+        
+        conn.close()
+        if row:
+            item = dict(row)
+            cat_name = {
+                "khutbah": "خطبه",
+                "letter": "نامه",
+                "hekmat": "حکمت"
+            }.get(item.get("category", ""), "")
+            item["address"] = f"🕌 {cat_name} {item.get('number', '')}"
+            if item.get("translation_text"):
+                item["snippet"] = item["translation_text"][:200] + "..."
+            return item
+        return None
     
     def search_all(self, q: str) -> Dict:
         return {
@@ -241,38 +306,155 @@ def format_full(item: Dict, cat: str) -> str:
         return text
 
 
+def detect_search_type(text: str):
+    """تشخیص نوع جستجو از متن"""
+    text_lower = text.lower().strip()
+    
+    # جستجوی نهج‌البلاغه با شماره
+    nahj_patterns = [
+        r'نهج\s*البلاغه\s*(خطبه|نامه|حکمت)\s*(\d+)',
+        r'نهج\s*(خطبه|نامه|حکمت)\s*(\d+)',
+    ]
+    for pattern in nahj_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            cat_map = {"خطبه": "khutbah", "نامه": "letter", "حکمت": "hekmat"}
+            cat = cat_map.get(match.group(1), "khutbah")
+            number = int(match.group(2))
+            return {"type": "nahj_exact", "category": cat, "number": number}
+    
+    # جستجوی مفاتیح با عنوان
+    mafatih_patterns = [
+        r'مفاتیح\s*(.+?)(?:\s*$|$)',
+        r'مفاتیح\s+(.+)',
+    ]
+    for pattern in mafatih_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            title = match.group(1).strip()
+            return {"type": "mafatih_title", "title": title}
+    
+    # جستجوی حدیث با کلمه کلیدی
+    hadith_patterns = [
+        r'حدیث\s*(.+?)(?:\s*$|$)',
+        r'حدیث\s+(.+)',
+    ]
+    for pattern in hadith_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            keyword = match.group(1).strip()
+            return {"type": "hadith_keyword", "keyword": keyword}
+    
+    # جستجوی عمومی
+    return {"type": "general", "query": text}
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str = None):
     if query is None:
         await update.message.reply_text(
-            "🔍 **جستجو**\n\nعبارت مورد نظر را وارد کنید.\nمثال: `خدا` یا `توحید`"
+            "🔍 **جستجو**\n\n"
+            "فرمت‌های جستجو:\n"
+            "• `حدیث صبر` - جستجوی حدیث با کلمه صبر\n"
+            "• `مفاتیح مشلول` - جستجوی دعای مشلول در مفاتیح\n"
+            "• `نهج البلاغه خطبه 191` - نمایش خطبه ۱۹۱ نهج‌البلاغه\n"
+            "• `صبر` - جستجوی عمومی در همه بخش‌ها"
         )
         return
     
-    engine = get_engine()
-    results = engine.search_all(query)
+    # تشخیص نوع جستجو
+    search_type = detect_search_type(query)
     
-    total = sum(len(x) for x in results.values())
-    if total == 0:
-        await update.message.reply_text(f"🔍 نتیجه‌ای برای «{query}» پیدا نشد.")
+    if search_type["type"] == "hadith_keyword":
+        # فقط احادیث
+        keyword = search_type["keyword"]
+        engine = get_engine()
+        results = engine.search_hadiths_by_keyword(keyword)
+        
+        if not results:
+            await update.message.reply_text(f"🔍 حدیثی با کلمه «{keyword}» پیدا نشد.")
+            return
+        
+        sid = make_id(f"hadith_{keyword}")
+        context.user_data["search_results"] = {"hadiths": results}
+        
+        text = f"🔍 **نتایج حدیث «{keyword}»**  ({len(results)} مورد)\n\n"
+        buttons = []
+        buttons.append([InlineKeyboardButton(
+            f"📿 احادیث ({len(results)})",
+            callback_data=f"s_{sid}_hadiths_0"
+        )])
+        buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+        
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
         return
     
-    sid = make_id(query)
-    context.user_data["search_results"] = results
+    elif search_type["type"] == "mafatih_title":
+        # فقط مفاتیح
+        title = search_type["title"]
+        engine = get_engine()
+        results = engine.search_mafatih_by_title(title)
+        
+        if not results:
+            await update.message.reply_text(f"🔍 دعایی با عنوان «{title}» در مفاتیح پیدا نشد.")
+            return
+        
+        sid = make_id(f"mafatih_{title}")
+        context.user_data["search_results"] = {"mafatih": results}
+        
+        text = f"🔍 **نتایج مفاتیح «{title}»**  ({len(results)} مورد)\n\n"
+        buttons = []
+        buttons.append([InlineKeyboardButton(
+            f"📗 مفاتیح ({len(results)})",
+            callback_data=f"s_{sid}_mafatih_0"
+        )])
+        buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+        
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+        return
     
-    text = f"🔍 **نتایج «{query}»**  ({total} مورد)\n\n"
-    buttons = []
+    elif search_type["type"] == "nahj_exact":
+        # نهج‌البلاغه دقیق
+        category = search_type["category"]
+        number = search_type["number"]
+        engine = get_engine()
+        item = engine.search_nahj_by_number(category, number)
+        
+        if not item:
+            cat_name = {"khutbah": "خطبه", "letter": "نامه", "hekmat": "حکمت"}.get(category, category)
+            await update.message.reply_text(f"🔍 {cat_name} {number} در نهج‌البلاغه پیدا نشد.")
+            return
+        
+        full_text = format_full(item, "nahj")
+        await update.message.reply_text(full_text)
+        return
     
-    for cat, items in results.items():
-        if items:
-            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج‌البلاغه"}.get(cat, cat)
-            text += f"• {label}: {len(items)} مورد\n"
-            buttons.append([InlineKeyboardButton(
-                f"{label} ({len(items)})",
-                callback_data=f"s_{sid}_{cat}_0"
-            )])
-    
-    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        # جستجوی عمومی در همه بخش‌ها
+        engine = get_engine()
+        results = engine.search_all(query)
+        
+        total = sum(len(x) for x in results.values())
+        if total == 0:
+            await update.message.reply_text(f"🔍 نتیجه‌ای برای «{query}» پیدا نشد.")
+            return
+        
+        sid = make_id(query)
+        context.user_data["search_results"] = results
+        
+        text = f"🔍 **نتایج «{query}»**  ({total} مورد)\n\n"
+        buttons = []
+        
+        for cat, items in results.items():
+            if items:
+                label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج‌البلاغه"}.get(cat, cat)
+                text += f"• {label}: {len(items)} مورد\n"
+                buttons.append([InlineKeyboardButton(
+                    f"{label} ({len(items)})",
+                    callback_data=f"s_{sid}_{cat}_0"
+                )])
+        
+        buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,5 +568,4 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def enhanced_text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    """فقط برای چت خصوصی"""
     await search_command(update, context, text)
