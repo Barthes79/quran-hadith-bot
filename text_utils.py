@@ -25,3 +25,53 @@ def normalize_input_text(text: str) -> str:
         text = text.replace(ch, "")
 
     return text
+
+
+import re
+
+# اعراب/تشکیل عربی (فتحه، کسره، ضمه، تنوین، شدّ، سکون و مدّ) که در متون مذهبی
+# رایج است ولی تقریباً هیچ کاربری هنگام سرچ آن‌ها را تایپ نمی‌کند
+_DIACRITICS_RE = re.compile(
+    r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E8\u06EA-\u06ED\u08D4-\u08E1]"
+)
+_TATWEEL_RE = re.compile(r"\u0640")  # کشیدگی حروف (ـــ)
+# هر چیزی غیر از حروف فارسی/عربی، حروف لاتین، عدد و فاصله را حذف می‌کنیم
+_PUNCT_RE = re.compile(r"[^\w\s\u0600-\u06FF]", re.UNICODE)
+_MULTISPACE_RE = re.compile(r"\s+")
+
+
+def normalize_for_search(text: str) -> str:
+    """
+    متن را برای موتور جستجو (چه هنگام ایندکس‌سازی محتوا، چه هنگام پردازش
+    عبارتِ سرچِ کاربر) نرمال‌سازی می‌کند. هدف این است که تفاوت‌های ظاهریِ رایج
+    بین نگارش عربی و فارسی و سبک تایپ کاربرها باعث «پیدا نشدن» نتیجه‌ی درست
+    نشود. این تابع:
+    - ابتدا normalize_input_text را اجرا می‌کند (ي/ك و کاراکترهای نامرئی)
+    - اشکال مختلف الف (أ إ آ ٱ) را یکی می‌کند
+    - ة را معادل ه در نظر می‌گیرد (چون کاربران معمولاً همان‌طور تایپ می‌کنند)
+    - ؤ/ئ را به و/ی ساده تبدیل می‌کند
+    - اعراب (فتحه/کسره/ضمه/تشدید/سکون/تنوین) و کشیدگی حروف را حذف می‌کند
+    - علائم نگارشی را حذف و فاصله‌های اضافه را یکی می‌کند
+    - خروجی را lower-case می‌کند (برای کلمات لاتین احتمالی)
+    """
+    if not text:
+        return ""
+
+    text = normalize_input_text(text)
+
+    text = (
+        text.replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ٱ", "ا")
+        .replace("ة", "ه")
+        .replace("ؤ", "و")
+        .replace("ئ", "ی")
+    )
+
+    text = _DIACRITICS_RE.sub("", text)
+    text = _TATWEEL_RE.sub("", text)
+    text = _PUNCT_RE.sub(" ", text)
+    text = _MULTISPACE_RE.sub(" ", text).strip()
+
+    return text.lower()
