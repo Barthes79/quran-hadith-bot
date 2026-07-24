@@ -462,6 +462,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         text += "─" * 30 + "\n"
     
+    # دکمه‌های ناوبری - اینجا مهمه
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"s_{sid}_{cat}_{page-1}"))
