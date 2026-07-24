@@ -17,17 +17,13 @@ class SmartSearch:
         if not text or not keyword:
             return text
         
-        # جدا کردن کلمات کلیدی
         keywords = keyword.split()
         
-        # برای هر کلمه، هایلایت کن
         result = text
         for kw in keywords:
             if len(kw) < 2:
                 continue
-            # ایجاد الگوی case-insensitive
             pattern = re.compile(re.escape(kw), re.IGNORECASE)
-            # جایگزینی با هایلایت
             result = pattern.sub(lambda m: f"**{m.group(0)}**", result)
         
         return result
@@ -40,20 +36,16 @@ class SmartSearch:
         keyword_lower = keyword.lower()
         text_lower = text.lower()
         
-        # پیدا کردن اولین occurrence
         pos = text_lower.find(keyword_lower)
         if pos == -1:
-            # اگر کلمه پیدا نشد، ابتدای متن رو نشون بده
             snippet = text[:length]
             if len(text) > length:
                 snippet += "..."
             return self._highlight_text(snippet, keyword)
         
-        # شروع و پایان
         start = max(0, pos - 50)
         end = min(len(text), pos + len(keyword) + 50)
         
-        # پیدا کردن مرز جمله
         while start > 0 and text[start] not in ".،\n":
             start -= 1
         if start > 0:
@@ -66,7 +58,6 @@ class SmartSearch:
         if len(snippet) < len(text):
             snippet += "..."
         
-        # هایلایت کردن کلمه کلیدی
         return self._highlight_text(snippet, keyword)
     
     def search_hadiths(self, q: str) -> List[Dict]:
@@ -84,7 +75,6 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
-            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             elif item.get("arabic_text"):
@@ -92,7 +82,6 @@ class SmartSearch:
             else:
                 item["snippet"] = "متن موجود نیست"
             
-            # آدرس
             addr = ""
             if item.get("source_book"):
                 addr += f"📚 {item['source_book']}"
@@ -119,7 +108,6 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
-            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             elif item.get("title"):
@@ -156,7 +144,6 @@ class SmartSearch:
         results = []
         for row in rows:
             item = dict(row)
-            # ساخت snippet با هایلایت
             if item.get("translation_text"):
                 item["snippet"] = self._get_snippet(item["translation_text"], q)
             else:
@@ -334,7 +321,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ])
     
-    # دکمه‌های ناوبری
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️", callback_data=f"s_{sid}_{cat}_{page-1}"))
@@ -403,4 +389,5 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def enhanced_text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """فقط برای استفاده در چت خصوصی - برای گروه از search_command استفاده میشود"""
     await search_command(update, context, text)
