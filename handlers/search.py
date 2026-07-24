@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 from config import DATABASE_PATH
 
 SEARCH_CACHE = {}
+TEXT_CACHE = {}  # کش مخصوص متن‌های طولانی
 
 
 class SmartSearch:
@@ -21,7 +22,6 @@ class SmartSearch:
         keyword_lower = keyword.lower()
         text_lower = text.lower()
         
-        # پیدا کردن موقعیت کلمه
         pos = text_lower.find(keyword_lower)
         
         if pos == -1:
@@ -45,7 +45,6 @@ class SmartSearch:
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
         
-        # فقط جستجوی دقیق با LIKE
         rows = conn.execute("""
             SELECT * FROM hadiths 
             WHERE translation_text LIKE ? 
@@ -218,7 +217,30 @@ def format_result_summary(item: Dict, cat: str, index: int) -> str:
         return text
 
 
-def format_full_item(item: Dict, cat: str) -> str:
+def split_text(text: str, chunk_size: int = 3500) -> List[str]:
+    """تقسیم متن طولانی به چند بخش"""
+    if len(text) <= chunk_size:
+        return [text]
+    
+    parts = []
+    lines = text.split("\n")
+    current = ""
+    
+    for line in lines:
+        if len(current) + len(line) + 1 > chunk_size:
+            parts.append(current)
+            current = line + "\n"
+        else:
+            current += line + "\n"
+    
+    if current:
+        parts.append(current)
+    
+    return parts
+
+
+def format_full_item(item: Dict, cat: str, page: int = 0, total_pages: int = 1) -> str:
+    """نمایش متن کامل با صفحه‌بندی"""
     if cat == "hadiths":
         text = "📿 **متن کامل حدیث**\n\n"
         if item.get("arabic_text"):
@@ -358,7 +380,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([
             InlineKeyboardButton(
                 f"📖 مشاهده کامل {i}",
-                callback_data=f"vi_{item_key}"
+                callback_data=f"vi_{item_key}_0"  # اضافه کردن صفحه 0
             )
         ])
         text += "─" * 30 + "\n"
@@ -383,10 +405,17 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش متن کامل با صفحه‌بندی"""
     q = update.callback_query
     await q.answer()
     
-    item_key = q.data.replace("vi_", "")
+    # دریافت اطلاعات از دکمه: vi_{item_key}_{page}
+    parts = q.data.split("_")
+    if len(parts) < 3:
+        return
+    
+    item_key = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 0
     
     cached = SEARCH_CACHE.get(item_key)
     if not cached:
@@ -402,38 +431,41 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     item = cached["item"]
     cat = cached["cat"]
     
-    text = format_full_item(item, cat)
+    # تولید متن کامل
+    full_text = format_full_item(item, cat)
     
+    # تقسیم به بخش‌ها
+    text_parts = split_text(full_text, chunk_size=3500)
+    total_pages = len(text_parts)
+    
+    # اگر صفحه بیشتر از کل صفحات بود، آخرین صفحه رو نشون بده
+    if page >= total_pages:
+        page = total_pages - 1
+    
+    current_text = text_parts[page]
+    
+    # ساخت دکمه‌های صفحه‌بندی برای متن
     sid = item_key.split("_")[0]
-    buttons = [[
-        InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")
-    ]]
+    buttons = []
     
-    if len(text) > 4000:
-        parts_text = []
-        current = ""
-        for line in text.split("\n"):
-            if len(current) + len(line) > 3500:
-                parts_text.append(current)
-                current = line + "\n"
-            else:
-                current += line + "\n"
-        if current:
-            parts_text.append(current)
-        
-        await q.edit_message_text(
-            parts_text[0][:4000],
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode=None
-        )
-        for part in parts_text[1:]:
-            await q.message.reply_text(part[:4000], parse_mode=None)
-    else:
-        await q.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode=None
-        )
+    # دکمه‌های ناوبری برای متن
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ صفحه قبل", callback_data=f"vi_{item_key}_{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("صفحه بعد ▶️", callback_data=f"vi_{item_key}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+    
+    buttons.append([InlineKeyboardButton("🔙 بازگشت به نتایج", callback_data=f"sb_{sid}")])
+    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
+    
+    await q.edit_message_text(
+        current_text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode=None
+    )
 
 
 async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
