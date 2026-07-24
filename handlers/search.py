@@ -127,7 +127,6 @@ class SmartSearch:
         conn.row_factory = sqlite3.Row
         like = f"%{q}%"
         
-        # جستجو در همه فیلدها
         rows = conn.execute("""
             SELECT * FROM mafatih 
             WHERE title LIKE ? 
@@ -141,7 +140,6 @@ class SmartSearch:
         results = [dict(row) for row in rows]
         conn.close()
         
-        # اگر نتیجه کم بود، جستجوی فازی
         if len(results) < 5:
             fuzzy_results = self._fuzzy_search_mafatih(q)
             existing = {r["id"] for r in results}
@@ -149,7 +147,6 @@ class SmartSearch:
                 if item["id"] not in existing:
                     results.append(item)
         
-        # اضافه کردن snippet و آدرس
         for item in results:
             snippet = ""
             if item.get("translation_text"):
@@ -398,12 +395,6 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, que
     sid = make_id(query)
     SEARCH_CACHE[sid] = results
     
-    # همچنین برای هر آیتم جداگانه کش کن
-    for cat, items in results.items():
-        for i, item in enumerate(items):
-            item_id = f"{sid}_{cat}_{item.get('id', i)}"
-            SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
-    
     text = f"🔍 **نتایج جستجوی «{query}»**\n"
     text += f"📊 **{total}** نتیجه یافت شد:\n\n"
     
@@ -457,8 +448,9 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     buttons = []
     for i, item in enumerate(page_items, 1):
-        item_id = f"{sid}_{cat}_{item.get('id', i)}"
-        # اطمینان از ذخیره در کش
+        # استفاده از شناسه ساده‌تر: sid_cat_index
+        idx = start + i - 1
+        item_id = f"{sid}_{cat}_{idx}"
         SEARCH_CACHE[f"item_{item_id}"] = {"item": item, "cat": cat}
         
         text += format_result_summary(item, cat, i) + "\n"
@@ -499,10 +491,14 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     
     item_id = parts[1]
+    
+    # چاپ برای دیباگ
+    print(f"🔍 Looking for item: {item_id}")
+    print(f"🔍 Cache keys: {list(SEARCH_CACHE.keys())[:10]}")
+    
     cached = SEARCH_CACHE.get(f"item_{item_id}")
     
     if not cached:
-        # تلاش برای پیدا کردن دوباره
         await q.edit_message_text(
             "🔍 محتوای این مورد منقضی شده است.\n"
             "لطفاً دوباره جستجو کنید.",
