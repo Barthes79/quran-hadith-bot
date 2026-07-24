@@ -1,35 +1,28 @@
 import re
 import logging
-import json
 import hashlib
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from thefuzz import fuzz, process
 import sqlite3
 
-from database import get_connection, search_hadiths, get_nahj_item, get_mafatih_by_id
 from services.quran_api import get_ayah
 from config import DATABASE_PATH
 
 logger = logging.getLogger(__name__)
 
-MIN_FUZZY_SCORE = 30
-# دیکشنری موقت برای ذخیره نتایج جستجو (با شناسه یکتا)
+MIN_FUZZY_SCORE = 25
 SEARCH_CACHE = {}
 
 
 class SmartSearch:
-    """کلاس اصلی جستجوی هوشمند"""
-    
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
     
-    def search_hadiths_advanced(self, query: str) -> List[Dict]:
-        """جستجوی پیشرفته احادیث - بدون محدودیت"""
+    def search_hadiths(self, query: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        
         like = f"%{query}%"
         
         rows = conn.execute("""
@@ -39,57 +32,46 @@ class SmartSearch:
             OR tafsir_text LIKE ?
             OR narrator LIKE ?
             OR source_book LIKE ?
-            OR chapter LIKE ?
-        """, (like, like, like, like, like, like)).fetchall()
+            ORDER BY id
+        """, (like, like, like, like, like)).fetchall()
         
         results = [dict(row) for row in rows]
         conn.close()
         
-        # اگر نتیجه کم بود، جستجوی فازی
         if len(results) < 5:
-            fuzzy_results = self._fuzzy_search_hadiths(query)
-            existing_ids = {r["id"] for r in results}
-            for item in fuzzy_results:
-                if item["id"] not in existing_ids:
+            fuzzy = self._fuzzy_search_hadiths(query)
+            existing = {r["id"] for r in results}
+            for item in fuzzy:
+                if item["id"] not in existing:
                     results.append(item)
         
         return results
     
     def _fuzzy_search_hadiths(self, query: str) -> List[Dict]:
-        """جستجوی فازی در احادیث"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        all_hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
+        all_items = conn.execute("SELECT * FROM hadiths").fetchall()
         conn.close()
         
-        query_lower = query.lower()
+        q = query.lower()
         scored = []
-        
-        for item in all_hadiths:
-            item_dict = dict(item)
-            best_score = 0
-            
-            if item_dict.get("translation_text"):
-                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if item_dict.get("arabic_text"):
-                score = fuzz.partial_ratio(query_lower, item_dict["arabic_text"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if best_score >= MIN_FUZZY_SCORE:
-                scored.append((item_dict, best_score))
+        for item in all_items:
+            item = dict(item)
+            best = 0
+            for field in ["translation_text", "arabic_text", "narrator", "source_book"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
         
         scored.sort(key=lambda x: x[1], reverse=True)
         return [item for item, _ in scored]
     
-    def search_mafatih_advanced(self, query: str) -> List[Dict]:
-        """جستجوی پیشرفته مفاتیح - بدون محدودیت"""
+    def search_mafatih(self, query: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        
         like = f"%{query}%"
         
         rows = conn.execute("""
@@ -97,57 +79,46 @@ class SmartSearch:
             WHERE title LIKE ? 
             OR arabic_text LIKE ?
             OR translation_text LIKE ?
-            OR tafsir_text LIKE ?
-            OR category LIKE ?
-        """, (like, like, like, like, like)).fetchall()
+            ORDER BY id
+        """, (like, like, like)).fetchall()
         
         results = [dict(row) for row in rows]
         conn.close()
         
         if len(results) < 5:
-            fuzzy_results = self._fuzzy_search_mafatih(query)
-            existing_ids = {r["id"] for r in results}
-            for item in fuzzy_results:
-                if item["id"] not in existing_ids:
+            fuzzy = self._fuzzy_search_mafatih(query)
+            existing = {r["id"] for r in results}
+            for item in fuzzy:
+                if item["id"] not in existing:
                     results.append(item)
         
         return results
     
     def _fuzzy_search_mafatih(self, query: str) -> List[Dict]:
-        """جستجوی فازی در مفاتیح"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         all_items = conn.execute("SELECT * FROM mafatih").fetchall()
         conn.close()
         
-        query_lower = query.lower()
+        q = query.lower()
         scored = []
-        
         for item in all_items:
-            item_dict = dict(item)
-            best_score = 0
-            
-            if item_dict.get("title"):
-                score = fuzz.partial_ratio(query_lower, item_dict["title"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if item_dict.get("translation_text"):
-                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if best_score >= MIN_FUZZY_SCORE:
-                scored.append((item_dict, best_score))
+            item = dict(item)
+            best = 0
+            for field in ["title", "translation_text", "arabic_text"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
         
         scored.sort(key=lambda x: x[1], reverse=True)
         return [item for item, _ in scored]
     
-    def search_nahj_advanced(self, query: str) -> List[Dict]:
-        """جستجوی پیشرفته نهج‌البلاغه - بدون محدودیت"""
+    def search_nahj(self, query: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        
         like = f"%{query}%"
         
         rows = conn.execute("""
@@ -155,374 +126,248 @@ class SmartSearch:
             WHERE title LIKE ? 
             OR arabic_text LIKE ?
             OR translation_text LIKE ?
-            OR tafsir_text LIKE ?
-            OR category LIKE ?
-        """, (like, like, like, like, like)).fetchall()
+            ORDER BY id
+        """, (like, like, like)).fetchall()
         
         results = [dict(row) for row in rows]
         conn.close()
         
         if len(results) < 5:
-            fuzzy_results = self._fuzzy_search_nahj(query)
-            existing_ids = {r["id"] for r in results}
-            for item in fuzzy_results:
-                if item["id"] not in existing_ids:
+            fuzzy = self._fuzzy_search_nahj(query)
+            existing = {r["id"] for r in results}
+            for item in fuzzy:
+                if item["id"] not in existing:
                     results.append(item)
         
         return results
     
     def _fuzzy_search_nahj(self, query: str) -> List[Dict]:
-        """جستجوی فازی در نهج‌البلاغه"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         all_items = conn.execute("SELECT * FROM nahj_balagha").fetchall()
         conn.close()
         
-        query_lower = query.lower()
+        q = query.lower()
         scored = []
-        
         for item in all_items:
-            item_dict = dict(item)
-            best_score = 0
-            
-            if item_dict.get("title"):
-                score = fuzz.partial_ratio(query_lower, item_dict["title"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if item_dict.get("translation_text"):
-                score = fuzz.partial_ratio(query_lower, item_dict["translation_text"].lower())
-                if score > best_score:
-                    best_score = score
-            
-            if best_score >= MIN_FUZZY_SCORE:
-                scored.append((item_dict, best_score))
+            item = dict(item)
+            best = 0
+            for field in ["title", "translation_text", "arabic_text"]:
+                if item.get(field):
+                    score = fuzz.partial_ratio(q, item[field].lower())
+                    if score > best:
+                        best = score
+            if best >= MIN_FUZZY_SCORE:
+                scored.append((item, best))
         
         scored.sort(key=lambda x: x[1], reverse=True)
         return [item for item, _ in scored]
     
-    def search_all(self, query: str) -> Dict[str, List]:
-        """جستجو در همه بخش‌ها - بدون محدودیت"""
+    def search_all(self, query: str) -> Dict:
         return {
-            "hadiths": self.search_hadiths_advanced(query),
-            "mafatih": self.search_mafatih_advanced(query),
-            "nahj": self.search_nahj_advanced(query),
+            "hadiths": self.search_hadiths(query),
+            "mafatih": self.search_mafatih(query),
+            "nahj": self.search_nahj(query),
         }
 
 
-_search_engine = None
+_engine = None
 
-def get_search_engine() -> SmartSearch:
-    global _search_engine
-    if _search_engine is None:
-        _search_engine = SmartSearch()
-    return _search_engine
-
-
-def get_category_emoji(category: str) -> str:
-    emojis = {
-        "hadiths": "📿",
-        "mafatih": "📗",
-        "nahj": "🕌",
-        "khutbah": "📜",
-        "letter": "✉️",
-        "hekmat": "💎",
-    }
-    return emojis.get(category, "🔍")
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = SmartSearch()
+    return _engine
 
 
-def format_search_result(item: Dict, category: str) -> str:
-    """فرمت‌بندی نتیجه جستجو - بدون امتیاز تطابق"""
-    emoji = get_category_emoji(category)
+def make_id(query: str) -> str:
+    """ساخت شناسه ۶ کاراکتری برای جستجو"""
+    return hashlib.md5(f"{query}".encode()).hexdigest()[:6]
+
+
+def fmt_item(item: Dict, cat: str) -> str:
+    emojis = {"hadiths": "📿", "mafatih": "📗", "nahj": "🕌"}
+    emoji = emojis.get(cat, "🔍")
     
-    if category == "hadiths":
+    if cat == "hadiths":
         text = f"{emoji} **حدیث**\n"
-        arabic = item.get('arabic_text', '')
-        if arabic:
-            text += f"📖 {arabic[:300]}\n\n"
-        translation = item.get('translation_text', '')
-        if translation:
-            text += f"🔹 ترجمه: {translation[:300]}"
+        if item.get("arabic_text"):
+            text += f"📖 {item['arabic_text'][:250]}\n\n"
+        if item.get("translation_text"):
+            text += f"🔹 {item['translation_text'][:250]}"
         if item.get("narrator"):
-            text += f"\n👤 راوی: {item['narrator']}"
+            text += f"\n👤 {item['narrator']}"
         if item.get("source_book"):
-            text += f"\n📚 منبع: {item['source_book']}"
-        if item.get("id"):
-            text += f"\n🆔 شناسه: {item['id']}"
-        
-    elif category == "mafatih":
+            text += f"\n📚 {item['source_book']}"
+        text += f"\n🆔 {item['id']}"
+        return text
+    
+    elif cat == "mafatih":
         text = f"{emoji} **{item.get('title', 'دعا')}**\n"
-        arabic = item.get('arabic_text', '')
-        if arabic:
-            text += f"\n🌿 {arabic[:300]}"
-        translation = item.get('translation_text', '')
-        if translation:
-            text += f"\n\n🔹 ترجمه: {translation[:300]}"
-        if item.get("category"):
-            cat_names = {
-                "daily": "اعمال روزانه",
-                "weekly": "اعمال هفتگی",
-                "monthly": "اعمال ماهانه",
-                "ziyarat": "زیارات",
-                "munajat": "مناجات",
-                "special": "اعمال ویژه"
-            }
-            text += f"\n📂 دسته: {cat_names.get(item['category'], item['category'])}"
-        
-    elif category == "nahj" or category in ["khutbah", "letter", "hekmat"]:
-        cat_name = {
-            "khutbah": "خطبه",
-            "letter": "نامه",
-            "hekmat": "حکمت"
-        }.get(item.get("category", ""), item.get("category", ""))
-        
+        if item.get("arabic_text"):
+            text += f"\n🌿 {item['arabic_text'][:250]}"
+        if item.get("translation_text"):
+            text += f"\n\n🔹 {item['translation_text'][:250]}"
+        return text
+    
+    else:  # nahj
+        cat_name = {"khutbah": "خطبه", "letter": "نامه", "hekmat": "حکمت"}.get(
+            item.get("category", ""), ""
+        )
         text = f"{emoji} **{cat_name} {item.get('number', '')}**"
         if item.get("title"):
             text += f"\n📌 {item['title']}"
-        arabic = item.get('arabic_text', '')
-        if arabic:
-            text += f"\n\n🌿 {arabic[:300]}"
-        translation = item.get('translation_text', '')
-        if translation:
-            text += f"\n\n🔹 ترجمه: {translation[:300]}"
-    
-    return text
-
-
-def generate_search_id(query: str) -> str:
-    """تولید شناسه یکتا برای هر جستجو"""
-    return hashlib.md5(f"{query}_{len(SEARCH_CACHE)}".encode()).hexdigest()[:8]
-
-
-def get_search_keyboard(search_id: str, results: Dict, query: str) -> InlineKeyboardMarkup:
-    """ساخت کیبورد با شناسه یکتا - بدون استفاده از query در callback"""
-    buttons = []
-    
-    for category, items in results.items():
-        if items:
-            label = {
-                "hadiths": f"📿 احادیث ({len(items)})",
-                "mafatih": f"📗 مفاتیح ({len(items)})",
-                "nahj": f"🕌 نهج‌البلاغه ({len(items)})",
-            }.get(category, category)
-            
-            buttons.append([
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"scat_{search_id}_{category}_0"
-                )
-            ])
-    
-    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
-    
-    return InlineKeyboardMarkup(buttons)
+        if item.get("arabic_text"):
+            text += f"\n\n🌿 {item['arabic_text'][:250]}"
+        if item.get("translation_text"):
+            text += f"\n\n🔹 {item['translation_text'][:250]}"
+        return text
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str = None):
     if query is None:
         await update.message.reply_text(
             "🔍 **جستجوی هوشمند**\n\n"
-            "عبارت مورد نظر خود را وارد کنید.\n"
+            "عبارت مورد نظر را وارد کنید.\n"
             "مثال: `صبر` یا `توحید` یا `2:255`\n\n"
-            "می‌توانید در تمام بخش‌های زیر جستجو کنید:\n"
-            "📿 احادیث\n📗 مفاتیح‌الجنان\n🕌 نهج‌البلاغه",
+            "📿 احادیث\n📗 مفاتیح\n🕌 نهج‌البلاغه",
             parse_mode="Markdown"
         )
         return
     
-    # بررسی اگر فرمت آیه بود
+    # بررسی آیه
     if ":" in query and query.replace(":", "").isdigit():
         try:
-            surah, ayah = query.split(":")
-            data = await get_ayah(int(surah), int(ayah))
+            s, a = query.split(":")
+            data = await get_ayah(int(s), int(a))
             if data:
-                text = f"📖 **سوره {surah} - آیه {ayah}**\n\n"
-                text += f"{data['arabic']}\n\n"
-                text += f"🔹 ترجمه:\n{data['translation']}"
+                text = f"📖 **سوره {s} - آیه {a}**\n\n{data['arabic']}\n\n🔹 {data['translation']}"
                 await update.message.reply_text(text, parse_mode="Markdown")
                 return
         except:
             pass
     
-    # جستجو
-    engine = get_search_engine()
+    engine = get_engine()
     results = engine.search_all(query)
     
-    total_results = sum(len(items) for items in results.values())
-    if total_results == 0:
-        suggestion = await get_suggestion(query)
-        if suggestion:
-            await update.message.reply_text(
-                f"🔍 **نتیجه‌ای برای «{query}» پیدا نشد.**\n\n"
-                f"💡 آیا منظور شما «{suggestion}» بود؟\n"
-                f"برای جستجو دوباره عبارت را ارسال کنید.",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text(
-                f"🔍 **نتیجه‌ای برای «{query}» پیدا نشد.**\n\n"
-                "لطفاً عبارت دیگری را امتحان کنید.",
-                parse_mode="Markdown"
-            )
+    total = sum(len(x) for x in results.values())
+    if total == 0:
+        await update.message.reply_text(f"🔍 نتیجه‌ای برای «{query}» پیدا نشد.")
         return
     
-    # ذخیره نتایج با شناسه یکتا
-    search_id = generate_search_id(query)
-    SEARCH_CACHE[search_id] = {
-        "results": results,
-        "query": query
-    }
+    # ذخیره در کش
+    sid = make_id(query)
+    SEARCH_CACHE[sid] = results
     
-    text = f"🔍 **نتایج جستجوی «{query}»**\n\n"
-    text += f"📊 **{total_results}** نتیجه یافت شد:\n\n"
-    
-    for category, items in results.items():
+    text = f"🔍 **نتایج «{query}»**\n📊 {total} مورد:\n\n"
+    for cat, items in results.items():
         if items:
-            label = {
-                "hadiths": "📿 احادیث",
-                "mafatih": "📗 مفاتیح",
-                "nahj": "🕌 نهج‌البلاغه",
-            }.get(category, category)
-            text += f"• {label}: {len(items)} مورد\n"
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
+            text += f"• {label}: {len(items)}\n"
     
-    await update.message.reply_text(
-        text,
-        reply_markup=get_search_keyboard(search_id, results, query),
-        parse_mode="Markdown"
-    )
+    # کیبورد با شناسه کوتاه
+    buttons = []
+    for cat, items in results.items():
+        if items:
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
+            buttons.append([InlineKeyboardButton(
+                f"{label} ({len(items)})",
+                callback_data=f"s_{sid}_{cat}_0"
+            )])
+    
+    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+    
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
 async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر برای کلیک روی نتایج جستجو - با استفاده از search_id"""
-    query = update.callback_query
-    await query.answer()
+    q = update.callback_query
+    await q.answer()
     
-    data = query.data
+    data = q.data
     parts = data.split("_")
     
     if len(parts) < 4:
         return
     
-    action = parts[0]
+    sid = parts[1]
+    cat = parts[2]
+    page = int(parts[3])
     
-    if action == "scat":
-        search_id = parts[1]
-        category = parts[2]
-        page = int(parts[3])
-        
-        # دریافت نتایج از کش
-        cached = SEARCH_CACHE.get(search_id)
-        if not cached:
-            await query.edit_message_text("🔍 نتایج جستجو منقضی شده است. لطفاً دوباره جستجو کنید.")
-            return
-        
-        items = cached["results"].get(category, [])
-        search_query = cached["query"]
-        
-        if not items:
-            await query.edit_message_text("نتیجه‌ای برای این دسته پیدا نشد.")
-            return
-        
-        # نمایش همه نتایج در یک پیام (بدون صفحه‌بندی)
-        text = f"🔍 **نتایج {get_category_emoji(category)}**\n"
-        text += f"جستجو: «{search_query}»\n\n"
-        
-        # نمایش حداکثر ۲۰ مورد در هر پیام (محدودیت طول پیام تلگرام)
-        items_per_page = 20
-        start = page * items_per_page
-        end = start + items_per_page
-        page_items = items[start:end]
-        
-        for item in page_items:
-            text += format_search_result(item, category) + "\n\n"
-            text += "─" * 30 + "\n\n"
-        
-        # دکمه‌های صفحه‌بندی
-        buttons = []
-        nav_row = []
-        total_pages = (len(items) + items_per_page - 1) // items_per_page
-        
-        if page > 0:
-            nav_row.append(InlineKeyboardButton(
-                "◀️ قبلی",
-                callback_data=f"scat_{search_id}_{category}_{page-1}"
-            ))
-        if page < total_pages - 1:
-            nav_row.append(InlineKeyboardButton(
-                "بعدی ▶️",
-                callback_data=f"scat_{search_id}_{category}_{page+1}"
-            ))
-        if nav_row:
-            buttons.append(nav_row)
-        
-        # دکمه اطلاعات تعداد کل
-        buttons.append([
-            InlineKeyboardButton(
-                f"📊 {len(items)} نتیجه - صفحه {page+1} از {total_pages}",
-                callback_data="noop"
-            )
-        ])
-        
-        buttons.append([
-            InlineKeyboardButton(
-                "🔙 بازگشت به نتایج اصلی",
-                callback_data=f"sback_{search_id}"
-            )
-        ])
-        buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
-        
-        await query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode="Markdown"
-        )
+    results = SEARCH_CACHE.get(sid)
+    if not results:
+        await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
+        return
     
-    elif action == "sback":
-        search_id = parts[1]
-        cached = SEARCH_CACHE.get(search_id)
-        
-        if not cached:
-            await query.edit_message_text("🔍 نتایج جستجو منقضی شده است. لطفاً دوباره جستجو کنید.")
-            return
-        
-        results = cached["results"]
-        search_query = cached["query"]
-        total_results = sum(len(items) for items in results.values())
-        
-        text = f"🔍 **نتایج جستجوی «{search_query}»**\n\n"
-        text += f"📊 **{total_results}** نتیجه یافت شد:\n\n"
-        
-        for category, items in results.items():
-            if items:
-                label = {
-                    "hadiths": "📿 احادیث",
-                    "mafatih": "📗 مفاتیح",
-                    "nahj": "🕌 نهج‌البلاغه",
-                }.get(category, category)
-                text += f"• {label}: {len(items)} مورد\n"
-        
-        await query.edit_message_text(
-            text,
-            reply_markup=get_search_keyboard(search_id, results, search_query),
-            parse_mode="Markdown"
-        )
+    items = results.get(cat, [])
+    if not items:
+        await q.edit_message_text("موردی یافت نشد.")
+        return
+    
+    # ۱۵ مورد در هر صفحه
+    per_page = 15
+    start = page * per_page
+    end = start + per_page
+    page_items = items[start:end]
+    
+    text = f"🔍 **نتایج {cat}**\n\n"
+    for item in page_items:
+        text += fmt_item(item, cat) + "\n\n" + "─" * 25 + "\n\n"
+    
+    # دکمه‌ها
+    buttons = []
+    nav = []
+    total_pages = (len(items) + per_page - 1) // per_page
+    
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️", callback_data=f"s_{sid}_{cat}_{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("▶️", callback_data=f"s_{sid}_{cat}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+    
+    buttons.append([InlineKeyboardButton("🔙 برگشت", callback_data=f"sb_{sid}")])
+    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+    
+    await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
-async def get_suggestion(query: str) -> str:
-    common_words = [
-        "صبر", "توحید", "اخلاق", "نماز", "روزه", "حج", "زکات", "جهاد",
-        "توبه", "استغفار", "توکل", "ایمان", "اسلام", "قرآن", "حدیث",
-        "امام", "علی", "حسین", "فاطمه", "محمد", "نبوت", "معاد", "عدل",
-        "دعا", "زیارت", "مناجات", "مفاتیح", "نهج", "بلاغه", "نماز", "شب"
-    ]
+async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
     
-    best_match = process.extractOne(query, common_words, scorer=fuzz.partial_ratio)
-    if best_match and best_match[1] > 50:
-        return best_match[0]
+    sid = q.data.split("_")[1]
+    results = SEARCH_CACHE.get(sid)
     
-    return None
+    if not results:
+        await q.edit_message_text("🔍 نتایج منقضی شد.")
+        return
+    
+    total = sum(len(x) for x in results.values())
+    text = f"🔍 **نتایج جستجو**\n📊 {total} مورد:\n\n"
+    for cat, items in results.items():
+        if items:
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
+            text += f"• {label}: {len(items)}\n"
+    
+    buttons = []
+    for cat, items in results.items():
+        if items:
+            label = {"hadiths": "📿 احادیث", "mafatih": "📗 مفاتیح", "nahj": "🕌 نهج"}.get(cat, cat)
+            buttons.append([InlineKeyboardButton(
+                f"{label} ({len(items)})",
+                callback_data=f"s_{sid}_{cat}_0"
+            )])
+    
+    buttons.append([InlineKeyboardButton("🏠 منو", callback_data="menu_back")])
+    
+    await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
 async def enhanced_text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    """هندلر جستجوی پیشرفته - با قابلیت نمایش همه نتایج"""
     await search_command(update, context, text)
+
+
+async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()

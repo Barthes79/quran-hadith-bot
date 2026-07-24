@@ -144,7 +144,9 @@ def main():
     # دستورات (Commands)
     # ==========================================
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("search", search_command))  # دستور جدید جستجو
+    app.add_handler(CommandHandler("search", search_command)) 
+    app.add_handler(CallbackQueryHandler(noop, pattern="^noop$"))
+    app.add_handler(CallbackQueryHandler(back_callback, pattern="^sb_"))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CommandHandler("addnahj", add_nahj_command))
