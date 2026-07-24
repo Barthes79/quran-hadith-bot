@@ -36,7 +36,6 @@ from handlers.nahj import (
     nahj_item_callback, fav_nahj_callback, add_nahj_command,
     nahj_text_page_callback,
 )
-# توابع مفاتیح الجنان به همراه هندلر متنی و هندلر فایل صوتی اضافه شد
 from handlers.mafatih import (
     mafatih_category_callback, mafatih_subcategory_callback, mafatih_menu_callback, 
     mafatih_item_callback, fav_mafatih_callback, add_mafatih_command,
@@ -48,6 +47,9 @@ from handlers.admin import (
 )
 from handlers.quiz import (
     quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
+)
+from handlers.search import (
+    search_command, search_callback, enhanced_text_search_handler
 )
 
 logging.basicConfig(
@@ -72,6 +74,7 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode="Markdown",
             )
 
+
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     در چت خصوصی، هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه
@@ -84,7 +87,9 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     text = update.message.text.strip()
     handled = await ayah_direct_lookup(update, context, text)
     if not handled:
-        await text_search_handler(update, context, text)
+        # استفاده از جستجوی پیشرفته به جای text_search_handler قدیمی
+        await enhanced_text_search_handler(update, context, text)
+
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد"""
@@ -99,6 +104,7 @@ async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📄 *Document file_id:*\n`{update.message.document.file_id}`", parse_mode="Markdown")
     elif update.message.video:
         await update.message.reply_text(f"📹 *Video file_id:*\n`{update.message.video.file_id}`", parse_mode="Markdown")
+
 
 def main():
     init_db()
@@ -134,15 +140,13 @@ def main():
 
     app.add_error_handler(_global_error_handler)
 
-    # دستورات
+    # ==========================================
+    # دستورات (Commands)
+    # ==========================================
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("search", search_command))  # دستور جدید جستجو
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
-    app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
-    app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
-    app.add_handler(CallbackQueryHandler(favorites_nahj_callback, pattern="^favorites_nahj$"))
-    app.add_handler(CallbackQueryHandler(favorites_mafatih_callback, pattern="^favorites_mafatih$"))
-    app.add_handler(CallbackQueryHandler(favorites_back_callback, pattern="^favorites_back$"))
     app.add_handler(CommandHandler("addnahj", add_nahj_command))
     app.add_handler(CommandHandler("addmafatih", add_mafatih_command))
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
@@ -155,14 +159,31 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
-    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
 
-    # کالبک‌های منو
+    # ==========================================
+    # کالبک‌های منو (Menu Callbacks)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
     app.add_handler(CallbackQueryHandler(set_translation_callback, pattern="^set_translation_"))
 
-    # کالبک‌های قرآن
+    # ==========================================
+    # کالبک‌های جستجو (Search Callbacks)
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(search_callback, pattern="^search_"))
+
+    # ==========================================
+    # کالبک‌های علاقه‌مندی‌ها (Favorites)
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
+    app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
+    app.add_handler(CallbackQueryHandler(favorites_nahj_callback, pattern="^favorites_nahj$"))
+    app.add_handler(CallbackQueryHandler(favorites_mafatih_callback, pattern="^favorites_mafatih$"))
+    app.add_handler(CallbackQueryHandler(favorites_back_callback, pattern="^favorites_back$"))
+
+    # ==========================================
+    # کالبک‌های قرآن (Quran)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(surah_page_callback, pattern="^surah_page_"))
     app.add_handler(CallbackQueryHandler(surah_selected_callback, pattern="^surah_\\d+$"))
     app.add_handler(CallbackQueryHandler(ayah_list_page_callback, pattern="^ayahlist_\\d+_\\d+$"))
@@ -171,14 +192,18 @@ def main():
     app.add_handler(CallbackQueryHandler(tafsir_callback, pattern="^tafsir_"))
     app.add_handler(CallbackQueryHandler(audio_callback, pattern="^audio_"))
 
-    # کالبک‌های احادیث
+    # ==========================================
+    # کالبک‌های احادیث (Hadith)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_"))
     app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))
     app.add_handler(CallbackQueryHandler(fav_hadith_callback, pattern="^fav_hadith_"))
 
-    # کالبک‌های نهج‌البلاغه
+    # ==========================================
+    # کالبک‌های نهج‌البلاغه (Nahj)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(nahj_menu_callback, pattern="^nahjmenu$"))
     app.add_handler(CallbackQueryHandler(nahj_category_callback, pattern="^nahjcat_"))
     app.add_handler(CallbackQueryHandler(nahj_page_callback, pattern="^nahjpage_"))
@@ -186,7 +211,9 @@ def main():
     app.add_handler(CallbackQueryHandler(nahj_text_page_callback, pattern="^nahjtxt_"))
     app.add_handler(CallbackQueryHandler(fav_nahj_callback, pattern="^favnahj_"))
 
-    # کالبک‌های مفاتیح‌الجنان
+    # ==========================================
+    # کالبک‌های مفاتیح‌الجنان (Mafatih)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(mafatih_menu_callback, pattern="^mafmenu$"))
     app.add_handler(CallbackQueryHandler(mafatih_category_callback, pattern="^mafcat_"))
     app.add_handler(CallbackQueryHandler(mafatih_subcategory_callback, pattern="^mafsub_"))
@@ -195,55 +222,56 @@ def main():
     app.add_handler(CallbackQueryHandler(mafatih_audio_callback, pattern="^mafaudio_"))
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
-    # کالبک‌های تنظیمات گروه
+    # ==========================================
+    # کالبک‌های کوییز (Quiz)
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
+
+    # ==========================================
+    # کالبک‌های تنظیمات گروه (Group Settings)
+    # ==========================================
     app.add_handler(CallbackQueryHandler(toggle_daily_post_callback, pattern="^toggle_daily_post$"))
     app.add_handler(CallbackQueryHandler(group_send_now_callback, pattern="^group_send_now$"))
     app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
     app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
 
-    # =========================================================================
-    # دریافت موقت file_id فایل‌های فرستاده‌شده به ربات (پشتیبانی از صوت، داکیومنت و ویدیو)
-    # =========================================================================
+    # ==========================================
+    # دریافت موقت file_id فایل‌های فرستاده‌شده
+    # ==========================================
     app.add_handler(MessageHandler(
         filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, 
         get_file_id_debug
     ))
 
-    # inline mode
+    # ==========================================
+    # Inline Mode
+    # ==========================================
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
+    # ==========================================
     # عضویت ربات در گروه جدید
+    # ==========================================
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
 
     # ==========================================
     # هندلر پیام‌های متنی (Text Handlers)
     # ==========================================
     
-    # ۱. هندلر دکمه متنی مفاتیح الجنان (حتماً باید بالاتر از general_text_handler باشد)
+    # ۱. هندلر دکمه متنی مفاتیح الجنان
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
     
-    # ۲. پیام‌های متنی عادی (فقط چت خصوصی)
+    # ۲. پیام‌های متنی عادی (با جستجوی پیشرفته)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
 
+    # ==========================================
     # جاب پست روزانه - هر ساعت یکبار چک می‌کند
+    # ==========================================
     if app.job_queue:
         app.job_queue.run_repeating(daily_post_job, interval=3600, first=10)
 
-    logger.info("Bot started polling...")
+    logger.info("🚀 Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     main()
-    # اضافه کردن import جدید
-from handlers.search import search_command, search_callback, enhanced_text_search_handler
-
-# بعد از خطوط import دیگر اضافه کنید
-
-# اضافه کردن دستور /search
-app.add_handler(CommandHandler("search", search_command))
-
-# اضافه کردن کالبک‌های جستجو
-app.add_handler(CallbackQueryHandler(search_callback, pattern="^search_"))
-
-# جایگزینی general_text_handler با نسخه پیشرفته
-# کامنت کردن general_text_handler قبلی و اضافه کردن نسخه جدید
