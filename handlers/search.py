@@ -17,12 +17,14 @@ class SmartSearch:
         self.db_path = db_path
     
     def _get_context(self, text: str, keyword: str, context_chars: int = 60) -> str:
+        """پیدا کردن کلمه جستجو شده در متن - بدون هایلایت"""
         if not text:
             return ""
         
         keyword_lower = keyword.lower()
         text_lower = text.lower()
         
+        # پیدا کردن موقعیت کلمه
         pos = text_lower.find(keyword_lower)
         if pos == -1:
             for word in keyword.split():
@@ -34,6 +36,7 @@ class SmartSearch:
         if pos == -1:
             return text[:200] + "..."
         
+        # پیدا کردن شروع و پایان
         start = max(0, pos - context_chars)
         end = min(len(text), pos + len(keyword) + context_chars)
         
@@ -46,12 +49,6 @@ class SmartSearch:
             end += 1
         
         snippet = text[start:end].strip()
-        
-        for word in keyword.split():
-            if len(word) > 2:
-                pattern = re.compile(re.escape(word), re.IGNORECASE)
-                snippet = pattern.sub(f"**{word}**", snippet)
-        
         return snippet
     
     def search_hadiths(self, q: str) -> List[Dict]:
@@ -137,14 +134,7 @@ class SmartSearch:
             ORDER BY id
         """, (like, like, like, like, like)).fetchall()
         
-        results = []
-        for idx, row in enumerate(rows, 1):
-            item = dict(row)
-            # اگر id نداشت، از idx استفاده کن
-            if not item.get("id"):
-                item["id"] = idx
-            results.append(item)
-        
+        results = [dict(row) for row in rows]
         conn.close()
         
         if len(results) < 5:
@@ -152,8 +142,6 @@ class SmartSearch:
             existing = {r.get("id", i) for i, r in enumerate(results, 1)}
             for item in fuzzy_results:
                 if item.get("id") not in existing:
-                    if not item.get("id"):
-                        item["id"] = len(results) + 1
                     results.append(item)
         
         for item in results:
@@ -191,10 +179,8 @@ class SmartSearch:
         
         q_lower = q.lower()
         scored = []
-        for idx, item in enumerate(all_items, 1):
+        for item in all_items:
             item = dict(item)
-            if not item.get("id"):
-                item["id"] = idx
             best = 0
             for field in ["title", "translation_text", "arabic_text", "tafsir_text"]:
                 if item.get(field):
@@ -440,7 +426,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat = parts[2]
     page = int(parts[3])
     
-    # دریافت نتایج از کش
     results = SEARCH_CACHE.get(sid)
     if not results:
         await q.edit_message_text("🔍 نتایج منقضی شد. دوباره جستجو کنید.")
@@ -475,7 +460,6 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         text += "─" * 30 + "\n"
     
-    # دکمه‌های ناوبری
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"s_{sid}_{cat}_{page-1}"))
@@ -488,10 +472,11 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data=f"sb_{sid}")])
     buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
     
+    # استفاده از parse_mode=None برای جلوگیری از خطاهای Markdown
     await q.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode="Markdown"
+        parse_mode=None  # مهم: غیرفعال کردن Markdown
     )
 
 
@@ -504,11 +489,11 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cached = SEARCH_CACHE.get(item_key)
     if not cached:
         await q.edit_message_text(
-            "🔍 محتوای این مورد منقضی شده است.\n"
-            "لطفاً دوباره جستجو کنید.",
+            "🔍 محتوای این مورد منقضی شده است.\nلطفاً دوباره جستجو کنید.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔄 جستجوی مجدد", callback_data="menu_search")
-            ]])
+            ]]),
+            parse_mode=None
         )
         return
     
@@ -537,15 +522,15 @@ async def view_full_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await q.edit_message_text(
             parts_text[0][:4000],
             reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode="Markdown"
+            parse_mode=None
         )
         for part in parts_text[1:]:
-            await q.message.reply_text(part[:4000], parse_mode="Markdown")
+            await q.message.reply_text(part[:4000], parse_mode=None)
     else:
         await q.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(buttons),
-            parse_mode="Markdown"
+            parse_mode=None
         )
 
 
@@ -574,7 +559,7 @@ async def back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
     
     buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
-    await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=None)
 
 
 async def enhanced_text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
