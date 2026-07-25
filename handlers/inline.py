@@ -4,7 +4,7 @@ from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup,
 )
 from telegram.ext import ContextTypes
-from database import search_all
+from database import search_raw, hydrate_results
 from services.quran_api import get_ayah
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 
@@ -105,7 +105,10 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     query_text = update.inline_query.query.strip()
 
     if not query_text:
-        await update.inline_query.answer([], cache_time=1, is_personal=False)
+        try:
+            await update.inline_query.answer([], cache_time=1, is_personal=False)
+        except Exception:
+            pass
         return
 
     offset_raw = update.inline_query.offset
@@ -131,9 +134,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
 
-    # جستجوی یکپارچه‌ی محتوا (حدیث + نهج‌البلاغه + مفاتیح‌الجنان) — تا سقف MAX_RESULTS واکشی می‌شود
-    all_items = search_all(query_text, limit=MAX_RESULTS)
-    page_items = all_items[offset: offset + PAGE_SIZE]
+    # جستجوی یکپارچه‌ی محتوا (حدیث + نهج‌البلاغه + مفاتیح‌الجنان) — فقط شناسه‌ها
+    # (سریع، چون فقط از ایندکس FTS می‌خواند)؛ فقط همان صفحه‌ای که الان لازم
+    # داریم را کامل واکشی می‌کنیم، نه کل MAX_RESULTS را — وگرنه با نتایج زیاد
+    # واکشی کامل چند صد آیتم طول می‌کشد و پاسخ از مهلت تلگرام (~۱۰ ثانیه) رد می‌شود.
+    all_raw = search_raw(query_text, limit=MAX_RESULTS)
+    page_raw = all_raw[offset: offset + PAGE_SIZE]
+    page_items = hydrate_results(page_raw)
 
     for item in page_items:
         try:
@@ -142,6 +149,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             # اگر یک آیتم به هر دلیلی مشکل فرمت داشت، کل نتایج را خراب نکند
             continue
 
-    next_offset = str(offset + PAGE_SIZE) if offset + PAGE_SIZE < len(all_items) else ""
+    next_offset = str(offset + PAGE_SIZE) if offset + PAGE_SIZE < len(all_raw) else ""
 
-    await update.inline_query.answer(results, cache_time=1, is_personal=False, next_offset=next_offset)
+    try:
+        await update.inline_query.answer(results, cache_time=1, is_personal=False, next_offset=next_offset)
+    except Exception:
+        # اگر کاربر خیلی سریع تایپ کرده و این کوئری منقضی شده (کوئری جدیدتری
+        # جایگزینش شده)، تلگرام خطای "query too old" می‌دهد؛ بی‌خطر است و
+        # نیازی به لاگ کردن به‌عنوان خطای بحرانی نیست.
+        pass

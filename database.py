@@ -344,21 +344,52 @@ def _fuzzy_fallback(norm_query: str, types=None, limit: int = 15):
     return results
 
 
-def _hydrate_results(raw_results):
-    """نتایج خام (source_type/source_id) را به داده‌ی کامل و آماده‌ی نمایش تبدیل می‌کند."""
-    hydrated = []
+_TYPE_TABLE = {"hadith": "hadiths", "nahj": "nahj_balagha", "mafatih": "mafatih"}
+
+
+def hydrate_results(raw_results):
+    """
+    نتایج خام (source_type/source_id) را به داده‌ی کامل و آماده‌ی نمایش تبدیل می‌کند.
+    برخلاف نسخه‌ی قبلی، این تابع به‌جای یک کوئری جدا برای هر آیتم (که برای
+    صدها نتیجه بسیار کند بود و باعث تایم‌اوت شدن inline query در تلگرام
+    می‌شد)، برای هر نوع محتوا فقط یک کوئری دسته‌ای (WHERE id IN (...)) می‌زند.
+    فقط روی همان لیستی که واقعاً می‌خواهید نمایش بدهید (مثلاً یک صفحه‌ی ۵۰تایی)
+    صدا بزنید، نه کل نتایج خام.
+    """
+    if not raw_results:
+        return []
+
+    ids_by_type = {"hadith": [], "nahj": [], "mafatih": []}
+    order = []
     seen = set()
     for r in raw_results:
         key = (r["source_type"], r["source_id"])
-        if key in seen:
+        if key in seen or r["source_type"] not in ids_by_type:
             continue
         seen.add(key)
+        order.append(key)
+        ids_by_type[r["source_type"]].append(r["source_id"])
 
-        stype, sid = r["source_type"], r["source_id"]
+    rows_by_key = {}
+    conn = get_connection()
+    for stype, ids in ids_by_type.items():
+        if not ids:
+            continue
+        table = _TYPE_TABLE[stype]
+        placeholders = ",".join("?" for _ in ids)
+        fetched = conn.execute(
+            f"SELECT * FROM {table} WHERE id IN ({placeholders})", ids
+        ).fetchall()
+        for row in fetched:
+            rows_by_key[(stype, row["id"])] = row
+    conn.close()
+
+    hydrated = []
+    for stype, sid in order:
+        row = rows_by_key.get((stype, sid))
+        if not row:
+            continue
         if stype == "hadith":
-            row = get_hadith_by_id(sid)
-            if not row:
-                continue
             hydrated.append({
                 "type": "hadith", "id": sid, "row": row,
                 "title": row["narrator"] or "حدیث",
@@ -366,9 +397,6 @@ def _hydrate_results(raw_results):
                 "extra": row["source_book"] or "",
             })
         elif stype == "nahj":
-            row = get_nahj_item_by_id(sid)
-            if not row:
-                continue
             hydrated.append({
                 "type": "nahj", "id": sid, "row": row,
                 "title": row["title"] or "",
@@ -376,9 +404,6 @@ def _hydrate_results(raw_results):
                 "extra": {"category": row["category"], "number": row["number"]},
             })
         elif stype == "mafatih":
-            row = get_mafatih_by_id(sid)
-            if not row:
-                continue
             hydrated.append({
                 "type": "mafatih", "id": sid, "row": row,
                 "title": row["title"] or "",
@@ -388,11 +413,13 @@ def _hydrate_results(raw_results):
     return hydrated
 
 
-def search_all(query: str, limit: int = 15, types=None):
+def search_raw(query: str, limit: int = 15, types=None):
     """
-    جستجوی یکپارچه روی حدیث/نهج‌البلاغه/مفاتیح.
-    types: تاپل اختیاری برای محدود کردن به یک یا چند نوع، مثلاً ("hadith",)
-    خروجی: لیستی از دیکشنری‌های آماده‌ی نمایش (به ترتیب ارتباط/رتبه).
+    فقط تطبیق‌های خام (source_type/source_id) را برمی‌گرداند، بدون واکشی کامل
+    اطلاعات هر آیتم — خیلی سریع است چون فقط از ایندکس FTS می‌خواند.
+    وقتی همه‌ی نتایج را لازم ندارید (مثلاً برای صفحه‌بندی در سرچ اینلاین)،
+    این را با limit بالا صدا بزنید و فقط زیرمجموعه‌ی موردنیاز را با
+    hydrate_results کامل کنید.
     """
     norm_q = normalize_for_search(query)
     tokens = [t for t in norm_q.split() if t]
@@ -422,7 +449,18 @@ def search_all(query: str, limit: int = 15, types=None):
     if not results:
         results = _fuzzy_fallback(norm_q, types=types, limit=limit)
 
-    return _hydrate_results(results)
+    return results
+
+
+def search_all(query: str, limit: int = 15, types=None):
+    """
+    جستجوی یکپارچه روی حدیث/نهج‌البلاغه/مفاتیح (شناسه‌یابی + واکشی کامل، یکجا).
+    types: تاپل اختیاری برای محدود کردن به یک یا چند نوع، مثلاً ("hadith",)
+    خروجی: لیستی از دیکشنری‌های آماده‌ی نمایش (به ترتیب ارتباط/رتبه).
+    برای لیست‌های بزرگ/صفحه‌بندی‌شده (مثل سرچ اینلاین) به‌جای این تابع از
+    search_raw + hydrate_results (فقط روی همان صفحه) استفاده کنید تا سریع‌تر باشد.
+    """
+    return hydrate_results(search_raw(query, limit=limit, types=types))
 
 
 def get_user_translation(user_id: int) -> str:
