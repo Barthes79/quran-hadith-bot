@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaAudio
 from telegram.ext import ContextTypes
 import database as db
 
@@ -504,8 +504,11 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
         )
 
 async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هندلر دکمه‌ی «فایل صوتی این دعا»؛ فقط با کلیک کاربر صدا را جداگانه می‌فرستد
-    و شناسه‌ی پیام آن را ردیابی می‌کند تا هنگام برگشت/رفتن به دعای دیگر پاک شود."""
+    """هندلر دکمه‌ی «فایل صوتی این دعا».
+    برای پیام‌های معمولی داخل چت/گروه: صدا را جدا در همان چت می‌فرستد.
+    برای پیام‌هایی که از نتیجه‌ی سرچ اینلاین آمده‌اند (query.message خالی است
+    چون تلگرام chat_id این‌ها را به بات نمی‌دهد) امکان فرستادن پیام جداگانه
+    نیست؛ به‌جای آن خودِ همان پیام به یک پیام صوتی تبدیل می‌شود."""
     query = update.callback_query
     item_id = query.data.replace("mafaudio_", "")
     item = db.get_mafatih_item_flexible(item_id)
@@ -515,16 +518,33 @@ async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("❌ فایل صوتی برای این دعا یافت نشد.", show_alert=True)
         return
 
-    await query.answer()
-    try:
-        audio_msg = await query.message.chat.send_audio(
-            audio=audio_file_id,
-            title=item["title"],
-            caption=f"🎧 {item['title']}",
-        )
-        context.user_data["maf_extra_audio_id"] = audio_msg.message_id
-    except Exception:
-        logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
+    if query.message:
+        await query.answer()
+        try:
+            audio_msg = await query.message.chat.send_audio(
+                audio=audio_file_id,
+                title=item["title"],
+                caption=f"🎧 {item['title']}",
+            )
+            context.user_data["maf_extra_audio_id"] = audio_msg.message_id
+        except Exception:
+            logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
+    else:
+        # پیام از نتیجه‌ی سرچ اینلاین است؛ chat_id نداریم پس پیام جدا ممکن نیست
+        try:
+            await query.edit_message_media(
+                media=InputMediaAudio(
+                    media=audio_file_id, title=item["title"], caption=f"🎧 {item['title']}"
+                )
+            )
+            await query.answer()
+        except Exception:
+            logger.exception(f"MAFATIH INLINE AUDIO EDIT ERROR {item_id} (file_id={audio_file_id})")
+            await query.answer(
+                "❌ پخش صدا از داخل نتیجه‌ی سرچ ممکن نشد. برای شنیدن صدا، دعا را "
+                "از منوی داخل ربات (نه از نتیجه‌ی سرچ) باز کنید.",
+                show_alert=True,
+            )
 
 
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
