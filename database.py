@@ -9,6 +9,13 @@ def get_connection():
     return conn
 
 
+def _ensure_column(cur, table: str, column: str, definition: str):
+    """اگر ستون در جدول وجود نداشت، آن را اضافه می‌کند (برای دیتابیس‌های قدیمی)."""
+    existing = {row[1] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in existing:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -95,11 +102,16 @@ def init_db():
             option_b TEXT NOT NULL,
             option_c TEXT NOT NULL,
             option_d TEXT NOT NULL,
-            correct_option TEXT NOT NULL  -- 'a', 'b', 'c' یا 'd'
+            correct_option TEXT NOT NULL,  -- 'a', 'b', 'c' یا 'd'
+            category TEXT DEFAULT 'general',      -- quran / nahj / hadith / general
+            difficulty TEXT DEFAULT 'medium'      -- easy / medium / hard
         )
     """)
+    # مهاجرت برای دیتابیس‌های قدیمی‌تر که این دو ستون را ندارند
+    _ensure_column(cur, "quiz_questions", "category", "TEXT DEFAULT 'general'")
+    _ensure_column(cur, "quiz_questions", "difficulty", "TEXT DEFAULT 'medium'")
 
-    # امتیاز کاربران در هر گروه (لیدربورد)
+    # امتیاز کاربران در هر گروه (لیدربورد گروهی)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quiz_scores (
             chat_id INTEGER,
@@ -107,6 +119,39 @@ def init_db():
             username TEXT,
             score INTEGER DEFAULT 0,
             PRIMARY KEY (chat_id, user_id)
+        )
+    """)
+
+    # آمار کلی هر کاربر (مستقل از گروه) — برای پروفایل، رتبه‌بندی سراسری و نشان‌ها
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_user_stats (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            total_points INTEGER DEFAULT 0,
+            total_correct INTEGER DEFAULT 0,
+            total_answered INTEGER DEFAULT 0,
+            current_streak INTEGER DEFAULT 0,
+            best_streak INTEGER DEFAULT 0
+        )
+    """)
+
+    # آمار عملکرد هر کاربر به تفکیک دسته‌بندی (برای نشان‌های تخصصی)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_category_stats (
+            user_id INTEGER,
+            category TEXT,
+            correct_count INTEGER DEFAULT 0,
+            PRIMARY KEY (user_id, category)
+        )
+    """)
+
+    # نشان‌های کسب‌شده‌ی کاربران
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_badges (
+            user_id INTEGER,
+            badge_key TEXT,
+            awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, badge_key)
         )
     """)
 
@@ -752,13 +797,15 @@ def get_all_active_daily_groups():
 
 # ---------------- توابع مربوط به Quiz ----------------
 
-def add_quiz_question(question_text, option_a, option_b, option_c, option_d, correct_option):
+def add_quiz_question(question_text, option_a, option_b, option_c, option_d, correct_option,
+                       category="general", difficulty="medium"):
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO quiz_questions
-           (question_text, option_a, option_b, option_c, option_d, correct_option)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (question_text, option_a, option_b, option_c, option_d, correct_option.lower()),
+           (question_text, option_a, option_b, option_c, option_d, correct_option, category, difficulty)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (question_text, option_a, option_b, option_c, option_d, correct_option.lower(),
+         category, difficulty),
     )
     qid = cur.lastrowid
     conn.commit()
@@ -766,9 +813,21 @@ def add_quiz_question(question_text, option_a, option_b, option_c, option_d, cor
     return qid
 
 
-def get_random_quiz_question():
+def get_random_quiz_question(category: str = None, difficulty: str = None):
     conn = get_connection()
-    row = conn.execute("SELECT * FROM quiz_questions ORDER BY RANDOM() LIMIT 1").fetchone()
+    query = "SELECT * FROM quiz_questions"
+    conditions = []
+    params = []
+    if category and category != "random":
+        conditions.append("category = ?")
+        params.append(category)
+    if difficulty:
+        conditions.append("difficulty = ?")
+        params.append(difficulty)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY RANDOM() LIMIT 1"
+    row = conn.execute(query, params).fetchone()
     conn.close()
     return row
 
@@ -780,7 +839,20 @@ def get_quiz_question_by_id(qid: int):
     return row
 
 
+def count_quiz_questions(category: str = None) -> int:
+    conn = get_connection()
+    if category and category != "random":
+        n = conn.execute(
+            "SELECT COUNT(*) c FROM quiz_questions WHERE category = ?", (category,)
+        ).fetchone()["c"]
+    else:
+        n = conn.execute("SELECT COUNT(*) c FROM quiz_questions").fetchone()["c"]
+    conn.close()
+    return n
+
+
 def add_score(chat_id: int, user_id: int, username: str, points: int = 1):
+    """امتیاز گروهی (لیدربورد داخل گروه)."""
     conn = get_connection()
     conn.execute(
         """INSERT INTO quiz_scores (chat_id, user_id, username, score)
@@ -802,6 +874,109 @@ def get_leaderboard(chat_id: int, limit: int = 10):
     ).fetchall()
     conn.close()
     return rows
+
+
+def get_global_leaderboard(limit: int = 10):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM quiz_user_stats ORDER BY total_points DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def record_quiz_result(chat_id: int, user_id: int, username: str, category: str,
+                        is_correct: bool, points: int = 0):
+    """
+    ثبت نتیجه‌ی یک پاسخ در آمار سراسری کاربر (امتیاز کلی، استریک، دسته‌بندی).
+    خروجی: دیکشنری آمار به‌روزشده‌ی کاربر (برای بررسی نشان‌های جدید).
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "INSERT OR IGNORE INTO quiz_user_stats (user_id, username) VALUES (?, ?)",
+        (user_id, username),
+    )
+
+    if is_correct:
+        cur.execute(
+            """UPDATE quiz_user_stats
+               SET username = ?,
+                   total_points = total_points + ?,
+                   total_correct = total_correct + 1,
+                   total_answered = total_answered + 1,
+                   current_streak = current_streak + 1,
+                   best_streak = MAX(best_streak, current_streak + 1)
+               WHERE user_id = ?""",
+            (username, points, user_id),
+        )
+        cur.execute(
+            """INSERT INTO quiz_category_stats (user_id, category, correct_count)
+               VALUES (?, ?, 1)
+               ON CONFLICT(user_id, category) DO UPDATE SET
+                   correct_count = correct_count + 1""",
+            (user_id, category),
+        )
+    else:
+        cur.execute(
+            """UPDATE quiz_user_stats
+               SET username = ?,
+                   total_answered = total_answered + 1,
+                   current_streak = 0
+               WHERE user_id = ?""",
+            (username, user_id),
+        )
+
+    stats = cur.execute(
+        "SELECT * FROM quiz_user_stats WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    cat_correct = cur.execute(
+        "SELECT correct_count FROM quiz_category_stats WHERE user_id = ? AND category = ?",
+        (user_id, category),
+    ).fetchone()
+
+    conn.commit()
+    conn.close()
+
+    result = dict(stats) if stats else {}
+    result["category_correct"] = cat_correct["correct_count"] if cat_correct else 0
+    return result
+
+
+def get_user_quiz_stats(user_id: int):
+    conn = get_connection()
+    stats = conn.execute(
+        "SELECT * FROM quiz_user_stats WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    categories = conn.execute(
+        "SELECT category, correct_count FROM quiz_category_stats WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+    badges = conn.execute(
+        "SELECT badge_key, awarded_at FROM quiz_badges WHERE user_id = ? ORDER BY awarded_at",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return {
+        "stats": stats,
+        "categories": {row["category"]: row["correct_count"] for row in categories},
+        "badges": [row["badge_key"] for row in badges],
+    }
+
+
+def award_badge(user_id: int, badge_key: str) -> bool:
+    """نشان را ثبت می‌کند. اگر قبلاً داشته False، اگر تازه گرفته True برمی‌گرداند."""
+    conn = get_connection()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO quiz_badges (user_id, badge_key) VALUES (?, ?)",
+        (user_id, badge_key),
+    )
+    is_new = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return is_new
 
 
 # ---------------- توابع مربوط به تفسیر قرآن ----------------

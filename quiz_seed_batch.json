@@ -5,7 +5,9 @@
     "b": "قرآن",
     "c": "انجیل",
     "d": "زبور",
-    "correct": "b"
+    "correct": "b",
+    "category": "general",
+    "difficulty": "easy"
   },
   {
     "question": "قرآن کریم شامل چند سوره است؟",
@@ -13,7 +15,9 @@
     "b": "110",
     "c": "114",
     "d": "120",
-    "correct": "c"
+    "correct": "c",
+    "category": "quran",
+    "difficulty": "medium"
   },
   {
     "question": "طولانی‌ترین سوره‌ی قرآن کدام است؟",
@@ -21,7 +25,9 @@
     "b": "سوره ناس",
     "c": "سوره یاسین",
     "d": "سوره کهف",
-    "correct": "a"
+    "correct": "a",
+    "category": "quran",
+    "difficulty": "easy"
   },
   {
     "question": "کوتاه‌ترین سوره‌ی قرآن کدام است؟",
@@ -29,7 +35,9 @@
     "b": "سوره کوثر",
     "c": "سوره ناس",
     "d": "سوره عصر",
-    "correct": "b"
+    "correct": "b",
+    "category": "quran",
+    "difficulty": "medium"
   },
   {
     "question": "این حدیث از کیست: «الصَّبْرُ مِفْتَاحُ الْفَرَجِ»؟",
@@ -37,7 +45,9 @@
     "b": "امام علی (ع)",
     "c": "امام حسین (ع)",
     "d": "امام رضا (ع)",
-    "correct": "b"
+    "correct": "b",
+    "category": "hadith",
+    "difficulty": "hard"
   },
   {
     "question": "کتاب «نهج‌البلاغه» مجموعه‌ی سخنان کیست؟",
@@ -45,7 +55,9 @@
     "b": "امام علی (ع)",
     "c": "امام صادق (ع)",
     "d": "امام باقر (ع)",
-    "correct": "b"
+    "correct": "b",
+    "category": "nahj",
+    "difficulty": "easy"
   },
   {
     "question": "اولین سوره‌ای که کامل بر پیامبر (ص) نازل شد کدام است؟",
@@ -53,7 +65,9 @@
     "b": "سوره حمد",
     "c": "سوره بقره",
     "d": "سوره مدثر",
-    "correct": "b"
+    "correct": "b",
+    "category": "quran",
+    "difficulty": "hard"
   },
   {
     "question": "معنای «إِنَّمَا الْأَعْمَالُ بِالنِّيَّاتِ» چیست؟",
@@ -61,6 +75,8 @@
     "b": "اعمال به نیت‌شان ارزش دارند",
     "c": "اعمال باید پنهانی انجام شوند",
     "d": "اعمال نیک هرگز ضایع نمی‌شوند",
-    "correct": "b"
+    "correct": "b",
+    "category": "hadith",
+    "difficulty": "medium"
   }
 ]
