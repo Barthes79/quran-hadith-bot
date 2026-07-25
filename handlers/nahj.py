@@ -27,7 +27,7 @@ NAHJ_ITEM_LABELS = {
     "hekmat": "حکمت",
 }
 
-PAGE_SIZE = 100
+PAGE_SIZE = 80
 PER_ROW = 6
 
 
