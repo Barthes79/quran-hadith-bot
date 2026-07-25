@@ -6,7 +6,7 @@ from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ay
 from config import ADMIN_IDS
 
 PAGE_SIZE = 10
-AYAH_PAGE_SIZE = 60  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
+AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
 AYAHS_PER_ROW = 8
 
 
