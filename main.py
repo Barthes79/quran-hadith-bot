@@ -201,10 +201,10 @@ def main():
     # =========================================================================
     # دریافت موقت file_id فایل‌های فرستاده‌شده به ربات (پشتیبانی از صوت، داکیومنت و ویدیو)
     # =========================================================================
-    app.add_handler(MessageHandler(
-        filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, 
-        get_file_id_debug
-    ))
+    #app.add_handler(MessageHandler(
+      #  filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, 
+       # get_file_id_debug
+   # ))
 
     # inline mode
     app.add_handler(InlineQueryHandler(inline_query_handler))
