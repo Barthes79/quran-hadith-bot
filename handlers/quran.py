@@ -6,8 +6,8 @@ from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ay
 from config import ADMIN_IDS
 
 PAGE_SIZE = 10
-AYAH_PAGE_SIZE = 30  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
-AYAHS_PER_ROW = 5
+AYAH_PAGE_SIZE = 60  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
+AYAHS_PER_ROW = 6
 
 
 async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):

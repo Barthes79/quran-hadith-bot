@@ -27,8 +27,8 @@ NAHJ_ITEM_LABELS = {
     "hekmat": "حکمت",
 }
 
-PAGE_SIZE = 30
-PER_ROW = 5
+PAGE_SIZE = 60
+PER_ROW = 6
 
 
 def _category_ok(category: str) -> bool:
