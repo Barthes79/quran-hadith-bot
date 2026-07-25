@@ -48,7 +48,9 @@ from handlers.admin import (
     daily_post_job, set_welcome_command, member_update_handler, link_guard_handler,
 )
 from handlers.quiz import (
-    quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
+    quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
+    leaderboard_command, global_leaderboard_command, my_quiz_stats_command,
+    add_quiz_command,
 )
 
 logging.basicConfig(
@@ -140,9 +142,13 @@ def main():
     app.add_handler(CommandHandler("delhadith", del_hadith_command))
     app.add_handler(CommandHandler("quiz", quiz_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("quizrank", global_leaderboard_command))
+    app.add_handler(CommandHandler("mystats", my_quiz_stats_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
     app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
+    app.add_handler(CallbackQueryHandler(quiz_category_callback, pattern="^quizcat_"))
+    app.add_handler(CallbackQueryHandler(quiz_menu_callback, pattern="^quizmenu$"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
 

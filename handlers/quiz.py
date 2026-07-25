@@ -310,7 +310,10 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
     if badge_lines:
         result_text += "\n\n🏅 نشان‌های جدید:\n" + "\n".join(badge_lines)
 
-    buttons = [[InlineKeyboardButton("🔁 سوال بعدی", callback_data=f"quizcat_{category}")]]
+    buttons = [
+        [InlineKeyboardButton("🔁 سوال بعدی", callback_data=f"quizcat_{category}")],
+        [InlineKeyboardButton("📋 منوی دسته‌ها", callback_data="quizmenu")],
+    ]
 
     await context.bot.edit_message_text(
         chat_id=data["chat_id"],

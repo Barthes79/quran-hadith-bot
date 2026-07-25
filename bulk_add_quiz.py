@@ -25,7 +25,9 @@ def main():
     for q in questions:
         try:
             qid = add_quiz_question(
-                q["question"], q["a"], q["b"], q["c"], q["d"], q["correct"]
+                q["question"], q["a"], q["b"], q["c"], q["d"], q["correct"],
+                category=q.get("category", "general"),
+                difficulty=q.get("difficulty", "medium"),
             )
             print(f"✅ ثبت شد (شناسه {qid}): {q['question'][:40]}...")
             added += 1
