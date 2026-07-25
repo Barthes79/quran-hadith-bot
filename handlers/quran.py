@@ -7,7 +7,7 @@ from config import ADMIN_IDS
 
 PAGE_SIZE = 10
 AYAH_PAGE_SIZE = 60  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
-AYAHS_PER_ROW = 6
+AYAHS_PER_ROW = 8
 
 
 async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
