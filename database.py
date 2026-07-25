@@ -816,7 +816,7 @@ def add_quiz_question(question_text, option_a, option_b, option_c, option_d, cor
     return qid
 
 
-def get_random_quiz_question(category: str = None, difficulty: str = None):
+def get_random_quiz_question(category: str = None, difficulty: str = None, exclude_ids=None):
     conn = get_connection()
     query = "SELECT * FROM quiz_questions"
     conditions = []
@@ -827,6 +827,10 @@ def get_random_quiz_question(category: str = None, difficulty: str = None):
     if difficulty:
         conditions.append("difficulty = ?")
         params.append(difficulty)
+    if exclude_ids:
+        placeholders = ",".join("?" for _ in exclude_ids)
+        conditions.append(f"id NOT IN ({placeholders})")
+        params.extend(exclude_ids)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY RANDOM() LIMIT 1"
