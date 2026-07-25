@@ -44,8 +44,8 @@ from handlers.mafatih import (
     mafatih_menu_text_callback, mafatih_text_page_callback, mafatih_audio_callback,
 )
 from handlers.admin import (
-    group_settings_command, toggle_daily_post_callback,
-    group_send_now_callback, daily_post_job, interval_menu_callback, set_interval_callback,
+    group_settings_command, group_settings_router,
+    daily_post_job, set_welcome_command, member_update_handler, link_guard_handler,
 )
 from handlers.quiz import (
     quiz_command, quiz_answer_callback, leaderboard_command, add_quiz_command,
@@ -57,21 +57,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """وقتی ربات به یک گروه جدید اضافه می‌شود، پیام معرفی بفرستد."""
-    for member in update.message.new_chat_members:
-        if member.id == context.bot.id:
-            await update.message.reply_text(
-                "سلام 🌙\n"
-                "از اضافه کردن من به این گروه خوشحالم!\n\n"
-                "برای دیدن قابلیت‌های گروهی از دستور /groupsettings استفاده کنید "
-                "(فقط ادمین‌ها).\n"
-                "برای جستجوی سریع، کافیست بنویسید:\n"
-                "`@نام_ربات صبر` یا `@نام_ربات 2:255`\n\n"
-                "همچنین می‌توانید در چت خصوصی من /start را بزنید تا از منوی کامل استفاده کنید.",
-                parse_mode="Markdown",
-            )
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -159,6 +144,7 @@ def main():
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
     app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
+    app.add_handler(CommandHandler("setwelcome", set_welcome_command))
 
     # کالبک‌های منو
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
@@ -199,10 +185,7 @@ def main():
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
     # کالبک‌های تنظیمات گروه
-    app.add_handler(CallbackQueryHandler(toggle_daily_post_callback, pattern="^toggle_daily_post$"))
-    app.add_handler(CallbackQueryHandler(group_send_now_callback, pattern="^group_send_now$"))
-    app.add_handler(CallbackQueryHandler(interval_menu_callback, pattern="^set_interval_menu$"))
-    app.add_handler(CallbackQueryHandler(set_interval_callback, pattern="^set_interval_"))
+    app.add_handler(CallbackQueryHandler(group_settings_router, pattern="^gset_"))
 
     # =========================================================================
     # دریافت موقت file_id فایل‌های فرستاده‌شده به ربات (پشتیبانی از صوت، داکیومنت و ویدیو)
@@ -216,7 +199,18 @@ def main():
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
     # عضویت ربات در گروه جدید
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    # عضویت/خروج اعضا (خوش‌آمدگویی به ربات، خوش‌آمدگویی سفارشی اعضای جدید، پاک‌سازی پیام سرویس)
+    app.add_handler(MessageHandler(
+        filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER,
+        member_update_handler,
+    ))
+
+    # ضداسپم ساده‌ی لینک (فقط وقتی ادمین گروه در تنظیمات فعالش کرده باشد)؛ در گروه
+    # جدا اجرا می‌شود تا مستقل از هندلرهای متنی دیگر همیشه چک شود
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, link_guard_handler),
+        group=1,
+    )
 
     # ==========================================
     # هندلر پیام‌های متنی (Text Handlers)

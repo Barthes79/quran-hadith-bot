@@ -72,7 +72,17 @@ def init_db():
             daily_post_enabled INTEGER DEFAULT 0,
             daily_post_hour INTEGER DEFAULT 8,
             post_interval_hours INTEGER DEFAULT 1,
-            preferred_translation TEXT DEFAULT 'makarem'
+            preferred_translation TEXT DEFAULT 'makarem',
+            content_hadith INTEGER DEFAULT 1,
+            content_ayah INTEGER DEFAULT 1,
+            content_nahj INTEGER DEFAULT 0,
+            content_mafatih INTEGER DEFAULT 0,
+            quiet_start_hour INTEGER DEFAULT -1,
+            quiet_end_hour INTEGER DEFAULT -1,
+            welcome_enabled INTEGER DEFAULT 0,
+            welcome_text TEXT,
+            delete_service_messages INTEGER DEFAULT 0,
+            block_links INTEGER DEFAULT 0
         )
     """)
 
@@ -145,6 +155,24 @@ def init_db():
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+
+    # ستون‌های تنظیمات پیشرفته‌ی گروه (نوع محتوا، بازه‌ی سکوت، خوش‌آمدگویی و ...)
+    for _col_def in [
+        "content_hadith INTEGER DEFAULT 1",
+        "content_ayah INTEGER DEFAULT 1",
+        "content_nahj INTEGER DEFAULT 0",
+        "content_mafatih INTEGER DEFAULT 0",
+        "quiet_start_hour INTEGER DEFAULT -1",
+        "quiet_end_hour INTEGER DEFAULT -1",
+        "welcome_enabled INTEGER DEFAULT 0",
+        "welcome_text TEXT",
+        "delete_service_messages INTEGER DEFAULT 0",
+        "block_links INTEGER DEFAULT 0",
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE group_settings ADD COLUMN {_col_def}")
+        except sqlite3.OperationalError:
+            pass
 
     try:
         cur.execute("ALTER TABLE mafatih ADD COLUMN image_path TEXT")
@@ -667,6 +695,20 @@ def get_hadiths_by_topic(topic_name: str):
 def get_random_hadith():
     conn = get_connection()
     row = conn.execute("SELECT * FROM hadiths ORDER BY RANDOM() LIMIT 1").fetchone()
+    conn.close()
+    return row
+
+
+def get_random_nahj_item():
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM nahj_balagha ORDER BY RANDOM() LIMIT 1").fetchone()
+    conn.close()
+    return row
+
+
+def get_random_mafatih_item():
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM mafatih ORDER BY RANDOM() LIMIT 1").fetchone()
     conn.close()
     return row
 
