@@ -9,6 +9,7 @@ from database import (
     get_random_quiz_question, get_quiz_question_by_id, count_quiz_questions,
     add_score, get_leaderboard, get_global_leaderboard,
     add_quiz_question, record_quiz_result, get_user_quiz_stats, award_badge,
+    get_group_settings, update_group_settings,
 )
 
 # ---------------- تنظیمات کلی ----------------
@@ -49,6 +50,12 @@ OPTION_LETTER_FA = {"a": "الف", "b": "ب", "c": "ج", "d": "د"}
 SPEED_BONUS_POINTS = 1
 WARNING_SECONDS_BEFORE_END = 5
 
+MIN_CUSTOM_TIME = 5
+MAX_CUSTOM_TIME = 120
+MIN_NEXT_DELAY = 2
+MAX_NEXT_DELAY = 30
+DEFAULT_NEXT_DELAY = 5
+
 # ---------------- تعریف نشان‌ها ----------------
 
 BADGES = {
@@ -81,6 +88,14 @@ def _check_new_badges(user_id: int, stats: dict, category: str):
             newly_awarded.append(cat_key)
 
     return newly_awarded
+
+
+def _get_quiz_settings(chat_id: int):
+    row = get_group_settings(chat_id)
+    custom_time = row["quiz_custom_time"] if row["quiz_custom_time"] else None
+    buzzer_mode = bool(row["quiz_buzzer_mode"])
+    next_delay = row["quiz_buzzer_next_delay"] if row["quiz_buzzer_next_delay"] else DEFAULT_NEXT_DELAY
+    return {"custom_time": custom_time, "buzzer_mode": buzzer_mode, "next_delay": next_delay}
 
 
 # ---------------- منوی انتخاب دسته ----------------
@@ -136,6 +151,57 @@ def quiz_keyboard(qid: int, row):
     return InlineKeyboardMarkup(buttons)
 
 
+def _build_question_payload(row, settings: dict):
+    difficulty = row["difficulty"] if row["difficulty"] in DIFFICULTY_INFO else "medium"
+    info = DIFFICULTY_INFO[difficulty]
+    time_limit = settings["custom_time"] or info["time"]
+    cat_label = CATEGORIES.get(row["category"], CATEGORIES["general"])
+
+    header = f"{cat_label}  |  {info['label']}  |  ⏱ {time_limit} ثانیه  |  🎯 {info['points']} امتیاز"
+    if settings["buzzer_mode"]:
+        header += "\n🔔 حالت زنگ‌اول فعال است"
+        footer = "اولین نفری که درست جواب بده، همه‌ی امتیاز این سوال رو می‌بره! 🔔"
+    else:
+        footer = "زودتر از بقیه جواب درست بده تا امتیاز سرعت هم بگیری! ⚡"
+
+    text = f"{header}\n──────────────\n\n❓ {row['question_text']}\n\n{footer}"
+    markup = quiz_keyboard(row["id"], row)
+    return text, markup, time_limit, difficulty
+
+
+def _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings):
+    key = (chat_id, message_id)
+    QUIZ_ANSWERS[key] = {
+        "qid": row["id"],
+        "row": row,
+        "category": row["category"] or "general",
+        "difficulty": difficulty,
+        "time_limit": time_limit,
+        "start": time.time(),
+        "text": text,
+        "answers": {},
+        "buzzer_mode": settings["buzzer_mode"],
+        "buzzer_next_delay": settings["next_delay"],
+        "finish_job": None,
+        "warn_job": None,
+    }
+
+    finish_job = context.job_queue.run_once(
+        finish_quiz,
+        time_limit,
+        data={"chat_id": chat_id, "message_id": message_id},
+    )
+    QUIZ_ANSWERS[key]["finish_job"] = finish_job
+
+    if time_limit > WARNING_SECONDS_BEFORE_END:
+        warn_job = context.job_queue.run_once(
+            warn_time_running_out,
+            time_limit - WARNING_SECONDS_BEFORE_END,
+            data={"chat_id": chat_id, "message_id": message_id},
+        )
+        QUIZ_ANSWERS[key]["warn_job"] = warn_job
+
+
 async def start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     chat = update.effective_chat
@@ -151,21 +217,11 @@ async def start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, categor
             await update.message.reply_text(msg)
         return
 
-    difficulty = row["difficulty"] if row["difficulty"] in DIFFICULTY_INFO else "medium"
-    info = DIFFICULTY_INFO[difficulty]
-    time_limit = info["time"]
-    cat_label = CATEGORIES.get(row["category"], CATEGORIES["general"])
-
-    text = (
-        f"{cat_label}  |  {info['label']}  |  ⏱ {time_limit} ثانیه  |  🎯 {info['points']} امتیاز\n"
-        "──────────────\n\n"
-        f"❓ {row['question_text']}\n\n"
-        "زودتر از بقیه جواب درست بده تا امتیاز سرعت هم بگیری! ⚡"
-    )
-    markup = quiz_keyboard(row["id"], row)
+    settings = _get_quiz_settings(chat.id)
+    text, markup, time_limit, difficulty = _build_question_payload(row, settings)
 
     if query:
-        sent_msg = await query.edit_message_text(text, reply_markup=markup)
+        await query.edit_message_text(text, reply_markup=markup)
         chat_id = query.message.chat.id
         message_id = query.message.message_id
     else:
@@ -173,30 +229,7 @@ async def start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, categor
         chat_id = chat.id
         message_id = sent_msg.message_id
 
-    key = (chat_id, message_id)
-    QUIZ_ANSWERS[key] = {
-        "qid": row["id"],
-        "row": row,
-        "category": row["category"] or "general",
-        "difficulty": difficulty,
-        "time_limit": time_limit,
-        "start": time.time(),
-        "text": text,
-        "answers": {},
-    }
-
-    context.job_queue.run_once(
-        finish_quiz,
-        time_limit,
-        data={"chat_id": chat_id, "message_id": message_id},
-    )
-
-    if time_limit > WARNING_SECONDS_BEFORE_END:
-        context.job_queue.run_once(
-            warn_time_running_out,
-            time_limit - WARNING_SECONDS_BEFORE_END,
-            data={"chat_id": chat_id, "message_id": message_id},
-        )
+    _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings)
 
 
 async def warn_time_running_out(context: ContextTypes.DEFAULT_TYPE):
@@ -221,6 +254,40 @@ async def warn_time_running_out(context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
+async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
+    """در حالت زنگ‌اول، بعد از قفل‌شدن سوال، این تابع سوال بعدی را خودکار می‌فرستد."""
+    data = context.job.data
+    chat_id = data["chat_id"]
+    message_id = data["message_id"]
+    category = data["category"]
+
+    settings = _get_quiz_settings(chat_id)
+    if not settings["buzzer_mode"]:
+        return  # ادمین در همین فاصله حالت زنگ‌اول را خاموش کرده
+
+    lookup_category = None if category == "random" else category
+    row = get_random_quiz_question(lookup_category)
+    if not row:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text="😕 سوال دیگری در این دسته باقی نمانده.",
+            )
+        except Exception:
+            pass
+        return
+
+    text, markup, time_limit, difficulty = _build_question_payload(row, settings)
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id, text=text, reply_markup=markup,
+        )
+    except Exception:
+        return
+
+    _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings)
+
+
 async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     key = (query.message.chat.id, query.message.message_id)
@@ -238,13 +305,79 @@ async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     username = user.username or user.first_name or "ناشناس"
-    quiz["answers"][user.id] = {
-        "username": username,
-        "chosen": chosen,
-        "elapsed": time.time() - quiz["start"],
-    }
+    elapsed = time.time() - quiz["start"]
+    quiz["answers"][user.id] = {"username": username, "chosen": chosen, "elapsed": elapsed}
+
+    is_correct = chosen == quiz["row"]["correct_option"]
+
+    if quiz["buzzer_mode"] and is_correct:
+        await query.answer("🔔 آفرین! تو زودتر از همه جواب درست دادی!", show_alert=True)
+        await _settle_buzzer_win(context, key, user.id, username)
+        return
 
     await query.answer("✅ جواب شما ثبت شد! نتیجه در پایان زمان اعلام می‌شود.")
+
+
+async def _settle_buzzer_win(context: ContextTypes.DEFAULT_TYPE, key, uid: int, username: str):
+    """اولین پاسخ درست در حالت زنگ‌اول: سوال را قفل، امتیاز را اعلام و سوال بعدی را زمان‌بندی می‌کند."""
+    quiz = QUIZ_ANSWERS.pop(key, None)
+    if not quiz:
+        return  # یک کاربر دیگر لحظه‌ای زودتر برنده اعلام شده
+
+    for job in (quiz.get("finish_job"), quiz.get("warn_job")):
+        if job:
+            try:
+                job.schedule_removal()
+            except Exception:
+                pass
+
+    row = quiz["row"]
+    category = quiz["category"]
+    difficulty = quiz["difficulty"]
+    base_points = DIFFICULTY_INFO[difficulty]["points"]
+    points = base_points + SPEED_BONUS_POINTS
+
+    chat_id, message_id = key
+    add_score(chat_id, uid, username, points=points)
+    stats_after = record_quiz_result(chat_id, uid, username, category, True, points)
+    new_badges = _check_new_badges(uid, stats_after, category)
+
+    option_map = OPTION_LETTER_FA
+    correct_text_map = {
+        "a": row["option_a"], "b": row["option_b"],
+        "c": row["option_c"], "d": row["option_d"],
+    }
+    others = [a["username"] for u, a in quiz["answers"].items() if u != uid]
+
+    result_text = (
+        "🔔 قفل شد! یک نفر زودتر از همه جواب درست داد!\n\n"
+        f"❓ {row['question_text']}\n\n"
+        f"🏆 برنده: {username} (+{points} امتیاز) ⚡\n"
+        f"📌 پاسخ صحیح: {option_map[row['correct_option']]}) "
+        f"{correct_text_map[row['correct_option']]}"
+    )
+    if others:
+        result_text += f"\n\n🙋 بقیه‌ای که تلاش کردند: {'، '.join(others)}"
+
+    for bkey in new_badges:
+        b = BADGES[bkey]
+        result_text += f"\n\n🏅 نشان جدید: {b['emoji']} {b['title']}"
+
+    next_delay = quiz["buzzer_next_delay"]
+    result_text += f"\n\n⏭ سوال بعدی تا {next_delay} ثانیه‌ی دیگر..."
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id, text=result_text,
+        )
+    except Exception:
+        pass
+
+    context.job_queue.run_once(
+        _auto_next_question,
+        next_delay,
+        data={"chat_id": chat_id, "message_id": message_id, "category": category},
+    )
 
 
 # ---------------- پایان دور و اعلام نتیجه ----------------
@@ -481,3 +614,114 @@ async def add_quiz_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ سوال با شناسه {qid} ثبت شد.\n"
         f"دسته: {CATEGORIES.get(category)} | سطح: {DIFFICULTY_INFO[difficulty]['label']}"
     )
+
+
+# ---------------- تنظیمات کوییز (مخصوص ادمین‌های گروه) ----------------
+
+async def quiz_settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    settings = _get_quiz_settings(chat_id)
+
+    time_text = f"{settings['custom_time']} ثانیه (سفارشی)" if settings["custom_time"] else "پیش‌فرض بر اساس سطح سختی"
+    buzzer_text = "روشن 🔔" if settings["buzzer_mode"] else "خاموش"
+
+    lines = [
+        "⚙️ تنظیمات کوییز این گروه:\n",
+        f"⏱ زمان هر سوال: {time_text}",
+        f"🔔 حالت زنگ‌اول: {buzzer_text}",
+        f"⏭ تاخیر سوال بعدی (در حالت زنگ‌اول): {settings['next_delay']} ثانیه",
+        "\nبرای تغییر (فقط ادمین):",
+        "• /quiztime <ثانیه>  — یا  /quiztime 0  برای پیش‌فرض",
+        "• /quizbuzzer on|off",
+        "• /quiznextdelay <ثانیه>",
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def quiz_time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "استفاده: /quiztime <ثانیه>\n"
+            "مثال: /quiztime 30\n"
+            "برای بازگشت به زمان پیش‌فرض هر سطح سختی: /quiztime 0\n"
+            f"بازه‌ی مجاز: {MIN_CUSTOM_TIME} تا {MAX_CUSTOM_TIME} ثانیه"
+        )
+        return
+
+    try:
+        seconds = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("لطفاً یک عدد صحیح وارد کن.")
+        return
+
+    chat_id = update.effective_chat.id
+
+    if seconds == 0:
+        update_group_settings(chat_id, quiz_custom_time=None)
+        await update.message.reply_text("✅ زمان سوالات به حالت پیش‌فرض (بر اساس سطح سختی) برگشت.")
+        return
+
+    if not (MIN_CUSTOM_TIME <= seconds <= MAX_CUSTOM_TIME):
+        await update.message.reply_text(f"عدد باید بین {MIN_CUSTOM_TIME} تا {MAX_CUSTOM_TIME} ثانیه باشد.")
+        return
+
+    update_group_settings(chat_id, quiz_custom_time=seconds)
+    await update.message.reply_text(f"✅ زمان هر سوال روی {seconds} ثانیه تنظیم شد.")
+
+
+async def quiz_buzzer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    valid = {"on": True, "off": False, "روشن": True, "خاموش": False}
+    if not context.args or context.args[0].lower() not in valid:
+        await update.message.reply_text(
+            "استفاده: /quizbuzzer on   یا   /quizbuzzer off\n\n"
+            "وقتی روشنه: هرکس زودتر از بقیه جواب درست بده، سوال قفل می‌شه، "
+            "امتیاز می‌گیره و بعد از چند ثانیه خودکار سوال بعدی میاد."
+        )
+        return
+
+    enable = valid[context.args[0].lower()]
+    chat_id = update.effective_chat.id
+    update_group_settings(chat_id, quiz_buzzer_mode=1 if enable else 0)
+
+    if enable:
+        await update.message.reply_text(
+            "🔔 حالت زنگ‌اول روشن شد!\n"
+            "از این به بعد، هرکس زودتر از بقیه جواب درست بده برنده‌ی همون سواله و "
+            "بقیه دیگه نمی‌تونن جواب بدن."
+        )
+    else:
+        await update.message.reply_text("✅ حالت زنگ‌اول خاموش شد. کوییز به حالت عادی برگشت.")
+
+
+async def quiz_next_delay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            f"استفاده: /quiznextdelay <ثانیه>\nبازه‌ی مجاز: {MIN_NEXT_DELAY} تا {MAX_NEXT_DELAY} ثانیه"
+        )
+        return
+
+    try:
+        seconds = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("لطفاً یک عدد صحیح وارد کن.")
+        return
+
+    if not (MIN_NEXT_DELAY <= seconds <= MAX_NEXT_DELAY):
+        await update.message.reply_text(f"عدد باید بین {MIN_NEXT_DELAY} تا {MAX_NEXT_DELAY} ثانیه باشد.")
+        return
+
+    chat_id = update.effective_chat.id
+    update_group_settings(chat_id, quiz_buzzer_next_delay=seconds)
+    await update.message.reply_text(f"✅ فاصله تا سوال بعدی (حالت زنگ‌اول) روی {seconds} ثانیه تنظیم شد.")

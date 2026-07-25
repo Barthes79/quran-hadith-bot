@@ -213,6 +213,9 @@ def init_db():
         "welcome_text TEXT",
         "delete_service_messages INTEGER DEFAULT 0",
         "block_links INTEGER DEFAULT 0",
+        "quiz_custom_time INTEGER",              # NULL = استفاده از زمان پیش‌فرض هر سطح سختی
+        "quiz_buzzer_mode INTEGER DEFAULT 0",     # 1 = حالت زنگ‌اول فعال است
+        "quiz_buzzer_next_delay INTEGER DEFAULT 5",  # فاصله تا سوال بعدی در حالت زنگ‌اول (ثانیه)
     ]:
         try:
             cur.execute(f"ALTER TABLE group_settings ADD COLUMN {_col_def}")

@@ -50,7 +50,8 @@ from handlers.admin import (
 from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
     leaderboard_command, global_leaderboard_command, my_quiz_stats_command,
-    add_quiz_command,
+    add_quiz_command, quiz_settings_command, quiz_time_command,
+    quiz_buzzer_command, quiz_next_delay_command,
 )
 
 logging.basicConfig(
@@ -145,6 +146,10 @@ def main():
     app.add_handler(CommandHandler("quizrank", global_leaderboard_command))
     app.add_handler(CommandHandler("mystats", my_quiz_stats_command))
     app.add_handler(CommandHandler("addquiz", add_quiz_command))
+    app.add_handler(CommandHandler("quizsettings", quiz_settings_command))
+    app.add_handler(CommandHandler("quiztime", quiz_time_command))
+    app.add_handler(CommandHandler("quizbuzzer", quiz_buzzer_command))
+    app.add_handler(CommandHandler("quiznextdelay", quiz_next_delay_command))
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
     app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
     app.add_handler(CallbackQueryHandler(quiz_category_callback, pattern="^quizcat_"))
