@@ -294,7 +294,8 @@ async def cleanup_extra_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await cleanup_extra_photo(context, query.message.chat.id)
+    if query.message:
+        await cleanup_extra_photo(context, query.message.chat.id)
     text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await safe_edit_message(query, text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
@@ -429,8 +430,10 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
 
     markup = mafatih_item_keyboard(item_id, page=page, total_pages=total_pages, has_audio=bool(audio_file_id))
 
-    # عکس فقط در صفحه‌ی اول نمایش داده می‌شود
-    if image_path and page == 0:
+    # عکس فقط وقتی نمایش داده می‌شود که پیام واقعی و chat مشخصی داشته باشیم.
+    # پیام‌های حاصل از نتایج سرچ اینلاین (query.message is None) فقط قابل
+    # ویرایش متنی هستند و نمی‌توان پیام عکسِ جدا برایشان فرستاد.
+    if image_path and page == 0 and query.message is not None:
         from pathlib import Path
         full_path = Path("/app") / image_path
         if full_path.exists():
@@ -459,8 +462,13 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
 
-    # اگر از دعای قبلی یک عکسِ یتیم (بدون دکمه) باقی مانده، پاکش کن
-    await cleanup_extra_photo(context, query.message.chat.id)
+    # اگر از دعای قبلی یک عکسِ یتیم (بدون دکمه) باقی مانده، پاکش کن.
+    # این فقط وقتی ممکن است که پیام واقعی و chat مشخصی داشته باشیم؛ پیام‌هایی
+    # که از طریق نتایج سرچ اینلاین (@نام_ربات عبارت) فرستاده شده‌اند chat_id
+    # مشخصی به بات نمی‌دهند (query.message برایشان None است) و این مرحله باید
+    # نادیده گرفته شود، وگرنه کل هندلر با خطا شکست می‌خورد و دکمه هیچ واکنشی نشان نمی‌دهد.
+    if query.message:
+        await cleanup_extra_photo(context, query.message.chat.id)
 
     item_id = query.data.replace("mafitem_", "")
 
