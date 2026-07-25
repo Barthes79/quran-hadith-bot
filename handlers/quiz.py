@@ -55,6 +55,8 @@ MAX_CUSTOM_TIME = 120
 MIN_NEXT_DELAY = 2
 MAX_NEXT_DELAY = 30
 DEFAULT_NEXT_DELAY = 5
+MIN_BUZZER_COUNT = 1
+MAX_BUZZER_COUNT = 100
 
 # ---------------- تعریف نشان‌ها ----------------
 
@@ -96,6 +98,36 @@ def _get_quiz_settings(chat_id: int):
     buzzer_mode = bool(row["quiz_buzzer_mode"])
     next_delay = row["quiz_buzzer_next_delay"] if row["quiz_buzzer_next_delay"] else DEFAULT_NEXT_DELAY
     return {"custom_time": custom_time, "buzzer_mode": buzzer_mode, "next_delay": next_delay}
+
+
+# ---------------- سشن دوره‌ی زنگ‌اول (تعداد سوال + جلوگیری از تکرار) ----------------
+# این حالت فقط در حافظه نگه‌داری می‌شود (با ری‌استارت ربات، سشن‌های فعال پاک می‌شوند)
+
+BUZZER_SESSIONS = {}  # chat_id -> {"total": int|None, "asked_count": int, "asked_ids": set}
+
+
+def _start_buzzer_session(chat_id: int, total: int = None):
+    BUZZER_SESSIONS[chat_id] = {"total": total, "asked_count": 0, "asked_ids": set()}
+
+
+def _end_buzzer_session(chat_id: int):
+    BUZZER_SESSIONS.pop(chat_id, None)
+    update_group_settings(chat_id, quiz_buzzer_mode=0)
+
+
+def _pick_question_for_round(chat_id: int, category: str, session: dict):
+    """سوال بعدی را انتخاب می‌کند؛ اگر سشن فعال باشد، از تکرار سوالات قبلی جلوگیری می‌کند."""
+    lookup_category = None if category == "random" else category
+    exclude_ids = list(session["asked_ids"]) if session else None
+    row = get_random_quiz_question(lookup_category, exclude_ids=exclude_ids)
+    reset_notice = None
+    if not row and exclude_ids:
+        # همه‌ی سوالات این دسته یک‌بار پرسیده شده‌اند؛ از اول شروع می‌کنیم
+        session["asked_ids"].clear()
+        row = get_random_quiz_question(lookup_category)
+        if row:
+            reset_notice = "🔁 همه‌ی سوالات این دسته یک‌بار پرسیده شد؛ تکرار از اول."
+    return row, reset_notice
 
 
 # ---------------- منوی انتخاب دسته ----------------
@@ -151,13 +183,15 @@ def quiz_keyboard(qid: int, row):
     return InlineKeyboardMarkup(buttons)
 
 
-def _build_question_payload(row, settings: dict):
+def _build_question_payload(row, settings: dict, progress=None):
     difficulty = row["difficulty"] if row["difficulty"] in DIFFICULTY_INFO else "medium"
     info = DIFFICULTY_INFO[difficulty]
     time_limit = settings["custom_time"] or info["time"]
     cat_label = CATEGORIES.get(row["category"], CATEGORIES["general"])
 
     header = f"{cat_label}  |  {info['label']}  |  ⏱ {time_limit} ثانیه  |  🎯 {info['points']} امتیاز"
+    if progress and progress[1]:
+        header += f"\n📍 سوال {progress[0]} از {progress[1]}"
     if settings["buzzer_mode"]:
         header += "\n🔔 حالت زنگ‌اول فعال است"
         footer = "اولین نفری که درست جواب بده، همه‌ی امتیاز این سوال رو می‌بره! 🔔"
@@ -169,7 +203,39 @@ def _build_question_payload(row, settings: dict):
     return text, markup, time_limit, difficulty
 
 
-def _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings):
+def _prepare_next_question(chat_id: int, category: str):
+    """سوال بعدی را با توجه به تنظیمات و سشن فعلی (تعداد باقی‌مانده و عدم تکرار) آماده می‌کند."""
+    settings = _get_quiz_settings(chat_id)
+    session = None
+    if settings["buzzer_mode"]:
+        if chat_id not in BUZZER_SESSIONS:
+            _start_buzzer_session(chat_id, total=None)  # مثلاً بعد از ری‌استارت ربات
+        session = BUZZER_SESSIONS[chat_id]
+
+    row, reset_notice = _pick_question_for_round(chat_id, category, session)
+    if not row:
+        return None
+
+    is_last = False
+    progress = None
+    if session is not None:
+        session["asked_ids"].add(row["id"])
+        session["asked_count"] += 1
+        progress = (session["asked_count"], session["total"])
+        if session["total"] is not None and session["asked_count"] >= session["total"]:
+            is_last = True
+
+    text, markup, time_limit, difficulty = _build_question_payload(row, settings, progress=progress)
+    if reset_notice:
+        text = f"{reset_notice}\n\n{text}"
+
+    return {
+        "row": row, "text": text, "markup": markup, "time_limit": time_limit,
+        "difficulty": difficulty, "settings": settings, "is_last": is_last,
+    }
+
+
+def _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings, session_last=False):
     key = (chat_id, message_id)
     QUIZ_ANSWERS[key] = {
         "qid": row["id"],
@@ -182,6 +248,7 @@ def _register_round(context, chat_id, message_id, row, category, difficulty, tim
         "answers": {},
         "buzzer_mode": settings["buzzer_mode"],
         "buzzer_next_delay": settings["next_delay"],
+        "session_last": session_last,
         "finish_job": None,
         "warn_job": None,
     }
@@ -206,30 +273,29 @@ async def start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, categor
     query = update.callback_query
     chat = update.effective_chat
 
-    lookup_category = None if category == "random" else category
-    row = get_random_quiz_question(lookup_category)
+    prep = _prepare_next_question(chat.id, category)
 
-    if not row:
-        msg = "😕 هنوز سوالی در این دسته ثبت نشده. یه دسته‌ی دیگه رو امتحان کن."
+    if not prep:
+        msg = "😕 هنوز سوالی در این دسته ثبت نشده (یا همه‌ی سوالات این دوره تمام شده). یه دسته‌ی دیگه رو امتحان کن."
         if query:
             await query.answer(msg, show_alert=True)
         else:
             await update.message.reply_text(msg)
         return
 
-    settings = _get_quiz_settings(chat.id)
-    text, markup, time_limit, difficulty = _build_question_payload(row, settings)
-
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await query.edit_message_text(prep["text"], reply_markup=prep["markup"])
         chat_id = query.message.chat.id
         message_id = query.message.message_id
     else:
-        sent_msg = await update.message.reply_text(text, reply_markup=markup)
+        sent_msg = await update.message.reply_text(prep["text"], reply_markup=prep["markup"])
         chat_id = chat.id
         message_id = sent_msg.message_id
 
-    _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings)
+    _register_round(
+        context, chat_id, message_id, prep["row"], category, prep["difficulty"],
+        prep["time_limit"], prep["text"], prep["settings"], session_last=prep["is_last"],
+    )
 
 
 async def warn_time_running_out(context: ContextTypes.DEFAULT_TYPE):
@@ -255,7 +321,7 @@ async def warn_time_running_out(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
-    """در حالت زنگ‌اول، بعد از قفل‌شدن سوال، این تابع سوال بعدی را خودکار می‌فرستد."""
+    """در حالت زنگ‌اول، بعد از پایان هر دور، این تابع سوال بعدی را خودکار می‌فرستد."""
     data = context.job.data
     chat_id = data["chat_id"]
     message_id = data["message_id"]
@@ -265,9 +331,8 @@ async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
     if not settings["buzzer_mode"]:
         return  # ادمین در همین فاصله حالت زنگ‌اول را خاموش کرده
 
-    lookup_category = None if category == "random" else category
-    row = get_random_quiz_question(lookup_category)
-    if not row:
+    prep = _prepare_next_question(chat_id, category)
+    if not prep:
         try:
             await context.bot.edit_message_text(
                 chat_id=chat_id, message_id=message_id,
@@ -277,15 +342,46 @@ async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    text, markup, time_limit, difficulty = _build_question_payload(row, settings)
     try:
         await context.bot.edit_message_text(
-            chat_id=chat_id, message_id=message_id, text=text, reply_markup=markup,
+            chat_id=chat_id, message_id=message_id, text=prep["text"], reply_markup=prep["markup"],
         )
     except Exception:
         return
 
-    _register_round(context, chat_id, message_id, row, category, difficulty, time_limit, text, settings)
+    _register_round(
+        context, chat_id, message_id, prep["row"], category, prep["difficulty"],
+        prep["time_limit"], prep["text"], prep["settings"], session_last=prep["is_last"],
+    )
+
+
+async def _finish_round_message(context, chat_id, message_id, category, next_delay, session_last, base_text):
+    """پیام پایان دور را ادیت می‌کند؛ اگر آخرین سوال دوره بود، دوره را جمع‌بندی و متوقف می‌کند
+    وگرنه سوال بعدی را خودکار زمان‌بندی می‌کند."""
+    text = base_text
+    if session_last:
+        _end_buzzer_session(chat_id)
+        text += "\n\n🏁 این دوره‌ی زنگ‌اول به پایان رسید!"
+        top = get_leaderboard(chat_id, limit=3)
+        if top:
+            medals = ["🥇", "🥈", "🥉"]
+            text += "\n\n🏆 برترین‌های این گروه تا الان:\n"
+            text += "\n".join(f"{medals[i]} {r['username']} — {r['score']} امتیاز" for i, r in enumerate(top))
+        text += "\n\nبرای شروع دوره‌ی جدید: /quizbuzzer on <تعداد سوال>"
+    else:
+        text += f"\n\n⏭ سوال بعدی تا {next_delay} ثانیه‌ی دیگر..."
+
+    try:
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text)
+    except Exception:
+        pass
+
+    if not session_last:
+        context.job_queue.run_once(
+            _auto_next_question,
+            next_delay,
+            data={"chat_id": chat_id, "message_id": message_id, "category": category},
+        )
 
 
 async def quiz_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -363,20 +459,9 @@ async def _settle_buzzer_win(context: ContextTypes.DEFAULT_TYPE, key, uid: int, 
         b = BADGES[bkey]
         result_text += f"\n\n🏅 نشان جدید: {b['emoji']} {b['title']}"
 
-    next_delay = quiz["buzzer_next_delay"]
-    result_text += f"\n\n⏭ سوال بعدی تا {next_delay} ثانیه‌ی دیگر..."
-
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id, message_id=message_id, text=result_text,
-        )
-    except Exception:
-        pass
-
-    context.job_queue.run_once(
-        _auto_next_question,
-        next_delay,
-        data={"chat_id": chat_id, "message_id": message_id, "category": category},
+    await _finish_round_message(
+        context, chat_id, message_id, category,
+        quiz["buzzer_next_delay"], quiz.get("session_last", False), result_text,
     )
 
 
@@ -442,6 +527,14 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
 
     if badge_lines:
         result_text += "\n\n🏅 نشان‌های جدید:\n" + "\n".join(badge_lines)
+
+    if quiz["buzzer_mode"]:
+        # در حالت زنگ‌اول، حتی اگر کسی برنده نشد، دور بعدی خودکار ادامه پیدا می‌کند
+        await _finish_round_message(
+            context, data["chat_id"], data["message_id"], category,
+            quiz["buzzer_next_delay"], quiz.get("session_last", False), result_text,
+        )
+        return
 
     buttons = [
         [InlineKeyboardButton("🔁 سوال بعدی", callback_data=f"quizcat_{category}")],
@@ -630,9 +723,19 @@ async def quiz_settings_command(update: Update, context: ContextTypes.DEFAULT_TY
         f"⏱ زمان هر سوال: {time_text}",
         f"🔔 حالت زنگ‌اول: {buzzer_text}",
         f"⏭ تاخیر سوال بعدی (در حالت زنگ‌اول): {settings['next_delay']} ثانیه",
+    ]
+
+    session = BUZZER_SESSIONS.get(chat_id)
+    if settings["buzzer_mode"] and session:
+        if session["total"]:
+            lines.append(f"📍 دوره‌ی فعلی: سوال {session['asked_count']} از {session['total']}")
+        else:
+            lines.append(f"📍 دوره‌ی فعلی: نامحدود ({session['asked_count']} سوال پرسیده شده)")
+
+    lines += [
         "\nبرای تغییر (فقط ادمین):",
         "• /quiztime <ثانیه>  — یا  /quiztime 0  برای پیش‌فرض",
-        "• /quizbuzzer on|off",
+        "• /quizbuzzer on [تعداد سوال] | off",
         "• /quiznextdelay <ثانیه>",
     ]
     await update.message.reply_text("\n".join(lines))
@@ -681,24 +784,52 @@ async def quiz_buzzer_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     valid = {"on": True, "off": False, "روشن": True, "خاموش": False}
     if not context.args or context.args[0].lower() not in valid:
         await update.message.reply_text(
-            "استفاده: /quizbuzzer on   یا   /quizbuzzer off\n\n"
+            "استفاده:\n"
+            "/quizbuzzer on            — حالت زنگ‌اول نامحدود\n"
+            "/quizbuzzer on 10         — یک دوره‌ی ۱۰ سوالی زنگ‌اول\n"
+            "/quizbuzzer off           — خاموش کردن\n\n"
             "وقتی روشنه: هرکس زودتر از بقیه جواب درست بده، سوال قفل می‌شه، "
-            "امتیاز می‌گیره و بعد از چند ثانیه خودکار سوال بعدی میاد."
+            "امتیاز می‌گیره و بعد از چند ثانیه خودکار سوال بعدی میاد.\n"
+            "در یک دوره، سوالات تکراری پرسیده نمی‌شوند."
         )
         return
 
     enable = valid[context.args[0].lower()]
     chat_id = update.effective_chat.id
-    update_group_settings(chat_id, quiz_buzzer_mode=1 if enable else 0)
 
-    if enable:
+    if not enable:
+        _end_buzzer_session(chat_id)
+        await update.message.reply_text("✅ حالت زنگ‌اول خاموش شد. کوییز به حالت عادی برگشت.")
+        return
+
+    count = None
+    if len(context.args) > 1:
+        try:
+            count = int(context.args[1])
+        except ValueError:
+            await update.message.reply_text("عدد تعداد سوال باید یک عدد صحیح باشد.")
+            return
+        if not (MIN_BUZZER_COUNT <= count <= MAX_BUZZER_COUNT):
+            await update.message.reply_text(
+                f"تعداد سوال باید بین {MIN_BUZZER_COUNT} تا {MAX_BUZZER_COUNT} باشد."
+            )
+            return
+
+    update_group_settings(chat_id, quiz_buzzer_mode=1)
+    _start_buzzer_session(chat_id, total=count)
+
+    if count:
         await update.message.reply_text(
-            "🔔 حالت زنگ‌اول روشن شد!\n"
-            "از این به بعد، هرکس زودتر از بقیه جواب درست بده برنده‌ی همون سواله و "
-            "بقیه دیگه نمی‌تونن جواب بدن."
+            f"🔔 یک دوره‌ی زنگ‌اول با {count} سوال شروع شد!\n"
+            "هرکس زودتر از بقیه جواب درست بده برنده‌ی همون سواله. سوالات تکراری پرسیده نمی‌شوند.\n"
+            "برای شروع دور اول: /quiz"
         )
     else:
-        await update.message.reply_text("✅ حالت زنگ‌اول خاموش شد. کوییز به حالت عادی برگشت.")
+        await update.message.reply_text(
+            "🔔 حالت زنگ‌اول نامحدود روشن شد!\n"
+            "هرکس زودتر از بقیه جواب درست بده برنده‌ی همون سواله و بقیه دیگه نمی‌تونن جواب بدن.\n"
+            "برای شروع دور اول: /quiz"
+        )
 
 
 async def quiz_next_delay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
