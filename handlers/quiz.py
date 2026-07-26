@@ -856,3 +856,37 @@ async def quiz_next_delay_command(update: Update, context: ContextTypes.DEFAULT_
     chat_id = update.effective_chat.id
     update_group_settings(chat_id, quiz_buzzer_next_delay=seconds)
     await update.message.reply_text(f"✅ فاصله تا سوال بعدی (حالت زنگ‌اول) روی {seconds} ثانیه تنظیم شد.")
+
+# ==========================================
+# مسابقه سرعتی با متن ساده (تایپ در گروه)
+# ==========================================
+
+async def start_rapid_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع مسابقه سرعتی با تعداد سوال مشخص (با تایپ 'مسابقه سرعتی 10' در گروه)"""
+    chat_id = update.effective_chat.id
+    text = update.message.text
+    
+    # استخراج تعداد سوال از متن
+    try:
+        count = int(text.replace("مسابقه سرعتی", "").strip())
+        if count < 1:
+            count = 5
+        if count > 30:
+            count = 30
+    except:
+        count = 10
+    
+    # تنظیم حالت زنگ‌اول
+    update_group_settings(chat_id, quiz_buzzer_mode=1)
+    
+    # شروع سشن زنگ‌اول با تعداد مشخص
+    _start_buzzer_session(chat_id, total=count)
+    
+    await update.message.reply_text(
+        f"🔔 مسابقه سرعتی با {count} سوال شروع شد!\n"
+        f"هرکی زودتر جواب درست بده، امتیاز رو می‌بره!\n"
+        f"🏆 آماده‌اید؟ شروع..."
+    )
+    
+    # ارسال اولین سوال
+    await start_quiz(update, context, "random")

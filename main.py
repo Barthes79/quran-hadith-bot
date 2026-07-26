@@ -51,7 +51,7 @@ from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
     leaderboard_command, global_leaderboard_command, my_quiz_stats_command,
     add_quiz_command, quiz_settings_command, quiz_time_command,
-    quiz_buzzer_command, quiz_next_delay_command,
+    quiz_buzzer_command, quiz_next_delay_command, start_rapid_quiz,
 )
 
 logging.basicConfig(
@@ -157,6 +157,14 @@ def main():
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
 
+    # ==========================================
+    # هندلر مسابقه سرعتی (تایپ "مسابقه سرعتی 10" در گروه)
+    # ==========================================
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex(r"^مسابقه سرعتی \d+$") & filters.ChatType.GROUPS,
+        start_rapid_quiz
+    ))
+    
     # کالبک‌های منو
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
     app.add_handler(CallbackQueryHandler(set_translation_callback, pattern="^set_translation_"))
