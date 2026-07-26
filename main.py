@@ -52,6 +52,7 @@ from handlers.quiz import (
     leaderboard_command, global_leaderboard_command, my_quiz_stats_command,
     add_quiz_command, quiz_settings_command, quiz_time_command,
     quiz_buzzer_command, quiz_next_delay_command, start_rapid_quiz,
+    start_normal_quiz, 
 )
 
 logging.basicConfig(
@@ -163,6 +164,14 @@ def main():
     app.add_handler(MessageHandler(
         filters.TEXT & filters.Regex(r"^مسابقه سرعتی \d+$") & filters.ChatType.GROUPS,
         start_rapid_quiz
+    ))
+
+        # ==========================================
+    # هندلر مسابقه معمولی (تایپ "مسابقه معمولی 10" در گروه)
+    # ==========================================
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex(r"^مسابقه معمولی \d+$") & filters.ChatType.GROUPS,
+        start_normal_quiz
     ))
     
     # کالبک‌های منو

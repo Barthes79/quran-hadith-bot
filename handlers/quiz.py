@@ -15,6 +15,7 @@ from database import (
 # ---------------- تنظیمات کلی ----------------
 
 QUIZ_ANSWERS = {}  # key=(chat_id, message_id) -> اطلاعات دور جاری کوییز
+NORMAL_SESSIONS = {}  # chat_id -> {"total": int, "asked_count": int, "asked_ids": set}
 
 CATEGORIES = {
     "quran": "📖 قرآن",
@@ -203,14 +204,23 @@ def _build_question_payload(row, settings: dict, progress=None):
     return text, markup, time_limit, difficulty
 
 
-def _prepare_next_question(chat_id: int, category: str):
+def _prepare_next_question(chat_id: int, category: str, context=None):
     """سوال بعدی را با توجه به تنظیمات و سشن فعلی (تعداد باقی‌مانده و عدم تکرار) آماده می‌کند."""
     settings = _get_quiz_settings(chat_id)
     session = None
+    
+    # اگر حالت زنگ‌اول فعاله، از سشن زنگ‌اول استفاده کن
     if settings["buzzer_mode"]:
         if chat_id not in BUZZER_SESSIONS:
-            _start_buzzer_session(chat_id, total=None)  # مثلاً بعد از ری‌استارت ربات
+            _start_buzzer_session(chat_id, total=None)
         session = BUZZER_SESSIONS[chat_id]
+    
+    # اگر حالت معمولی و تعداد سوال مشخص شده، یه سشن موقت بساز
+    if not settings["buzzer_mode"] and context and context.chat_data.get('normal_quiz_count'):
+        total = context.chat_data.get('normal_quiz_count')
+        if chat_id not in NORMAL_SESSIONS:
+            NORMAL_SESSIONS[chat_id] = {"total": total, "asked_count": 0, "asked_ids": set()}
+        session = NORMAL_SESSIONS[chat_id]
 
     row, reset_notice = _pick_question_for_round(chat_id, category, session)
     if not row:
@@ -224,6 +234,9 @@ def _prepare_next_question(chat_id: int, category: str):
         progress = (session["asked_count"], session["total"])
         if session["total"] is not None and session["asked_count"] >= session["total"]:
             is_last = True
+            # بعد از آخرین سوال، سشن رو پاک کن
+            if not settings["buzzer_mode"] and chat_id in NORMAL_SESSIONS:
+                del NORMAL_SESSIONS[chat_id]
 
     text, markup, time_limit, difficulty = _build_question_payload(row, settings, progress=progress)
     if reset_notice:
@@ -273,7 +286,7 @@ async def start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, categor
     query = update.callback_query
     chat = update.effective_chat
 
-    prep = _prepare_next_question(chat.id, category)
+    prep = _prepare_next_question(chat.id, category, context)
 
     if not prep:
         msg = "😕 هنوز سوالی در این دسته ثبت نشده (یا همه‌ی سوالات این دوره تمام شده). یه دسته‌ی دیگه رو امتحان کن."
@@ -331,7 +344,7 @@ async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
     if not settings["buzzer_mode"]:
         return  # ادمین در همین فاصله حالت زنگ‌اول را خاموش کرده
 
-    prep = _prepare_next_question(chat_id, category)
+    prep = _prepare_next_question(chat_id, category, None)
     if not prep:
         try:
             await context.bot.edit_message_text(
@@ -857,6 +870,7 @@ async def quiz_next_delay_command(update: Update, context: ContextTypes.DEFAULT_
     update_group_settings(chat_id, quiz_buzzer_next_delay=seconds)
     await update.message.reply_text(f"✅ فاصله تا سوال بعدی (حالت زنگ‌اول) روی {seconds} ثانیه تنظیم شد.")
 
+
 # ==========================================
 # مسابقه سرعتی با متن ساده (تایپ در گروه)
 # ==========================================
@@ -885,6 +899,42 @@ async def start_rapid_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🔔 مسابقه سرعتی با {count} سوال شروع شد!\n"
         f"هرکی زودتر جواب درست بده، امتیاز رو می‌بره!\n"
+        f"🏆 آماده‌اید؟ شروع..."
+    )
+    
+    # ارسال اولین سوال
+    await start_quiz(update, context, "random")
+
+
+# ==========================================
+# مسابقه معمولی با متن ساده (تایپ در گروه)
+# ==========================================
+
+async def start_normal_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شروع مسابقه معمولی با تعداد سوال مشخص (با تایپ 'مسابقه معمولی 10' در گروه)"""
+    chat_id = update.effective_chat.id
+    text = update.message.text
+    
+    # استخراج تعداد سوال از متن
+    try:
+        count = int(text.replace("مسابقه معمولی", "").strip())
+        if count < 1:
+            count = 5
+        if count > 30:
+            count = 30
+    except:
+        count = 10
+    
+    # خاموش کردن حالت زنگ‌اول
+    update_group_settings(chat_id, quiz_buzzer_mode=0)
+    _end_buzzer_session(chat_id)
+    
+    # ذخیره تعداد سوال در context
+    context.chat_data['normal_quiz_count'] = count
+    
+    await update.message.reply_text(
+        f"🎮 مسابقه معمولی با {count} سوال شروع شد!\n"
+        f"همه می‌تونن جواب بدن و امتیاز بگیرن!\n"
         f"🏆 آماده‌اید؟ شروع..."
     )
     
