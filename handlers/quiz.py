@@ -367,7 +367,7 @@ async def _finish_round_message(context, chat_id, message_id, category, next_del
             medals = ["🥇", "🥈", "🥉"]
             text += "\n\n🏆 برترین‌های این گروه تا الان:\n"
             text += "\n".join(f"{medals[i]} {r['username']} — {r['score']} امتیاز" for i, r in enumerate(top))
-        text += "\n\nبرای شروع دوره‌ی جدید: /quizbuzzer on <تعداد سوال>"
+        text += "\n\nبرای شروع دوره‌ی جدید: مسابقه سرعتی <تعداد سوال>"
     else:
         text += f"\n\n⏭ سوال بعدی تا {next_delay} ثانیه‌ی دیگر..."
 
