@@ -167,10 +167,10 @@ def main():
     ))
 
         # ==========================================
-    # هندلر مسابقه معمولی (تایپ "مسابقه معمولی 10" در گروه)
+    # هندلر مسابقه معمولی (تایپ "مسابقه 10" در گروه)
     # ==========================================
     app.add_handler(MessageHandler(
-        filters.TEXT & filters.Regex(r"^مسابقه معمولی \d+$") & filters.ChatType.GROUPS,
+        filters.TEXT & filters.Regex(r"^مسابقه \d+$") & filters.ChatType.GROUPS,
         start_normal_quiz
     ))
     

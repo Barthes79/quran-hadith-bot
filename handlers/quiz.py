@@ -1000,9 +1000,10 @@ async def start_normal_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text
     
-    # استخراج تعداد سوال از متن
+    # استخراج تعداد سوال از متن (با regex، مقاوم در برابر کاراکترهای اضافه/نامرئی)
+    match = re.search(r"\d+", text)
     try:
-        count = int(text.replace("مسابقه", "").strip())
+        count = int(match.group()) if match else 10
         if count < 1:
             count = 5
         if count > 30:
