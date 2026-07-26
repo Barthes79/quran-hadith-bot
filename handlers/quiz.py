@@ -541,14 +541,30 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
     if badge_lines:
         result_text += "\n\n🏅 نشان‌های جدید:\n" + "\n".join(badge_lines)
 
+    # ==========================================
+    # اگر حالت زنگ‌اول هست، سوال بعدی خودکار میاد
+    # ==========================================
     if quiz["buzzer_mode"]:
-        # در حالت زنگ‌اول، حتی اگر کسی برنده نشد، دور بعدی خودکار ادامه پیدا می‌کند
         await _finish_round_message(
             context, data["chat_id"], data["message_id"], category,
             quiz["buzzer_next_delay"], quiz.get("session_last", False), result_text,
         )
         return
 
+    # ==========================================
+    # حالت معمولی: اگر آخرین سوال بود، فقط نتیجه رو نشون بده (بدون دکمه)
+    # ==========================================
+    if quiz.get("session_last", False):
+        await context.bot.edit_message_text(
+            chat_id=data["chat_id"],
+            message_id=data["message_id"],
+            text=result_text + "\n\n🏁 مسابقه به پایان رسید!",
+        )
+        return
+
+    # ==========================================
+    # حالت معمولی: اگر سوالات بیشتری هست، دکمه سوال بعدی رو نشون بده
+    # ==========================================
     buttons = [
         [InlineKeyboardButton("🔁 سوال بعدی", callback_data=f"quizcat_{category}")],
         [InlineKeyboardButton("📋 منوی دسته‌ها", callback_data="quizmenu")],
