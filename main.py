@@ -12,7 +12,7 @@ from database import init_db, ensure_search_index
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
-    #fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
+    fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
     audio_callback, ayah_list_page_callback,
 )
 from handlers.hadith import (
