@@ -3,3 +3,4 @@ httpx[socks]==0.27.2
 python-dotenv==1.0.1
 thefuzz==0.22.1
 python-Levenshtein==0.25.0
+rapidfuzz
