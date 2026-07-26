@@ -379,6 +379,19 @@ async def _auto_next_normal_question(context: ContextTypes.DEFAULT_TYPE):
     if key in QUIZ_ANSWERS:
         return
 
+    settings = _get_quiz_settings(chat_id)
+    if not settings["buzzer_mode"]:
+        session = NORMAL_SESSIONS.get(chat_id)
+        if session is None:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id, message_id=message_id,
+                    text="🏁 مسابقه به پایان رسید!",
+                )
+            except Exception:
+                pass
+            return
+
     prep = _prepare_next_question(chat_id, category, None)
     if not prep:
         try:
