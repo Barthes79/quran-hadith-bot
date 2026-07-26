@@ -121,7 +121,7 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
     buttons.append(nav_row)
 
     buttons.append([
-        InlineKeyboardButton("📝 تفسیر", callback_data=f"tafsir_{surah}_{ayah}"),
+        #InlineKeyboardButton("📝 تفسیر", callback_data=f"tafsir_{surah}_{ayah}"),
         InlineKeyboardButton("🔊 پخش تلاوت", callback_data=f"audio_{surah}_{ayah}"),
     ])
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}")])
