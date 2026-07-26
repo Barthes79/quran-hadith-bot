@@ -147,7 +147,7 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
     else:
         surah_name = surah_info["name"] if surah_info else surah
         text = (
-            f"📖 سوره {surah_name} - آیه {ayah}\n\n"
+            f"📖 {surah_name} - آیه {ayah}\n\n"
             f"{data['arabic']}\n\n"
             f"🔹 ترجمه:\n{data['translation']}"
         )
