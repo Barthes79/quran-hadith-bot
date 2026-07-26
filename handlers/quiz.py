@@ -368,6 +368,41 @@ async def _auto_next_question(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _auto_next_normal_question(context: ContextTypes.DEFAULT_TYPE):
+    """در حالت معمولی، بعد از پایان هر دور، این تابع سوال بعدی را خودکار می‌فرستد."""
+    data = context.job.data
+    chat_id = data["chat_id"]
+    message_id = data["message_id"]
+    category = data["category"]
+
+    key = (chat_id, message_id)
+    if key in QUIZ_ANSWERS:
+        return
+
+    prep = _prepare_next_question(chat_id, category, None)
+    if not prep:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text="😕 سوال دیگری در این دسته باقی نمانده.",
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id, text=prep["text"], reply_markup=prep["markup"],
+        )
+    except Exception:
+        return
+
+    _register_round(
+        context, chat_id, message_id, prep["row"], category, prep["difficulty"],
+        prep["time_limit"], prep["text"], prep["settings"], session_last=prep["is_last"],
+    )
+
+
 async def _finish_round_message(context, chat_id, message_id, category, next_delay, session_last, base_text):
     """پیام پایان دور را ادیت می‌کند؛ اگر آخرین سوال دوره بود، دوره را جمع‌بندی و متوقف می‌کند
     وگرنه سوال بعدی را خودکار زمان‌بندی می‌کند."""
@@ -563,18 +598,21 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ==========================================
-    # حالت معمولی: اگر سوالات بیشتری هست، دکمه سوال بعدی رو نشون بده
+    # حالت معمولی: اگر سوالات بیشتری هست، با تاخیر سوال بعدی رو بفرست
     # ==========================================
-    buttons = [
-        [InlineKeyboardButton("🔁 سوال بعدی", callback_data=f"quizcat_{category}")],
-        [InlineKeyboardButton("📋 منوی دسته‌ها", callback_data="quizmenu")],
-    ]
-
+    result_text += f"\n\n⏭ سوال بعدی تا {DEFAULT_NEXT_DELAY} ثانیه‌ی دیگر..."
+    
     await context.bot.edit_message_text(
         chat_id=data["chat_id"],
         message_id=data["message_id"],
         text=result_text,
-        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+    # زمان‌بندی سوال بعدی (با تاخیر پیش‌فرض)
+    context.job_queue.run_once(
+        _auto_next_normal_question,
+        DEFAULT_NEXT_DELAY,
+        data={"chat_id": data["chat_id"], "message_id": data["message_id"], "category": category},
     )
 
 
