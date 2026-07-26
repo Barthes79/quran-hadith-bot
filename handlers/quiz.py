@@ -234,7 +234,7 @@ def _prepare_next_question(chat_id: int, category: str, context=None):
         progress = (session["asked_count"], session["total"])
         if session["total"] is not None and session["asked_count"] >= session["total"]:
             is_last = True
-            # بعد از آخرین سوال، سشن رو پاک کن
+            # بعد از آخرین سوال، سشن رو پاک کن (برای معمولی)
             if not settings["buzzer_mode"] and chat_id in NORMAL_SESSIONS:
                 del NORMAL_SESSIONS[chat_id]
 
@@ -379,18 +379,30 @@ async def _auto_next_normal_question(context: ContextTypes.DEFAULT_TYPE):
     if key in QUIZ_ANSWERS:
         return
 
-    settings = _get_quiz_settings(chat_id)
-    if not settings["buzzer_mode"]:
-        session = NORMAL_SESSIONS.get(chat_id)
-        if session is None:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=chat_id, message_id=message_id,
-                    text="🏁 مسابقه به پایان رسید!",
-                )
-            except Exception:
-                pass
-            return
+    # چک کن که آیا سشن وجود داره (اگه وجود نداشته باشه یعنی مسابقه تموم شده)
+    session = NORMAL_SESSIONS.get(chat_id)
+    if session is None:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text="🏁 مسابقه به پایان رسید!",
+            )
+        except Exception:
+            pass
+        return
+
+    # اگه سشن وجود داره ولی تعداد سوالات تموم شده، بازم تمومه
+    if session["total"] is not None and session["asked_count"] >= session["total"]:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text="🏁 مسابقه به پایان رسید!",
+            )
+        except Exception:
+            pass
+        if chat_id in NORMAL_SESSIONS:
+            del NORMAL_SESSIONS[chat_id]
+        return
 
     prep = _prepare_next_question(chat_id, category, None)
     if not prep:
@@ -600,9 +612,12 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ==========================================
-    # حالت معمولی: اگر آخرین سوال بود، فقط نتیجه رو نشون بده (بدون دکمه)
+    # حالت معمولی: اگر آخرین سوال بود، فقط نتیجه رو نشون بده
     # ==========================================
     if quiz.get("session_last", False):
+        # پاک کردن سشن تا دیگه سوال جدید نیاد
+        if data["chat_id"] in NORMAL_SESSIONS:
+            del NORMAL_SESSIONS[data["chat_id"]]
         await context.bot.edit_message_text(
             chat_id=data["chat_id"],
             message_id=data["message_id"],
