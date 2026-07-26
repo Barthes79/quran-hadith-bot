@@ -215,12 +215,15 @@ def _prepare_next_question(chat_id: int, category: str, context=None):
             _start_buzzer_session(chat_id, total=None)
         session = BUZZER_SESSIONS[chat_id]
     
-    # اگر حالت معمولی و تعداد سوال مشخص شده، یه سشن موقت بساز
-    if not settings["buzzer_mode"] and context and context.chat_data.get('normal_quiz_count'):
-        total = context.chat_data.get('normal_quiz_count')
-        if chat_id not in NORMAL_SESSIONS:
+    # اگر حالت معمولی فعاله: اول سشن موجود رو (اگه از قبل ساخته شده) استفاده کن،
+    # وگرنه اگه تعداد سوال مشخص شده بود (بار اول، با context)، سشن جدید بساز
+    if not settings["buzzer_mode"]:
+        if chat_id in NORMAL_SESSIONS:
+            session = NORMAL_SESSIONS[chat_id]
+        elif context and context.chat_data.get('normal_quiz_count'):
+            total = context.chat_data.get('normal_quiz_count')
             NORMAL_SESSIONS[chat_id] = {"total": total, "asked_count": 0, "asked_ids": set()}
-        session = NORMAL_SESSIONS[chat_id]
+            session = NORMAL_SESSIONS[chat_id]
 
     row, reset_notice = _pick_question_for_round(chat_id, category, session)
     if not row:
@@ -993,13 +996,13 @@ async def start_rapid_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 
 async def start_normal_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """شروع مسابقه معمولی با تعداد سوال مشخص (با تایپ 'مسابقه معمولی 10' در گروه)"""
+    """شروع مسابقه معمولی با تعداد سوال مشخص (با تایپ 'مسابقه 10' در گروه)"""
     chat_id = update.effective_chat.id
     text = update.message.text
     
     # استخراج تعداد سوال از متن
     try:
-        count = int(text.replace("مسابقه معمولی", "").strip())
+        count = int(text.replace("مسابقه", "").strip())
         if count < 1:
             count = 5
         if count > 30:
