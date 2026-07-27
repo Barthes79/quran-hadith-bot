@@ -29,8 +29,12 @@ from text_utils import normalize_for_search
 
 
 def _completeness_score(row) -> tuple:
-    """امتیاز «کامل بودن» یک ردیف برای تصمیم اینکه کدام نسخه نگه داشته شود."""
+    """امتیاز «کامل بودن» یک ردیف برای تصمیم اینکه کدام نسخه نگه داشته شود.
+    داشتنِ slug بالاترین اولویت است: دکمه‌های منو (مثل mafitem_kumayl)
+    مستقیماً از روی slug به آیتم می‌رسند، پس اگر ردیفی که slug دارد حذف شود،
+    آن دکمه‌ی منو دیگر هیچ‌چیز پیدا نمی‌کند و خراب می‌شود."""
     return (
+        1 if row["slug"] else 0,
         1 if row["audio_file_id"] else 0,
         1 if row["image_path"] else 0,
         1 if row["tafsir_text"] else 0,
@@ -47,7 +51,11 @@ def find_duplicate_groups():
 
     groups = defaultdict(list)
     for row in rows:
-        key = (row["category"], normalize_for_search(row["title"] or ""))
+        # فقط بر اساس عنوانِ نرمال‌شده گروه‌بندی می‌کنیم، نه category؛ چون category
+        # هیچ استاندارد ثابتی بین اسکریپت‌های مختلف add/bulk_add ندارد و دو ثبت از
+        # یک دعا ممکن است با category متفاوت وارد شده باشند (مثلاً یکی موقع بازسازی
+        # دسته‌بندی زیر «friday_deeds» و دیگری بعداً با slug زیر یک category دیگر).
+        key = normalize_for_search(row["title"] or "")
         groups[key].append(row)
 
     return {k: v for k, v in groups.items() if len(v) > 1}
@@ -65,18 +73,41 @@ def main():
 
     total_to_delete = 0
     ids_to_delete = []
+    merge_updates = []  # (keep_id, {field: value})
 
     print(f"🔍 {len(dup_groups)} گروه تکراری پیدا شد:\n")
-    for (category, norm_title), rows in dup_groups.items():
+    for norm_title, rows in dup_groups.items():
         keep = max(rows, key=_completeness_score)
         remove = [r for r in rows if r["id"] != keep["id"]]
         total_to_delete += len(remove)
         ids_to_delete.extend(r["id"] for r in remove)
 
-        print(f"دسته: {category} | عنوان: {rows[0]['title']}")
-        print(f"  ✅ نگه‌داشته می‌شود: id={keep['id']}")
+        # اگر نسخه‌ی نگه‌داشته‌شده در فیلدی (صوت/عکس/شرح/ترجمه) خالی است ولی یکی
+        # از نسخه‌های حذفی آن را دارد، قبل از حذف آن را به نسخه‌ی نگه‌داشته‌شده منتقل کن
+        merged = {}
+        for field in ("audio_file_id", "image_path", "tafsir_text"):
+            if not keep[field]:
+                for r in remove:
+                    if r[field]:
+                        merged[field] = r[field]
+                        break
+        if not keep["translation_text"]:
+            for r in remove:
+                if r["translation_text"]:
+                    merged["translation_text"] = r["translation_text"]
+                    break
+        if merged:
+            merge_updates.append((keep["id"], merged))
+
+        print(f"عنوان: {rows[0]['title']}")
+        print(f"  ✅ نگه‌داشته می‌شود: id={keep['id']} | دسته={keep['category']} | "
+              f"صوت={'دارد' if keep['audio_file_id'] else 'ندارد'}")
         for r in remove:
-            print(f"  ❌ حذف می‌شود:      id={r['id']}")
+            print(f"  ❌ حذف می‌شود:      id={r['id']} | دسته={r['category']} | "
+                  f"صوت={'دارد' if r['audio_file_id'] else 'ندارد'}")
+        if merged:
+            print(f"  🔀 قبل از حذف، این فیلدها از نسخه‌ی حذفی به نسخه‌ی نگه‌داشته‌شده منتقل می‌شود: "
+                  f"{', '.join(merged.keys())}")
         print()
 
     print(f"جمع کل: {total_to_delete} ردیف تکراری برای حذف.\n")
@@ -87,11 +118,19 @@ def main():
         return
 
     conn = get_connection()
+
+    for keep_id, fields in merge_updates:
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        params = list(fields.values()) + [keep_id]
+        conn.execute(f"UPDATE mafatih SET {set_clause} WHERE id = ?", params)
+
     placeholders = ",".join("?" for _ in ids_to_delete)
     conn.execute(f"DELETE FROM mafatih WHERE id IN ({placeholders})", ids_to_delete)
     conn.commit()
     conn.close()
     print(f"✅ {total_to_delete} ردیف تکراری حذف شد.")
+    if merge_updates:
+        print(f"🔀 اطلاعات {len(merge_updates)} مورد قبل از حذف تکمیل شد (صوت/عکس/شرح/ترجمه‌ی گمشده منتقل شد).")
 
     print("در حال بازسازی ایندکس جستجو...")
     rebuild_search_index()
