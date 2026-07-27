@@ -206,12 +206,60 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    rows = search_hadiths(text)
-    if not rows:
-        await update.message.reply_text("حدیثی با این عبارت یافت نشد.")
+    """
+    جستجوی متن آزاد در چت خصوصی. قبلاً این تابع فقط جدول hadiths را با
+    search_hadiths() جستجو می‌کرد و همیشه پیام «حدیثی با این عبارت یافت نشد»
+    را نشان می‌داد، حتی وقتی عبارت مربوط به مفاتیح یا نهج‌البلاغه بود.
+    حالا از همان موتور جستجوی یکپارچه‌ای استفاده می‌کند که سرچ Inline
+    (@نام_ربات عبارت) هم استفاده می‌کند (search_all در database.py):
+    هم‌زمان روی حدیث + نهج‌البلاغه + مفاتیح جستجو می‌کند و در برابر غلط
+    تایپی و تفاوت حروف عربی/فارسی مقاوم است.
+    """
+    from database import search_all
+
+    results = search_all(text, limit=15)
+
+    if not results:
+        await update.message.reply_text("چیزی با این عبارت پیدا نشد.")
         return
-    row = rows[0]
-    await update.message.reply_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+
+    # اگر فقط یک حدیث پیدا شد، مثل قبل مستقیم متن کامل را نشان بده
+    if len(results) == 1 and results[0]["type"] == "hadith":
+        row = results[0]["row"]
+        await update.message.reply_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+        return
+
+    from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
+
+    mafatih_cat_fa = {
+        "daily": "🕋 اعمال روزانه", "ziyarat": "🕌 زیارت", "weekly": "📅 اعمال هفتگی",
+        "monthly": "🌙 اعمال ماهانه", "munajat": "💬 مناجات", "special": "✨ مناسبت خاص",
+    }
+
+    buttons = []
+    for item in results:
+        row = item["row"]
+        if item["type"] == "hadith":
+            preview = (row["translation_text"] or row["arabic_text"] or "")[:35]
+            label = f"📿 {preview}"
+            callback_data = f"hadithview_{row['id']}"
+        elif item["type"] == "nahj":
+            cat_label = NAHJ_MENU_LABELS.get(row["category"], "🕌")
+            item_label = NAHJ_ITEM_LABELS.get(row["category"], "")
+            title_part = f" — {row['title']}" if row["title"] else ""
+            label = f"{cat_label} {item_label} {row['number']}{title_part}"
+            callback_data = f"nahjitem_{row['category']}_{row['number']}"
+        else:  # mafatih
+            cat_label = mafatih_cat_fa.get(row["category"], "📗 مفاتیح‌الجنان")
+            label = f"{cat_label} — {row['title']}"
+            identifier = row["slug"] if row["slug"] else row["id"]
+            callback_data = f"mafitem_{identifier}"
+        buttons.append([InlineKeyboardButton(label[:60], callback_data=callback_data)])
+
+    await update.message.reply_text(
+        f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 # ---------------- دستور ادمین برای افزودن حدیث ----------------
