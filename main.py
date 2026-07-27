@@ -13,7 +13,7 @@ from handlers.start import start_command, menu_callback, set_translation_callbac
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
     fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
-    audio_callback, ayah_list_page_callback,
+    audio_callback, ayah_list_page_callback, surah_name_ayah_lookup,
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
@@ -73,6 +73,8 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     text = update.message.text.strip()
     handled = await ayah_direct_lookup(update, context, text)
+    if not handled:
+        handled = await surah_name_ayah_lookup(update, context, text)
     if not handled:
         await text_search_handler(update, context, text)
 
