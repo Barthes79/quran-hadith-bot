@@ -64,18 +64,19 @@ logger = logging.getLogger(__name__)
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    در چت خصوصی، هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه
-    (مثل 2:255) و در غیر این‌صورت به‌عنوان عبارت جستجوی حدیث بررسی می‌شود.
-    در گروه‌ها فقط به دستورات صریح پاسخ می‌دهیم تا اسپم نشود.
+    هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه (مثل 2:255) و سپس به‌عنوان
+    نام سوره + شماره آیه (مثل «بقره 5») بررسی می‌شود؛ این دو حالت هم در چت
+    خصوصی و هم در گروه‌ها کار می‌کنند. جستجوی آزاد متنی حدیث (وقتی متن هیچ‌کدام
+    از الگوهای بالا نبود) فقط در چت خصوصی انجام می‌شود تا در گروه‌ها اسپم
+    ایجاد نشود.
     """
-    if update.effective_chat.type != "private":
-        return  # در گروه فقط دستورات/inline کار می‌کند
-
     text = update.message.text.strip()
+
     handled = await ayah_direct_lookup(update, context, text)
     if not handled:
         handled = await surah_name_ayah_lookup(update, context, text)
-    if not handled:
+
+    if not handled and update.effective_chat.type == "private":
         await text_search_handler(update, context, text)
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
