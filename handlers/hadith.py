@@ -230,11 +230,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
-
-    mafatih_cat_fa = {
-        "daily": "🕋 اعمال روزانه", "ziyarat": "🕌 زیارت", "weekly": "📅 اعمال هفتگی",
-        "monthly": "🌙 اعمال ماهانه", "munajat": "💬 مناجات", "special": "✨ مناسبت خاص",
-    }
+    from handlers.mafatih import MAFATIH_ITEM_LOCATION
 
     buttons = []
     for item in results:
@@ -250,9 +246,13 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             label = f"{cat_label} {item_label} {row['number']}{title_part}"
             callback_data = f"nahjitem_{row['category']}_{row['number']}"
         else:  # mafatih
-            cat_label = mafatih_cat_fa.get(row["category"], "📗 مفاتیح‌الجنان")
-            label = f"{cat_label} — {row['title']}"
             identifier = row["slug"] if row["slug"] else row["id"]
+            # به‌جای ستون category در دیتابیس (که فقط چند مقدار کلی دارد و
+            # لزوماً با ساختار واقعی منو یکی نیست)، از مسیر واقعی‌اش در منو
+            # استفاده می‌کنیم — همان چیزی که کاربر با کلیک‌کردن در منو می‌بیند.
+            location = MAFATIH_ITEM_LOCATION.get(str(identifier))
+            sub_label = location[1] if location else "📗 مفاتیح‌الجنان"
+            label = f"{sub_label} — {row['title']}"
             callback_data = f"mafitem_{identifier}"
         buttons.append([InlineKeyboardButton(label[:60], callback_data=callback_data)])
 

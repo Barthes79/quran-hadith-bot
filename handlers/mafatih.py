@@ -168,7 +168,7 @@ def get_keyboard_for_other_months():
     ])
 
 def get_keyboard_for_medina_ziyarat():
-    return InlineKeyboardMarkup([bulk_add_uhudاحئ
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("💚 پیامبر (ص)", callback_data="mafitem_prophet_ziyarat"), InlineKeyboardButton("🌸 حضرت زهرا (س)", callback_data="mafitem_fatima_ziyarat")],
         [InlineKeyboardButton("🕌 ائمه بقیع", callback_data="mafitem_baqi_imams"), InlineKeyboardButton("⛰️ شهدای احد", callback_data="mafitem_uhud_martyrs")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_ziyarats"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
@@ -250,6 +250,60 @@ SUB_KEYBOARDS = {
     "sickness_healing": get_keyboard_for_sickness_healing,
     "quran_surahs": get_keyboard_for_quran_surahs
 }
+
+def build_mafatih_item_location_map():
+    """
+    نگاشت شناسه‌ی هر آیتم مفاتیح (همان چیزی که در callback_data به‌شکل
+    mafitem_<شناسه> استفاده می‌شود، مثل mafitem_kumayl یا mafitem_85) به
+    مسیر واقعی‌اش در منو (برچسب دسته‌ی اصلی + برچسب زیردسته).
+
+    برخلاف ستون category در دیتابیس (که فقط ۶ مقدار کلی دارد و لزوماً با
+    ساختار واقعی منو یکی نیست)، این نگاشت مستقیماً از روی خودِ دکمه‌های
+    منو ساخته می‌شود؛ یعنی همیشه دقیقاً همان چیزی را نشان می‌دهد که کاربر
+    واقعاً در منو می‌بیند، و اگر بعداً زیردسته یا آیتم جدیدی اضافه شود،
+    خودکار به‌روز می‌ماند.
+    """
+    top_labels = {}
+    for row in get_main_menu_keyboard().inline_keyboard:
+        for btn in row:
+            if btn.callback_data and btn.callback_data.startswith("mafcat_"):
+                top_labels[btn.callback_data[len("mafcat_"):]] = btn.text
+
+    sub_info = {}  # mafsub_key -> (sub_label, top_label)
+    for cat_key, cat_fn in CAT_KEYBOARDS.items():
+        top_label = top_labels.get(cat_key, "")
+        try:
+            keyboard = cat_fn()
+        except Exception:
+            logger.exception(f"MAFATIH MENU BUILD ERROR (category={cat_key})")
+            continue
+        for row in keyboard.inline_keyboard:
+            for btn in row:
+                if btn.callback_data and btn.callback_data.startswith("mafsub_"):
+                    sub_key = btn.callback_data[len("mafsub_"):]
+                    sub_info[sub_key] = (btn.text, top_label)
+
+    location = {}
+    for sub_key, sub_fn in SUB_KEYBOARDS.items():
+        sub_label, top_label = sub_info.get(sub_key, ("", ""))
+        try:
+            keyboard = sub_fn()
+        except Exception:
+            # اگر یک زیردسته به هر دلیلی (مثلاً باگ در تعریف دکمه‌ها) خطا داد،
+            # کل نگاشت را خراب نکند؛ فقط همان زیردسته را رد کن.
+            logger.exception(f"MAFATIH MENU BUILD ERROR (subcategory={sub_key})")
+            continue
+        for row in keyboard.inline_keyboard:
+            for btn in row:
+                if btn.callback_data and btn.callback_data.startswith("mafitem_"):
+                    identifier = btn.callback_data[len("mafitem_"):]
+                    location[identifier] = (top_label, sub_label)
+
+    return location
+
+
+MAFATIH_ITEM_LOCATION = build_mafatih_item_location_map()
+
 
 # ==========================================
 # 3. هندلرها (Handlers)
