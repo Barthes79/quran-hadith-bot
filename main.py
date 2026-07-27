@@ -185,7 +185,7 @@ def main():
     app.add_handler(CallbackQueryHandler(surah_page_callback, pattern="^surah_page_"))
     app.add_handler(CallbackQueryHandler(surah_selected_callback, pattern="^surah_\\d+$"))
     app.add_handler(CallbackQueryHandler(ayah_list_page_callback, pattern="^ayahlist_\\d+_\\d+$"))
-    app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^ayah_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^(ayah_\\d+_\\d+|ayahnav_\\d+_\\d+_\\d+)$"))
     app.add_handler(CallbackQueryHandler(fav_ayah_callback, pattern="^fav_ayah_"))
    # app.add_handler(CallbackQueryHandler(tafsir_callback, pattern="^tafsir_"))
     app.add_handler(CallbackQueryHandler(audio_callback, pattern="^audio_"))
