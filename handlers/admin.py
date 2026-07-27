@@ -387,21 +387,46 @@ def _format_nahj_post(row):
     body = row["translation_text"] or ""
     preview = body if len(body) <= 500 else body[:500].rstrip() + "…"
     text = f"{cat_label} — {item_label} {number}{title_suffix}\n\n{preview}"
-    markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"nahjitem_{category}_{number}")]]
-    )
+
+    # دکمه‌ی «مشاهده کامل» فقط وقتی نشان داده شود که واقعاً چیزی فراتر از همین
+    # پیش‌نمایش هست: یا متن ترجمه بریده شده، یا متن عربی/شرح جداگانه‌ای وجود
+    # دارد که در پست گروه نیامده. اگر همین متن، کل محتواست، دکمه اضافی است.
+    truncated = len(body) > 500
+    has_arabic = bool(row["arabic_text"])
+    has_tafsir = bool(row["tafsir_text"])
+    needs_full_view = truncated or has_arabic or has_tafsir
+
+    markup = None
+    if needs_full_view:
+        markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"nahjitem_{category}_{number}")]]
+        )
     return text, markup
 
 
 def _format_mafatih_post(row):
     cat_label = MAFATIH_CATEGORY_FA.get(row["category"], "🤲 مفاتیح‌الجنان")
-    body = row["translation_text"] or row["arabic_text"] or ""
+    translation = row["translation_text"] or ""
+    arabic = row["arabic_text"] or ""
+    tafsir = row["tafsir_text"] or ""
+    body = translation or arabic
     preview = body if len(body) <= 500 else body[:500].rstrip() + "…"
     text = f"{cat_label} — {row['title']}\n\n{preview}"
-    identifier = row["slug"] if row["slug"] else row["id"]
-    markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"mafitem_{identifier}")]]
-    )
+
+    # همان منطق: فقط وقتی دکمه بگذار که چیزی بیشتر از پیش‌نمایش وجود دارد
+    # (متن بریده شده، یا وقتی ترجمه نشان داده شده ولی متن عربی جداگانه‌ای هم
+    # هست که دیده نشده، یا شرح/توضیح اضافه‌ای ثبت شده).
+    truncated = len(body) > 500
+    hidden_arabic = bool(translation) and bool(arabic)
+    has_tafsir = bool(tafsir)
+    needs_full_view = truncated or hidden_arabic or has_tafsir
+
+    markup = None
+    if needs_full_view:
+        identifier = row["slug"] if row["slug"] else row["id"]
+        markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📖 مشاهده کامل", callback_data=f"mafitem_{identifier}")]]
+        )
     return text, markup
 
 
