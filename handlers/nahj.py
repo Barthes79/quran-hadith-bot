@@ -246,7 +246,23 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
 
         markup = nahj_item_keyboard(category, number, page=page, total_pages=total_pages)
 
+    # اگر این دکمه از داخل یک گروه زده شده (نه چت خصوصی ربات)، به‌جای نمایش
+    # متن کامل و صفحه‌بندی/دکمه‌ها داخل گروه، متن کامل را در پیوی خودِ کاربر
+    # می‌فرستیم و ادامه‌ی ورق‌زدن/علاقه‌مندی از همان‌جا انجام می‌شود.
+    chat_type = update.effective_chat.type if update.effective_chat else None
+    if query and chat_type in ("group", "supergroup"):
+        try:
+            await context.bot.send_message(query.from_user.id, text, reply_markup=markup)
+            await query.answer("📩 متن کامل براتون در پیوی ربات ارسال شد.")
+        except Exception:
+            await query.answer(
+                "⚠️ برای دریافت متن کامل، اول در پیوی ربات دستور /start را بزنید، بعد دوباره روی این دکمه بزنید.",
+                show_alert=True,
+            )
+        return
+
     if query:
+        await query.answer()
         await query.edit_message_text(text, reply_markup=markup)
     else:
         await update.message.reply_text(text, reply_markup=markup)
@@ -254,14 +270,12 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
 
 async def nahj_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     _, category, number = query.data.split("_")
     await show_nahj_item(update, context, category, int(number))
 
 
 async def nahj_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     _, category, number, page = query.data.split("_")
     await show_nahj_item(update, context, category, int(number), page=int(page))
 

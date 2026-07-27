@@ -458,9 +458,55 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
     await safe_edit_message(query, text, reply_markup=markup)
 
 
+async def _send_mafatih_item_to_pv(query, context: ContextTypes.DEFAULT_TYPE, item_id: str):
+    """وقتی دکمه‌ی «مشاهده کامل» زیر پست خودکار داخل یک گروه زده می‌شود، به‌جای
+    ویرایش پیام داخل گروه (که صفحه‌بندی/دکمه‌های کامل بات را در گروه نمایش
+    می‌دهد)، متن کامل دعا را در پیوی خودِ کاربر می‌فرستیم؛ ادامه‌ی ورق‌زدن،
+    شنیدن صوت و افزودن به علاقه‌مندی‌ها از همان‌جا انجام می‌شود."""
+    item = db.get_mafatih_item_flexible(item_id)
+    if not item:
+        await query.answer("❌ اطلاعات این دعا در دیتابیس یافت نشد!", show_alert=True)
+        return
+
+    header, chunks = build_mafatih_pages(item)
+    total_pages = len(chunks)
+    text = header
+    if total_pages > 1:
+        text += f"(صفحه 1 از {total_pages})\n\n"
+    text += chunks[0]
+
+    image_path = item["image_path"] if "image_path" in item.keys() else None
+    audio_file_id = item["audio_file_id"] if "audio_file_id" in item.keys() else None
+    markup = mafatih_item_keyboard(item_id, page=0, total_pages=total_pages, has_audio=bool(audio_file_id))
+    user_id = query.from_user.id
+
+    try:
+        sent_via_photo = False
+        if image_path:
+            from pathlib import Path
+            full_path = Path("/app") / image_path
+            if full_path.exists():
+                if len(text) <= 1024:
+                    with open(full_path, "rb") as img:
+                        await context.bot.send_photo(user_id, photo=img, caption=text, reply_markup=markup)
+                else:
+                    with open(full_path, "rb") as img:
+                        await context.bot.send_photo(user_id, photo=img, caption=f"✨ {item['title']}")
+                    await context.bot.send_message(user_id, text, reply_markup=markup)
+                sent_via_photo = True
+        if not sent_via_photo:
+            await context.bot.send_message(user_id, text, reply_markup=markup)
+        await query.answer("📩 متن کامل براتون در پیوی ربات ارسال شد.")
+    except Exception:
+        logger.exception(f"MAFATIH PV SEND ERROR {item_id}")
+        await query.answer(
+            "⚠️ برای دریافت متن کامل، اول در پیوی ربات دستور /start را بزنید، بعد دوباره روی این دکمه بزنید.",
+            show_alert=True,
+        )
+
+
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
 
     # اگر از دعای قبلی یک عکسِ یتیم (بدون دکمه) باقی مانده، پاکش کن.
     # این فقط وقتی ممکن است که پیام واقعی و chat مشخصی داشته باشیم؛ پیام‌هایی
@@ -472,6 +518,14 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     item_id = query.data.replace("mafitem_", "")
 
+    # اگر این دکمه (مثلاً زیر پست خودکار ساعتی) داخل یک گروه زده شده، متن کامل
+    # را به‌جای نمایش در گروه، در پیوی کاربر می‌فرستیم.
+    chat_type = update.effective_chat.type if update.effective_chat else None
+    if chat_type in ("group", "supergroup"):
+        await _send_mafatih_item_to_pv(query, context, item_id)
+        return
+
+    await query.answer()
     try:
         await _render_mafatih_item(query, context, item_id, page=0)
     except Exception as e:
