@@ -12,7 +12,8 @@ def main_menu_keyboard():
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
         [InlineKeyboardButton("🔍 جستجو", callback_data="menu_search"),
          InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help"),
+         InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -23,8 +24,6 @@ async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ابتدا هر کیبورد ثابت (Reply Keyboard) قدیمی که ممکن است از قبل روی این چت
-    # باقی مانده باشد را پاک می‌کنیم. این پیام تقریباً نامرئی است.
     cleanup_msg = await update.message.reply_text("⏳", reply_markup=ReplyKeyboardRemove())
     try:
         await cleanup_msg.delete()
@@ -43,8 +42,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    # در اینجا answer() را حذف کردیم تا اگر تابع بعدی هم خواست answer کند تداخل پیش نیاید
-    # یا در صورت نیاز فقط یک بار پاسخ می‌دهیم.
     try:
         await query.answer()
     except:
@@ -78,12 +75,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_nahj_menu(update, context)
 
     elif query.data == "menu_mafatih":
-        # این بخش اصلاح شد تا تابع درست را فراخوانی کند
         from handlers.mafatih import mafatih_menu_callback
         await mafatih_menu_callback(update, context)
 
     elif query.data == "menu_main":
-        # بازگشت از بخش‌های داخلی به منوی اصلی ربات
         await query.edit_message_text(
             "🌙 منوی اصلی ربات:",
             reply_markup=main_menu_keyboard()
@@ -94,6 +89,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "menu_back":
         await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
+
+    elif query.data == "menu_help":
+        from handlers.help import help_command
+        await help_command(update, context)
 
 
 async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
