@@ -10,6 +10,7 @@ from config import BOT_TOKEN, PROXY_URL
 from database import init_db, ensure_search_index
 
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
+from handlers.ownership import ownership_guard_callback
 from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
     fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
@@ -64,19 +65,18 @@ logger = logging.getLogger(__name__)
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    هر متنی که کاربر بفرستد ابتدا به‌عنوان شماره آیه (مثل 2:255) و سپس به‌عنوان
-    نام سوره + شماره آیه (مثل «بقره 5») بررسی می‌شود؛ این دو حالت هم در چت
-    خصوصی و هم در گروه‌ها کار می‌کنند. جستجوی آزاد متنی حدیث (وقتی متن هیچ‌کدام
-    از الگوهای بالا نبود) فقط در چت خصوصی انجام می‌شود تا در گروه‌ها اسپم
-    ایجاد نشود.
+    فرمت‌های صریح آیه («2:255» یا «بقره 25») هم در چت خصوصی و هم در گروه‌ها
+    کار می‌کنند. جستجوی آزاد حدیث (هر متن دلخواه) فقط در چت خصوصی فعال است
+    تا در گروه‌ها به هر پیام معمولی پاسخ ندهیم و اسپم نشود.
     """
     text = update.message.text.strip()
+    is_private = update.effective_chat.type == "private"
 
     handled = await ayah_direct_lookup(update, context, text)
     if not handled:
         handled = await surah_name_ayah_lookup(update, context, text)
 
-    if not handled and update.effective_chat.type == "private":
+    if not handled and is_private:
         await text_search_handler(update, context, text)
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,6 +127,11 @@ def main():
         logger.exception("خطای مدیریت‌نشده در پردازش آپدیت", exc_info=context.error)
 
     app.add_error_handler(_global_error_handler)
+
+    # این هندلر باید زودتر از همه‌ی هندلرهای callback دیگر اجرا شود (group=-10):
+    # اگر پیامی در گروه مخصوص یک کاربر خاص باشد (مثلاً پاسخ به «بقره 5»)،
+    # کلیک بقیه‌ی افراد گروه (حتی ادمین‌ها) روی دکمه‌های آن پیام همین‌جا بلاک می‌شود.
+    app.add_handler(CallbackQueryHandler(ownership_guard_callback), group=-10)
 
     # دستورات
     app.add_handler(CommandHandler("start", start_command))
@@ -185,7 +190,7 @@ def main():
     app.add_handler(CallbackQueryHandler(surah_page_callback, pattern="^surah_page_"))
     app.add_handler(CallbackQueryHandler(surah_selected_callback, pattern="^surah_\\d+$"))
     app.add_handler(CallbackQueryHandler(ayah_list_page_callback, pattern="^ayahlist_\\d+_\\d+$"))
-    app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^(ayah_\\d+_\\d+|ayahnav_\\d+_\\d+_\\d+)$"))
+    app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^ayah_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(fav_ayah_callback, pattern="^fav_ayah_"))
    # app.add_handler(CallbackQueryHandler(tafsir_callback, pattern="^tafsir_"))
     app.add_handler(CallbackQueryHandler(audio_callback, pattern="^audio_"))

@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes
 from services.quran_api import get_surah_list, get_ayah, get_audio_url
 from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ayah_tafsir
 from config import ADMIN_IDS
+from handlers.ownership import register_owner, GROUP_CHAT_TYPES
 
 PAGE_SIZE = 10
 AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
@@ -263,23 +264,20 @@ async def surah_selected_callback(update: Update, context: ContextTypes.DEFAULT_
     await show_ayah_list(update, context, surah_number, page=0)
 
 
-def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int, owner_id: int):
-    """owner_id شناسه‌ی کاربری است که این آیه را درخواست داده؛ در دکمه‌های
-    قبل/بعد، پخش صوت و افزودن به علاقه‌مندی جاسازی می‌شود تا در گروه، فقط
-    خودِ همان کاربر بتواند از این دکمه‌ها استفاده کند."""
+def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
     buttons = []
     nav_row = []
     if ayah > 1:
-        nav_row.append(InlineKeyboardButton("◀️ آیه قبل", callback_data=f"ayahnav_{surah}_{ayah-1}_{owner_id}"))
+        nav_row.append(InlineKeyboardButton("◀️ آیه قبل", callback_data=f"ayah_{surah}_{ayah-1}"))
     if ayah < total_ayahs:
-        nav_row.append(InlineKeyboardButton("آیه بعد ▶️", callback_data=f"ayahnav_{surah}_{ayah+1}_{owner_id}"))
+        nav_row.append(InlineKeyboardButton("آیه بعد ▶️", callback_data=f"ayah_{surah}_{ayah+1}"))
     buttons.append(nav_row)
 
     buttons.append([
         #InlineKeyboardButton("📝 تفسیر", callback_data=f"tafsir_{surah}_{ayah}"),
-        InlineKeyboardButton("🔊 پخش تلاوت", callback_data=f"audio_{surah}_{ayah}_{owner_id}"),
+        InlineKeyboardButton("🔊 پخش تلاوت", callback_data=f"audio_{surah}_{ayah}"),
     ])
-    buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}_{owner_id}")])
+    buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_ayah_{surah}_{ayah}")])
     buttons.append([
         InlineKeyboardButton("🔢 لیست آیات", callback_data=f"ayahlist_{surah}_0"),
         InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran"),
@@ -287,12 +285,10 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int, owner_id: 
     return InlineKeyboardMarkup(buttons)
 
 
-async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, ayah: int, owner_id: int = None):
+async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, ayah: int):
     query = update.callback_query
-    if owner_id is None:
-        # اولین نمایش (از پیام متنی یا از انتخاب از لیست آیات): مالک همین کاربر است
-        owner_id = query.from_user.id if query else update.effective_user.id
-    translation_key = get_user_translation(owner_id)
+    user_id = query.from_user.id if query else update.effective_user.id
+    translation_key = get_user_translation(user_id)
 
     surahs = await get_surah_list()
     surah_info = next((s for s in surahs if s["number"] == surah), None)
@@ -309,54 +305,36 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
             f"🔹 ترجمه:\n{data['translation']}"
         )
 
-    markup = ayah_navigation_keyboard(surah, ayah, total_ayahs, owner_id)
+    markup = ayah_navigation_keyboard(surah, ayah, total_ayahs)
 
     if query:
         await query.edit_message_text(text, reply_markup=markup)
     else:
-        await update.message.reply_text(text, reply_markup=markup)
-
-
-_NOT_OWNER_ALERT = "این دکمه فقط برای کاربری که این آیه را درخواست داده قابل استفاده است 🚫"
+        sent = await update.message.reply_text(text, reply_markup=markup)
+        # اگر این پیام در پاسخ به تایپ مستقیم در گروه ساخته شده (مثلاً «بقره 5»)،
+        # فقط همان کاربر باید بتواند دکمه‌های زیر آن را استفاده کند.
+        if update.effective_chat and update.effective_chat.type in GROUP_CHAT_TYPES:
+            register_owner(update.effective_chat.id, sent.message_id, update.effective_user.id)
 
 
 async def ayah_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    parts = query.data.split("_")
-
-    if parts[0] == "ayahnav":
-        # دکمه‌ی آیه قبل/بعد؛ فقط مالک اصلی اجازه‌ی استفاده دارد
-        _, surah, ayah, owner_id = parts
-        owner_id = int(owner_id)
-        if query.from_user.id != owner_id:
-            await query.answer(_NOT_OWNER_ALERT, show_alert=True)
-            return
-        await query.answer()
-        await show_ayah(update, context, int(surah), int(ayah), owner_id=owner_id)
-    else:
-        # انتخاب مستقیم شماره آیه از لیست آیات؛ نتیجه مختص همین کاربر می‌شود
-        _, surah, ayah = parts
-        await query.answer()
-        await show_ayah(update, context, int(surah), int(ayah), owner_id=query.from_user.id)
+    await query.answer()
+    _, surah, ayah = query.data.split("_")
+    await show_ayah(update, context, int(surah), int(ayah))
 
 
 async def fav_ayah_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    _, _, surah, ayah, owner_id = query.data.split("_")
-    if query.from_user.id != int(owner_id):
-        await query.answer(_NOT_OWNER_ALERT, show_alert=True)
-        return
+    _, _, surah, ayah = query.data.split("_")
     add_favorite(query.from_user.id, "ayah", f"{surah}:{ayah}")
     await query.answer("به علاقه‌مندی‌ها اضافه شد ⭐")
 
 
 async def audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    _, surah, ayah, owner_id = query.data.split("_")
-    if query.from_user.id != int(owner_id):
-        await query.answer(_NOT_OWNER_ALERT, show_alert=True)
-        return
     await query.answer("در حال آماده‌سازی صوت...")
+    _, surah, ayah = query.data.split("_")
     surah, ayah = int(surah), int(ayah)
 
     data = await get_ayah(surah, ayah)
