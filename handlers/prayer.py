@@ -1,8 +1,12 @@
 # handlers/prayer.py
 import logging
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
+
+# غیرفعال کردن بررسی SSL
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +46,12 @@ CITY_CODES = {
 
 
 def get_prayer_times(city_code: int):
-    """دریافت اوقات شرعی از API آوینی"""
+    """دریافت اوقات شرعی از API آوینی با غیرفعال کردن بررسی SSL"""
     url = f"https://prayer.aviny.com/api/prayertimes/{city_code}"
     
     try:
-        response = requests.get(url, timeout=10)
+        # غیرفعال کردن بررسی SSL با verify=False
+        response = requests.get(url, timeout=10, verify=False)
         response.raise_for_status()
         data = response.json()
         
@@ -192,9 +197,6 @@ async def prayer_location_callback(update: Update, context: ContextTypes.DEFAULT
     """درخواست موقعیت مکانی از کاربر"""
     query = update.callback_query
     await query.answer()
-    
-    # درخواست ارسال موقعیت
-    from telegram import KeyboardButton, ReplyKeyboardMarkup
     
     location_keyboard = ReplyKeyboardMarkup(
         [[KeyboardButton("📍 ارسال موقعیت", request_location=True)]],
