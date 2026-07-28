@@ -180,7 +180,11 @@ def main():
     app.add_handler(CommandHandler("prayer", prayer_command))
 
 # پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
-    app.add_handler(MessageHandler(filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.PRIVATE, prayer_command))
+    app.add_handler(MessageHandler(
+    filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
+    prayer_command
+))
+
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
     # ==========================================
