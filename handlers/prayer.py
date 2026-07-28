@@ -11,37 +11,40 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 # لیست کدهای شهرهای اصلی ایران
+# نکته: این کدها دلخواه/پشت‌سرهم نیستن؛ کد واقعی هر شهر توی سیستم آوینی
+# با استفاده از اسکریپت check_city_codes.py استخراج و تأیید شده (تاریخ تأیید: امروز).
 CITY_CODES = {
     "تهران": 1,
-    "مشهد": 2,
-    "اصفهان": 3,
-    "شیراز": 4,
-    "تبریز": 5,
-    "کرج": 6,
-    "قم": 7,
-    "اهواز": 8,
-    "کرمانشاه": 9,
-    "رشت": 10,
-    "یزد": 11,
-    "کرمان": 12,
-    "اراک": 13,
-    "همدان": 14,
-    "زنجان": 15,
-    "ساری": 16,
-    "گرگان": 17,
-    "بوشهر": 18,
-    "بیرجند": 19,
-    "خرم‌آباد": 20,
-    "ارومیه": 21,
-    "شهرکرد": 22,
-    "بندرعباس": 23,
-    "زاهدان": 24,
-    "سنندج": 25,
-    "قزوین": 26,
+    "اصفهان": 2,
+    "ارومیه": 3,
+    "اراک": 4,
+    "اهواز": 5,
+    "تبریز": 6,
+    "بندرعباس": 7,
+    "شیراز": 8,
+    "کرج": 9,
+    "قزوین": 10,
+    "قم": 11,
+    "زاهدان": 12,
+    "مشهد": 13,
+    "یزد": 14,
+    "بجنورد": 15,
+    "رشت": 16,
+    "ساری": 17,
+    "گرگان": 18,
+    "کرمان": 19,
+    "بوشهر": 20,
+    "کرمانشاه": 21,
+    "سنندج": 22,
+    "مهاباد": 23,
+    "همدان": 24,
+    "زنجان": 25,
+    "اردبیل": 26,
     "سمنان": 27,
-    "مازندران": 28,
-    "گلستان": 29,
-    "لرستان": 30,
+    "ایلام": 29,
+    "خرم‌آباد": 30,
+    "شهرکرد": 31,
+    "یاسوج": 32,
 }
 
 
@@ -78,11 +81,11 @@ def prayer_keyboard(city_code: int = None, user_id: int = None):
     # دکمه‌های شهرهای پرکاربرد
     city_buttons = [
         [InlineKeyboardButton("🕌 تهران", callback_data=f"prayer_city_1_{user_id}"),
-         InlineKeyboardButton("🕌 مشهد", callback_data=f"prayer_city_2_{user_id}")],
-        [InlineKeyboardButton("🕌 اصفهان", callback_data=f"prayer_city_3_{user_id}"),
-         InlineKeyboardButton("🕌 شیراز", callback_data=f"prayer_city_4_{user_id}")],
-        [InlineKeyboardButton("🕌 قم", callback_data=f"prayer_city_7_{user_id}"),
-         InlineKeyboardButton("🕌 کرج", callback_data=f"prayer_city_6_{user_id}")],
+         InlineKeyboardButton("🕌 مشهد", callback_data=f"prayer_city_13_{user_id}")],
+        [InlineKeyboardButton("🕌 اصفهان", callback_data=f"prayer_city_2_{user_id}"),
+         InlineKeyboardButton("🕌 شیراز", callback_data=f"prayer_city_8_{user_id}")],
+        [InlineKeyboardButton("🕌 قم", callback_data=f"prayer_city_11_{user_id}"),
+         InlineKeyboardButton("🕌 کرج", callback_data=f"prayer_city_9_{user_id}")],
         [InlineKeyboardButton("🌍 انتخاب شهر دیگر", callback_data=f"prayer_city_list_{user_id}")],
         [InlineKeyboardButton("📌 دریافت بر اساس موقعیت", callback_data=f"prayer_location_{user_id}")],
     ]
@@ -399,8 +402,8 @@ async def prayer_all_cities_callback(update: Update, context: ContextTypes.DEFAU
     user_id = update.effective_user.id
     
     main_cities = [
-        ("تهران", 1), ("مشهد", 2), ("اصفهان", 3),
-        ("شیراز", 4), ("قم", 7)
+        ("تهران", 1), ("مشهد", 13), ("اصفهان", 2),
+        ("شیراز", 8), ("قم", 11)
     ]
     
     message = "🕌 *اوقات شرعی شهرهای اصلی ایران*\n\n"
