@@ -249,6 +249,7 @@ def main():
     # ==========================================
     app.add_handler(CallbackQueryHandler(prayer_city_callback, pattern="^prayer_city_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_city_list_callback, pattern="^prayer_city_list_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_page_callback, pattern="^prayer_page_(prev|next)_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_refresh_callback, pattern="^prayer_refresh_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_location_callback, pattern="^prayer_location_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_back_callback, pattern="^prayer_back_\\d+$"))
