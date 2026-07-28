@@ -637,6 +637,10 @@ async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data["maf_extra_audio_id"] = audio_msg.message_id
         except Exception:
             logger.exception(f"MAFATIH AUDIO SEND ERROR {item_id} (file_id={audio_file_id})")
+            try:
+                await query.message.reply_text("❌ در ارسال فایل صوتی خطایی رخ داد.")
+            except Exception:
+                pass
     else:
         # پیام از نتیجه‌ی سرچ اینلاین است؛ chat_id نداریم پس پیام جدا ممکن نیست
         try:
