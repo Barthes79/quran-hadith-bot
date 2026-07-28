@@ -50,7 +50,6 @@ def get_prayer_times(city_code: int):
     url = f"https://prayer.aviny.com/api/prayertimes/{city_code}"
     
     try:
-        # غیرفعال کردن بررسی SSL با verify=False
         response = requests.get(url, timeout=10, verify=False)
         response.raise_for_status()
         data = response.json()
@@ -60,39 +59,39 @@ def get_prayer_times(city_code: int):
             "city": data.get("CityName", ""),
             "country": data.get("CountryName", ""),
             "date": data.get("Today", ""),
-            "fajr": data.get("Imsaak", ""),  # اذان صبح
-            "sunrise": data.get("Sunrise", ""),  # طلوع
-            "noon": data.get("Noon", ""),  # اذان ظهر
-            "sunset": data.get("Sunset", ""),  # غروب
-            "maghrib": data.get("Maghreb", ""),  # اذان مغرب
-            "midnight": data.get("Midnight", ""),  # نیمه‌شب شرعی
+            "fajr": data.get("Imsaak", ""),
+            "sunrise": data.get("Sunrise", ""),
+            "noon": data.get("Noon", ""),
+            "sunset": data.get("Sunset", ""),
+            "maghrib": data.get("Maghreb", ""),
+            "midnight": data.get("Midnight", ""),
         }
     except requests.exceptions.RequestException as e:
         logger.error(f"خطا در دریافت اوقات شرعی: {e}")
         return {"success": False, "error": str(e)}
 
 
-def prayer_keyboard(city_code: int = None):
-    """کیبورد دکمه‌های اوقات شرعی"""
+def prayer_keyboard(city_code: int = None, user_id: int = None):
+    """کیبورد دکمه‌های اوقات شرعی با شناسه کاربر"""
     buttons = []
     
     # دکمه‌های شهرهای پرکاربرد
     city_buttons = [
-        [InlineKeyboardButton("🕌 تهران", callback_data="prayer_city_1"),
-         InlineKeyboardButton("🕌 مشهد", callback_data="prayer_city_2")],
-        [InlineKeyboardButton("🕌 اصفهان", callback_data="prayer_city_3"),
-         InlineKeyboardButton("🕌 شیراز", callback_data="prayer_city_4")],
-        [InlineKeyboardButton("🕌 قم", callback_data="prayer_city_7"),
-         InlineKeyboardButton("🕌 کرج", callback_data="prayer_city_6")],
-        [InlineKeyboardButton("🌍 انتخاب شهر دیگر", callback_data="prayer_city_list")],
-        [InlineKeyboardButton("📌 دریافت بر اساس موقعیت", callback_data="prayer_location")],
+        [InlineKeyboardButton("🕌 تهران", callback_data=f"prayer_city_1_{user_id}"),
+         InlineKeyboardButton("🕌 مشهد", callback_data=f"prayer_city_2_{user_id}")],
+        [InlineKeyboardButton("🕌 اصفهان", callback_data=f"prayer_city_3_{user_id}"),
+         InlineKeyboardButton("🕌 شیراز", callback_data=f"prayer_city_4_{user_id}")],
+        [InlineKeyboardButton("🕌 قم", callback_data=f"prayer_city_7_{user_id}"),
+         InlineKeyboardButton("🕌 کرج", callback_data=f"prayer_city_6_{user_id}")],
+        [InlineKeyboardButton("🌍 انتخاب شهر دیگر", callback_data=f"prayer_city_list_{user_id}")],
+        [InlineKeyboardButton("📌 دریافت بر اساس موقعیت", callback_data=f"prayer_location_{user_id}")],
     ]
     
     # دکمه‌های عملیاتی
     action_buttons = [
-        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=f"prayer_refresh_{city_code or 1}"),
-         InlineKeyboardButton("⏰ تنظیم یادآور", callback_data="prayer_reminder")],
-        [InlineKeyboardButton("📋 دریافت همه شهرها", callback_data="prayer_all_cities")],
+        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=f"prayer_refresh_{city_code or 1}_{user_id}"),
+         InlineKeyboardButton("⏰ تنظیم یادآور", callback_data=f"prayer_reminder_{user_id}")],
+        [InlineKeyboardButton("📋 دریافت همه شهرها", callback_data=f"prayer_all_cities_{user_id}")],
         [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
     ]
     
@@ -104,12 +103,16 @@ def prayer_keyboard(city_code: int = None):
 async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """دستور /prayer - نمایش اوقات شرعی"""
     chat_type = update.effective_chat.type
+    user_id = update.effective_user.id
     
     # در گروه‌ها، فقط با دستور یا منشن کار می‌کند
     if chat_type != "private" and not update.message.text.startswith("/prayer"):
         return
     
     message = "🕌 *اوقات شرعی*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+    
+    # ذخیره user_id در context
+    context.user_data["prayer_user_id"] = user_id
     
     # اگر کاربر قبلاً شهری انتخاب کرده، در context ذخیره می‌کنیم
     if "prayer_city" not in context.user_data:
@@ -118,17 +121,34 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         message,
         parse_mode="Markdown",
-        reply_markup=prayer_keyboard(context.user_data["prayer_city"])
+        reply_markup=prayer_keyboard(context.user_data["prayer_city"], user_id)
     )
+
+
+def check_ownership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """بررسی می‌کند که آیا کاربر صاحب پیام است یا خیر"""
+    user_id = update.effective_user.id
+    owner_id = context.user_data.get("prayer_user_id")
+    
+    if owner_id and user_id != owner_id:
+        return False
+    return True
 
 
 async def prayer_city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """کالبک انتخاب شهر"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer()
     
     # استخراج کد شهر از کالبک
-    city_code = int(query.data.split("_")[-1])
+    parts = query.data.split("_")
+    city_code = int(parts[2])
     context.user_data["prayer_city"] = city_code
     
     # دریافت و نمایش اوقات شرعی
@@ -138,10 +158,17 @@ async def prayer_city_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def prayer_city_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """نمایش لیست کامل شهرها با صفحه‌بندی"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer()
     
     # صفحه‌بندی شهرها
     page = context.user_data.get("prayer_page", 0)
+    user_id = update.effective_user.id
     city_items = list(CITY_CODES.items())
     page_size = 10
     total_pages = (len(city_items) + page_size - 1) // page_size
@@ -151,19 +178,19 @@ async def prayer_city_list_callback(update: Update, context: ContextTypes.DEFAUL
     
     buttons = []
     for city_name, code in city_items[start_idx:end_idx]:
-        buttons.append([InlineKeyboardButton(f"📍 {city_name}", callback_data=f"prayer_city_{code}")])
+        buttons.append([InlineKeyboardButton(f"📍 {city_name}", callback_data=f"prayer_city_{code}_{user_id}")])
     
     # دکمه‌های صفحه‌بندی
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ قبلی", callback_data="prayer_page_prev"))
+        nav_buttons.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"prayer_page_prev_{user_id}"))
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("➡️ بعدی", callback_data="prayer_page_next"))
+        nav_buttons.append(InlineKeyboardButton("➡️ بعدی", callback_data=f"prayer_page_next_{user_id}"))
     
     if nav_buttons:
         buttons.append(nav_buttons)
     
-    buttons.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="prayer_back")])
+    buttons.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")])
     
     await query.edit_message_text(
         f"🌍 انتخاب شهر (صفحه {page+1} از {total_pages}):",
@@ -174,6 +201,12 @@ async def prayer_city_list_callback(update: Update, context: ContextTypes.DEFAUL
 async def prayer_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """صفحه‌بندی لیست شهرها"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer()
     
     if "page_prev" in query.data:
@@ -187,15 +220,28 @@ async def prayer_page_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def prayer_refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """به‌روزرسانی اوقات شرعی"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer("🔄 در حال به‌روزرسانی...")
     
-    city_code = int(query.data.split("_")[-1])
+    parts = query.data.split("_")
+    city_code = int(parts[2])
     await show_prayer_times(update, context, city_code)
 
 
 async def prayer_location_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """درخواست موقعیت مکانی از کاربر"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer()
     
     location_keyboard = ReplyKeyboardMarkup(
@@ -214,22 +260,25 @@ async def prayer_location_callback(update: Update, context: ContextTypes.DEFAULT
 async def prayer_location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """پردازش موقعیت مکانی دریافتی"""
     location = update.message.location
+    user_id = update.effective_user.id
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await update.message.reply_text("❌ شما دسترسی به این عملیات ندارید!")
+        return
     
     # تبدیل مختصات به نام شهر (با استفاده از API Nominatim)
     try:
         lat = location.latitude
         lon = location.longitude
         
-        # درخواست به Nominatim برای دریافت نام شهر
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
         response = requests.get(url, timeout=10, headers={"User-Agent": "TelegramBot"})
         data = response.json()
         
-        # استخراج نام شهر از پاسخ
         address = data.get("address", {})
         city = address.get("city") or address.get("town") or address.get("village") or address.get("state") or "ناشناس"
         
-        # پیدا کردن کد شهر
         city_code = None
         for name, code in CITY_CODES.items():
             if name in city or city in name:
@@ -243,44 +292,50 @@ async def prayer_location_handler(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(
                 f"⚠️ متاسفانه شهر '{city}' در لیست ما موجود نیست.\n"
                 "لطفاً یکی از شهرهای موجود را انتخاب کنید.",
-                reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1))
+                reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
             )
     except Exception as e:
         logger.error(f"خطا در تبدیل موقعیت: {e}")
         await update.message.reply_text(
             "⚠️ خطا در دریافت اطلاعات موقعیت. لطفاً شهر مورد نظر را از لیست انتخاب کنید.",
-            reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1))
+            reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
         )
 
 
 async def prayer_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بازگشت به منوی اوقات شرعی"""
     query = update.callback_query
+    
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
     await query.answer()
+    user_id = update.effective_user.id
     
     await query.edit_message_text(
         "🕌 *اوقات شرعی*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
         parse_mode="Markdown",
-        reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1))
+        reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
     )
 
 
 async def show_prayer_times(update: Update, context: ContextTypes.DEFAULT_TYPE, city_code: int, city_name: str = None):
     """نمایش اوقات شرعی با فرمت زیبا"""
     query = update.callback_query if update.callback_query else None
+    user_id = update.effective_user.id
     
-    # دریافت اطلاعات
     result = get_prayer_times(city_code)
     
     if not result["success"]:
         error_msg = f"⚠️ خطا در دریافت اوقات شرعی: {result.get('error', 'خطای ناشناخته')}\n\nلطفاً دوباره تلاش کنید."
         if query:
-            await query.edit_message_text(error_msg, reply_markup=prayer_keyboard(city_code))
+            await query.edit_message_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id))
         else:
-            await update.message.reply_text(error_msg, reply_markup=prayer_keyboard(city_code))
+            await update.message.reply_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id))
         return
     
-    # ساخت پیام زیبا
     message = f"""🕌 *اوقات شرعی {result['city']}*
 
 📅 *تاریخ:* {result['date']}
@@ -298,9 +353,9 @@ async def show_prayer_times(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 """
     
     keyboard = [
-        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=f"prayer_refresh_{city_code}"),
-         InlineKeyboardButton("📍 شهر دیگر", callback_data="prayer_city_list")],
-        [InlineKeyboardButton("⬅️ بازگشت", callback_data="prayer_back")]
+        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=f"prayer_refresh_{city_code}_{user_id}"),
+         InlineKeyboardButton("📍 شهر دیگر", callback_data=f"prayer_city_list_{user_id}")],
+        [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")]
     ]
     
     if query:
@@ -320,9 +375,15 @@ async def show_prayer_times(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def prayer_all_cities_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """نمایش اوقات شرعی چند شهر اصلی"""
     query = update.callback_query
-    await query.answer()
     
-    # نمایش ۵ شهر اصلی
+    # بررسی مالکیت
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+    
+    await query.answer()
+    user_id = update.effective_user.id
+    
     main_cities = [
         ("تهران", 1), ("مشهد", 2), ("اصفهان", 3),
         ("شیراز", 4), ("قم", 7)
@@ -343,6 +404,6 @@ async def prayer_all_cities_callback(update: Update, context: ContextTypes.DEFAU
         message,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ بازگشت", callback_data="prayer_back")]
+            [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")]
         ])
     )
