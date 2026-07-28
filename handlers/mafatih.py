@@ -56,7 +56,6 @@ def get_keyboard_for_appendices_baqiyat():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🧎 نمازهای مستحب", callback_data="mafsub_recommended_prayers")],
         [InlineKeyboardButton("💊 ادعیه درمان و بیماری", callback_data="mafsub_sickness_healing")],
-        [InlineKeyboardButton("📖 سوره‌های قرآنی مفاتیح", callback_data="mafsub_quran_surahs")],
         [InlineKeyboardButton("🏠 منوی اصلی مفاتیح", callback_data="mafmenu")]
     ])
 
@@ -211,14 +210,6 @@ def get_keyboard_for_sickness_healing():
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_appendices_baqiyat"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
-def get_keyboard_for_quran_surahs():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏠 حدیث شریف کساء", callback_data="mafitem_hadith_kisa"), InlineKeyboardButton("💎 مکارم الاخلاق", callback_data="mafitem_dua_makarem")],
-        [InlineKeyboardButton("💚 سوره یس", callback_data="mafitem_surah_yasin"), InlineKeyboardButton("🌸 سوره الرحمن", callback_data="mafitem_surah_rahman")],
-        [InlineKeyboardButton("💎 سوره واقعه", callback_data="mafitem_surah_waqiah"), InlineKeyboardButton("📖 روم و عنکبوت", callback_data="mafitem_surah_rom_ankabut")],
-        [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_appendices_baqiyat"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
-    ])
-
 # ==========================================
 # 2. دیکشنری‌های مسیریابی (Routing Maps)
 # ==========================================
@@ -247,8 +238,7 @@ SUB_KEYBOARDS = {
     "mosques_deeds": get_keyboard_for_mosques_deeds,
     "iran_ziyarats": get_keyboard_for_iran_ziyarats,
     "recommended_prayers": get_keyboard_for_recommended_prayers,
-    "sickness_healing": get_keyboard_for_sickness_healing,
-    "quran_surahs": get_keyboard_for_quran_surahs
+    "sickness_healing": get_keyboard_for_sickness_healing
 }
 
 def build_mafatih_item_location_map():
