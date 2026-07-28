@@ -267,9 +267,16 @@ async def prayer_location_callback(update: Update, context: ContextTypes.DEFAULT
         one_time_keyboard=True
     )
     
+    # نکته: edit_message_text فقط InlineKeyboardMarkup قبول می‌کنه، نه ReplyKeyboardMarkup.
+    # برای همین کیبورد سفارشی (درخواست موقعیت) باید توی یک پیام جدید فرستاده بشه،
+    # نه با ویرایش پیام قبلی.
     await query.edit_message_text(
-        "📍 لطفاً موقعیت مکانی خود را ارسال کنید تا اوقات شرعی بر اساس شهر شما محاسبه شود.\n\n"
-        "⚠️ توجه: این قابلیت به یک سرویس خارجی برای تبدیل مختصات به نام شهر نیاز دارد.",
+        "📍 لطفاً از دکمه‌ی پایین صفحه، موقعیت مکانی خودتون رو ارسال کنید تا اوقات شرعی شهرتون محاسبه بشه.\n\n"
+        "⚠️ توجه: این قابلیت به یک سرویس خارجی برای تبدیل مختصات به نام شهر نیاز دارد."
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="📍 برای ارسال موقعیت، دکمه‌ی زیر رو بزن:",
         reply_markup=location_keyboard
     )
 
