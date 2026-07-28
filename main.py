@@ -174,11 +174,13 @@ def main():
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ==========================================
-    # دستورات اوقات شرعی
-    # ==========================================
+# دستورات اوقات شرعی
+# ==========================================
+# دستور لاتین
     app.add_handler(CommandHandler("prayer", prayer_command))
-    app.add_handler(CommandHandler("اذان", prayer_command))  # دستور فارسی
 
+# پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
+    app.add_handler(MessageHandler(filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.PRIVATE, prayer_command))
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
     # ==========================================
