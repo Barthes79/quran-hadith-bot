@@ -1172,6 +1172,21 @@ def update_mafatih_image(item_id: int, image_path: str):
     conn.close()
 
 
+def update_mafatih_audio(item_id: int, audio_file_id: str):
+    """
+    برای اصلاح دستی audio_file_id یک دعا (مثلاً وقتی file_id قبلی نامعتبر
+    شده یا مال بات دیگری بوده و باید با file_id جدیدی که همین بات از یک
+    فایل صوتی گرفته جایگزین شود). توسط دستور ادمین /setmafaudio استفاده
+    می‌شود.
+    """
+    conn = get_connection()
+    conn.execute(
+        "UPDATE mafatih SET audio_file_id = ? WHERE id = ?", (audio_file_id, item_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def update_mafatih_translation(item_id: int, translation_text: str):
     conn = get_connection()
     conn.execute(

@@ -46,6 +46,7 @@ from handlers.mafatih import (
 from handlers.admin import (
     group_settings_command, group_settings_router,
     daily_post_job, set_welcome_command, member_update_handler, link_guard_handler,
+    set_mafatih_audio_command, mafatih_audio_upload_handler,
 )
 from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
@@ -164,6 +165,8 @@ def main():
     app.add_handler(CallbackQueryHandler(quiz_menu_callback, pattern="^quizmenu$"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
+    app.add_handler(CommandHandler("setmafaudio", set_mafatih_audio_command))
+    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی

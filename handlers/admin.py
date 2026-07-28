@@ -7,7 +7,9 @@ from telegram.constants import ChatType
 from database import (
     get_group_settings, update_group_settings, get_all_active_daily_groups,
     get_random_hadith, get_random_nahj_item, get_random_mafatih_item, get_connection,
+    get_mafatih_item_flexible, update_mafatih_audio,
 )
+from config import ADMIN_IDS
 from handlers.hadith import format_hadith
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 from services.quran_api import get_ayah, get_surah_list
@@ -609,3 +611,80 @@ async def link_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
     except Exception:
         pass
+
+
+# ==========================================
+# اصلاح دستیِ audio_file_id یک دعا (وقتی file_id قبلی نامعتبر شده، مثلاً
+# چون مال بات دیگری بوده و تلگرام آن را رد می‌کند: «Wrong file identifier»)
+# ==========================================
+
+# user_id ادمین -> شناسه‌ی (slug یا id) دعایی که منتظر آپلود صدای جدیدش هستیم
+_PENDING_MAFATIH_AUDIO: dict[int, str] = {}
+
+
+async def set_mafatih_audio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    دستور /setmafaudio <شناسه>
+    شناسه همان چیزی است که در دکمه‌ی منو بعد از mafitem_ می‌آید (مثلاً برای
+    دعای کمیل: kumayl). بعد از این دستور، اولین فایل صوتی/ویسی که همین
+    ادمین در پیوی ربات بفرستد، به‌عنوان audio_file_id همان دعا ذخیره می‌شود
+    — چون این فایل مستقیماً توسط همین بات دریافت شده، file_id آن برای همین
+    بات همیشه معتبر خواهد بود (برخلاف file_id هایی که از یک بات دیگر کپی
+    شده باشند).
+    """
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
+        return
+
+    parts = update.message.text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "فرمت درست: /setmafaudio شناسه\n"
+            "مثال: /setmafaudio kumayl\n"
+            "(شناسه همان چیزی است که در دکمه‌ی منو بعد از mafitem_ می‌آید، یا اگر "
+            "slug ندارد، همان id عددی‌اش در دیتابیس است)"
+        )
+        return
+
+    identifier = parts[1].strip()
+    item = get_mafatih_item_flexible(identifier)
+    if not item:
+        await update.message.reply_text(f"چیزی با شناسه‌ی «{identifier}» پیدا نشد.")
+        return
+
+    _PENDING_MAFATIH_AUDIO[update.effective_user.id] = identifier
+    await update.message.reply_text(
+        f"✅ الان فایل صوتیِ «{item['title']}» رو به‌عنوان یک فایل صوتی (audio) بفرستید "
+        f"(نه ویس/voice، ترجیحاً audio که عنوان و خواننده هم نگه می‌دارد)."
+    )
+
+
+async def mafatih_audio_upload_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    وقتی ادمینی که قبلاً /setmafaudio زده، یک فایل صوتی یا ویس بفرستد، این
+    هندلر آن را می‌گیرد و audio_file_id را در دیتابیس به‌روزرسانی می‌کند.
+    """
+    user_id = update.effective_user.id
+    identifier = _PENDING_MAFATIH_AUDIO.get(user_id)
+    if not identifier:
+        return  # این ادمین منتظر آپلود صدایی نیست؛ به هندلرهای دیگر بسپار
+
+    message = update.message
+    file_id = None
+    if message.audio:
+        file_id = message.audio.file_id
+    elif message.voice:
+        file_id = message.voice.file_id
+
+    if not file_id:
+        return
+
+    item = get_mafatih_item_flexible(identifier)
+    if not item:
+        _PENDING_MAFATIH_AUDIO.pop(user_id, None)
+        await message.reply_text("❌ این دعا دیگر پیدا نشد (شاید حذف شده). عملیات لغو شد.")
+        return
+
+    update_mafatih_audio(item["id"], file_id)
+    _PENDING_MAFATIH_AUDIO.pop(user_id, None)
+    await message.reply_text(f"✅ فایل صوتی «{item['title']}» با موفقیت به‌روزرسانی شد.")
