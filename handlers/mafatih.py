@@ -81,7 +81,7 @@ def get_keyboard_for_weekly_days():
 
 def get_keyboard_for_friday_deeds():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌌 اعمال شب جمعه", callback_data="mafitem_night_friday"), InlineKeyboardButton("☀️ اعمال روز جمعه", callback_data="mafitem_day_friday")],
+        [InlineKeyboardButton("🌌 اعمال شب جمعه", callback_data="mafitem_friday_night_deeds"), InlineKeyboardButton("☀️ اعمال روز جمعه", callback_data="mafitem_day_friday")],
         [InlineKeyboardButton("📿 صلوات ضراب اصفهانی", callback_data="mafitem_durrab_esfahani")],
         [InlineKeyboardButton("⛪ نماز حضرت رسول", callback_data="mafitem_namaz_prophet_friday"), InlineKeyboardButton("⚔️ نماز امیرالمؤمنین", callback_data="mafitem_namaz_ali_friday")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_daily_weekly"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
@@ -107,8 +107,8 @@ def get_keyboard_for_khams_ashar():
         [InlineKeyboardButton("۷. مطیعین", callback_data="mafitem_monajat_mutieen"), InlineKeyboardButton("۸. مریدین", callback_data="mafitem_monajat_moridin")],
         [InlineKeyboardButton("۹. محبین", callback_data="mafitem_monajat_mohibbin"), InlineKeyboardButton("۱۰. متوسلین", callback_data="mafitem_monajat_motavasselin")],
         [InlineKeyboardButton("۱۱. مفتقرین", callback_data="mafitem_monajat_moftaqerin"), InlineKeyboardButton("۱۲. عارفین", callback_data="mafitem_monajat_arefin")],
-        [InlineKeyboardButton("۱۳. ذاکرین", callback_data="mafitem_monajat_zakerin"), InlineKeyboardButton("۱۴. معتصمین", callback_data="mafitem_monajat_moatasemin")],
-        [InlineKeyboardButton("۱۵. زاهدین", callback_data="mafitem_monajat_zahedin"), InlineKeyboardButton("📜 منظومه", callback_data="mafitem_monajat_manzum")],
+        [InlineKeyboardButton("۱۳. ذاکرین", callback_data="mafitem_monajat_zakerin"), InlineKeyboardButton("۱۴. معتصمین", callback_data="mafitem_monajat_motasemin")],
+        [InlineKeyboardButton("۱۵. زاهدین", callback_data="mafitem_monajat_zahedin"), InlineKeyboardButton("📜 منظومه", callback_data="mafitem_monajat_manzoumeh")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_famous_supplications"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
@@ -161,7 +161,7 @@ def get_keyboard_for_ramadan_days():
 
 def get_keyboard_for_other_months():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌍 دحوالارض", callback_data="mafitem_dahw_al_ard"), InlineKeyboardButton("⛰️ روز عرفه", callback_data="mafitem_arafat_day")],
+        [InlineKeyboardButton("🌍 دحوالارض", callback_data="mafitem_dahw_al_ard"), InlineKeyboardButton("⛰️ روز عرفه", callback_data="mafitem_arafah_deeds")],
         [InlineKeyboardButton("👑 عید غدیر خم", callback_data="mafitem_ghadir_day"), InlineKeyboardButton("🏴 دهه اول محرم", callback_data="mafitem_muharram_ashura")],
         [InlineKeyboardButton("👣 اعمال اربعین", callback_data="mafitem_arbaeen_deeds")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_lunar_months"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
@@ -176,8 +176,8 @@ def get_keyboard_for_medina_ziyarat():
 
 def get_keyboard_for_karbala_najaf():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛡️ زیارت امین الله", callback_data="mafitem_aminullah"), InlineKeyboardButton("🏴 زیارت عاشورا", callback_data="mafitem_ashura_ziyarat")],
-        [InlineKeyboardButton("👣 زیارت اربعین", callback_data="mafitem_arbaeen_ziyarat"), InlineKeyboardButton("📜 زیارت وارث", callback_data="mafitem_warith_ziyarat")],
+        [InlineKeyboardButton("🛡️ زیارت امین الله", callback_data="mafitem_aminullah"), InlineKeyboardButton("🏴 زیارت عاشورا", callback_data="mafitem_ashura")],
+        [InlineKeyboardButton("👣 زیارت اربعین", callback_data="mafitem_arbaeen_deeds"), InlineKeyboardButton("📜 زیارت وارث", callback_data="mafitem_warith_ziyarat")],
         [InlineKeyboardButton("👑 زیارت جامعه کبیره", callback_data="mafitem_jameah_kabirah"), InlineKeyboardButton("🛡️ حضرت عباس (ع)", callback_data="mafitem_abbas_ziyarat")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_ziyarats"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
@@ -185,7 +185,7 @@ def get_keyboard_for_karbala_najaf():
 def get_keyboard_for_mosques_deeds():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏛️ مسجد کوفه", callback_data="mafitem_kufa_mosque"), InlineKeyboardButton("🕌 مسجد سهله", callback_data="mafitem_sahla_mosque")],
-        [InlineKeyboardButton("⛪ مسجد زید", callback_data="mafitem_mosque_deeds_others"), InlineKeyboardButton("🗡️زیارت مسلم", callback_data="mafitem_muslim_ziyarat")],
+        [InlineKeyboardButton("⛪ مسجد زید", callback_data="mafitem_zayd_mosque"), InlineKeyboardButton("🗡️زیارت مسلم", callback_data="mafitem_muslim_ziyarat")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_ziyarats"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
 
