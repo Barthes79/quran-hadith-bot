@@ -94,7 +94,7 @@ def get_keyboard_for_famous_duas():
         [InlineKeyboardButton("📖 یستشیر", callback_data="mafitem_yastashir"), InlineKeyboardButton("🥀 مشلول", callback_data="mafitem_mashlool")],
         [InlineKeyboardButton("🌅 سمات", callback_data="mafitem_simat"), InlineKeyboardButton("☀️ صباح", callback_data="mafitem_sabah")],
         [InlineKeyboardButton("📿 عشرات", callback_data="mafitem_asharat"), InlineKeyboardButton("🔥 مجیر", callback_data="mafitem_mojir")],
-        [InlineKeyboardButton("⛪ عدیله", callback_data="mafitem_adilah"), InlineKeyboardButton("🌟 فرج", callback_data="mafitem_faraj_allah")],
+        [InlineKeyboardButton("⛪ عدیله", callback_data="mafitem_adilah"), InlineKeyboardButton("🌟 فرج", callback_data="mafitem_faraj")],
         [InlineKeyboardButton("⚔️ قاموس", callback_data="mafitem_dua_qamus"), InlineKeyboardButton("⚡ سریع الاجابه", callback_data="mafitem_dua_sari_al_ijabah")],
         [InlineKeyboardButton("◀️ برگشت", callback_data="mafcat_famous_supplications"), InlineKeyboardButton("🏠 منوی مفاتیح", callback_data="mafmenu")]
     ])
