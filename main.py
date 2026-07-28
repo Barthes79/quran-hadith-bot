@@ -247,14 +247,12 @@ def main():
     # ==========================================
     # کالبک‌های اوقات شرعی
     # ==========================================
-    app.add_handler(CallbackQueryHandler(prayer_city_callback, pattern="^prayer_city_\\d+$"))
-    app.add_handler(CallbackQueryHandler(prayer_city_list_callback, pattern="^prayer_city_list$"))
-    app.add_handler(CallbackQueryHandler(prayer_page_callback, pattern="^prayer_page_"))
-    app.add_handler(CallbackQueryHandler(prayer_refresh_callback, pattern="^prayer_refresh_\\d+$"))
-    app.add_handler(CallbackQueryHandler(prayer_location_callback, pattern="^prayer_location$"))
-    app.add_handler(CallbackQueryHandler(prayer_back_callback, pattern="^prayer_back$"))
-    app.add_handler(CallbackQueryHandler(prayer_all_cities_callback, pattern="^prayer_all_cities$"))
-
+    app.add_handler(CallbackQueryHandler(prayer_city_callback, pattern="^prayer_city_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_city_list_callback, pattern="^prayer_city_list_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_refresh_callback, pattern="^prayer_refresh_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_location_callback, pattern="^prayer_location_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_back_callback, pattern="^prayer_back_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_all_cities_callback, pattern="^prayer_all_cities_\\d+$"))
     # ==========================================
     # کالبک‌های تنظیمات گروه
     # ==========================================
