@@ -126,13 +126,27 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def check_ownership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """بررسی می‌کند که آیا کاربر صاحب پیام است یا خیر"""
-    user_id = update.effective_user.id
-    owner_id = context.user_data.get("prayer_user_id")
-    
-    if owner_id and user_id != owner_id:
-        return False
-    return True
+    """بررسی می‌کند که آیا کاربری که دکمه را زده، همان صاحب پیام (owner_id داخل callback_data) است.
+
+    نکته مهم: نباید از context.user_data برای این کار استفاده کرد، چون در
+    python-telegram-bot این دیتا per-user است نه per-message؛ یعنی وقتی کاربر
+    دیگری روی دکمه کلیک می‌کند، context.user_data مخصوص همان کاربر کلیک‌کننده
+    برگردانده می‌شود (نه صاحب اصلی پیام) و همیشه owner_id را None می‌داد و در
+    نتیجه بررسی همیشه پاس می‌شد.
+    به همین دلیل آیدی مالک را مستقیماً از انتهای callback_data می‌خوانیم، چون
+    همیشه به شکل ..._{user_id} ساخته شده است.
+    """
+    query = update.callback_query
+    if not query or not query.data:
+        return True
+
+    try:
+        owner_id = int(query.data.rsplit("_", 1)[-1])
+    except (ValueError, IndexError):
+        # اگر callback_data آیدی مالک نداشت، بررسی را رد نمی‌کنیم
+        return True
+
+    return update.effective_user.id == owner_id
 
 
 async def prayer_city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
