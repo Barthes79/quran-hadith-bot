@@ -56,6 +56,11 @@ from handlers.quiz import (
     start_normal_quiz, 
 )
 from handlers.help import help_command, help_callback
+from handlers.prayer import (
+    prayer_command, prayer_city_callback, prayer_city_list_callback,
+    prayer_page_callback, prayer_refresh_callback, prayer_location_callback,
+    prayer_location_handler, prayer_back_callback, prayer_all_cities_callback,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -169,6 +174,12 @@ def main():
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ==========================================
+    # دستورات اوقات شرعی
+    # ==========================================
+    app.add_handler(CommandHandler("prayer", prayer_command))
+    app.add_handler(CommandHandler("اذان", prayer_command))  # دستور فارسی
+
+    # ==========================================
     # هندلر مسابقه سرعتی و معمولی
     # ==========================================
     app.add_handler(MessageHandler(
@@ -228,6 +239,17 @@ def main():
     app.add_handler(CallbackQueryHandler(fav_mafatih_callback, pattern="^favmaf_"))
 
     # ==========================================
+    # کالبک‌های اوقات شرعی
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(prayer_city_callback, pattern="^prayer_city_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_city_list_callback, pattern="^prayer_city_list$"))
+    app.add_handler(CallbackQueryHandler(prayer_page_callback, pattern="^prayer_page_"))
+    app.add_handler(CallbackQueryHandler(prayer_refresh_callback, pattern="^prayer_refresh_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_location_callback, pattern="^prayer_location$"))
+    app.add_handler(CallbackQueryHandler(prayer_back_callback, pattern="^prayer_back$"))
+    app.add_handler(CallbackQueryHandler(prayer_all_cities_callback, pattern="^prayer_all_cities$"))
+
+    # ==========================================
     # کالبک‌های تنظیمات گروه
     # ==========================================
     app.add_handler(CallbackQueryHandler(group_settings_router, pattern="^gset_"))
@@ -257,6 +279,11 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, link_guard_handler),
         group=1,
     )
+
+    # ==========================================
+    # هندلر موقعیت مکانی برای اوقات شرعی
+    # ==========================================
+    app.add_handler(MessageHandler(filters.LOCATION, prayer_location_handler))
 
     # ==========================================
     # هندلر پیام‌های متنی

@@ -10,10 +10,11 @@ def main_menu_keyboard():
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
-        [InlineKeyboardButton("🔍 جستجو", callback_data="menu_search"),
-         InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
-        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help"),
-         InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+        [InlineKeyboardButton("🕋 اوقات شرعی", callback_data="menu_prayer"),
+         InlineKeyboardButton("🔍 جستجو", callback_data="menu_search")],
+        [InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites"),
+         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -35,7 +36,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "می‌توانید آیات قرآن را همراه با ترجمه و تفسیر مطالعه کنید، "
         "یا احادیث موضوعی از معصومین (ع) را جستجو کنید.\n\n"
         "همچنین می‌توانید این ربات را به گروه خود اضافه کنید تا از قابلیت‌های "
-        "پست روزانه و جستجوی درون‌گروهی بهره‌مند شوید."
+        "پست روزانه و جستجوی درون‌گروهی بهره‌مند شوید.\n\n"
+        "🕋 برای دریافت اوقات شرعی از دستور /prayer یا /اذان استفاده کنید."
     )
     await update.message.reply_text(text, reply_markup=main_menu_keyboard())
 
@@ -77,6 +79,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_mafatih":
         from handlers.mafatih import mafatih_menu_callback
         await mafatih_menu_callback(update, context)
+
+    elif query.data == "menu_prayer":
+        from handlers.prayer import prayer_back_callback
+        await prayer_back_callback(update, context)
 
     elif query.data == "menu_main":
         await query.edit_message_text(
