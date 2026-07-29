@@ -679,23 +679,32 @@ async def prayer_reminder_setmin_callback(update: Update, context: ContextTypes.
     )
 
 
-async def prayer_reminder_minutes_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def prayer_reminder_minutes_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
     گرفتن عدد دقیقه‌ای که کاربر بعد از زدن دکمه‌ی تنظیم دقیقه تایپ می‌کنه.
-    این هندلر باید قبل از هندلر عمومی متن (general_text_handler) و در یک
-    گروه جدا ثبت بشه تا وقتی کاربر منتظر این ورودی نیست، مزاحم بقیه‌ی
-    پیام‌های متنی نشه (چون فقط وقتی پرچم awaiting_reminder_minutes ست
-    شده باشه کاری انجام می‌ده، وگرنه بی‌سروصدا برمی‌گرده).
+
+    این تابع دیگه یک MessageHandler مستقل تلگرام نیست (قبلاً بود، ولی چون
+    توی یک گروه جدا ثبت می‌شد، هم‌زمان با general_text_handler هم اجرا
+    می‌شد -- یعنی وقتی کاربر عدد دقیقه رو می‌فرستاد، هم اینجا پردازش
+    می‌شد هم به‌اشتباه به‌عنوان سرچ آزاد فرستاده می‌شد). حالا general_text_handler
+    مستقیم این تابع رو صدا می‌زنه و مقدار برگشتی (True یعنی «این پیام مال
+    من بود و مصرفش کردم») رو چک می‌کنه؛ اگه True بود، پردازش پیام همون‌جا
+    متوقف می‌شه و به آیه‌یاب/سرچ نمی‌رسه.
+
+    خروجی:
+        True  -> پیام مربوط به این جریان بود (چه معتبر چه نامعتبر) و پردازش شد.
+        False -> کاربر منتظر ورودی دقیقه نبود؛ پیام دست‌نخورده برای بقیه‌ی
+                 هندلرها باقی می‌مونه.
     """
     if not context.user_data.get("awaiting_reminder_minutes"):
-        return
+        return False
 
     text = (update.message.text or "").strip()
     user_id = update.effective_user.id
 
     if not text.isdigit() or not (1 <= int(text) <= 180):
         await update.message.reply_text("⚠️ لطفاً فقط یه عدد بین ۱ تا ۱۸۰ بفرست.")
-        return
+        return True
 
     minutes = int(text)
     context.user_data["awaiting_reminder_minutes"] = False
@@ -706,3 +715,4 @@ async def prayer_reminder_minutes_text_handler(update: Update, context: ContextT
     await update.message.reply_text(f"✅ یادآور روی {minutes} دقیقه‌ی قبل تنظیم شد.")
     city_code = context.user_data.get("prayer_city", 1)
     await show_reminder_menu(update, context, user_id, city_code)
+    return True

@@ -84,9 +84,19 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     اصلی دکمه‌ی «🔍 جستجو» را زده باشد (پرچم context.user_data["search_mode"]).
     قبلاً هر پیام متنی در پیوی که آیه هم نبود، خودکار سرچ می‌شد؛ که باعث
     می‌شد پیام‌های معمولی/گفتگوی عادی کاربر هم به‌اشتباه جستجو بشن.
+
+    نکته: بررسی «آیا این پیام همون عددیه که برای تنظیم یادآور اذان منتظرش
+    بودیم» باید همین‌جا و قبل از هر چیز دیگه انجام بشه (نه در یک
+    MessageHandler جدا)، وگرنه وقتی search_mode روشن باشه، همون عدد هم به
+    غلط به‌عنوان عبارت جستجو فرستاده می‌شه.
     """
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
+
+    consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
+    if consumed_by_reminder:
+        return
+
     search_mode = context.user_data.get("search_mode", False)
 
     handled = await ayah_direct_lookup(update, context, text)
@@ -303,16 +313,6 @@ def main():
     # هندلر موقعیت مکانی برای اوقات شرعی
     # ==========================================
     app.add_handler(MessageHandler(filters.LOCATION, prayer_location_handler))
-
-    # ==========================================
-    # هندلر دریافت عدد دقیقه برای یادآور اذان
-    # (باید در گروه جدا باشه؛ خودش تشخیص می‌ده پیام مال اون نیست یا نه،
-    # و در اون صورت بدون هیچ کاری برمی‌گرده تا general_text_handler عادی اجرا بشه)
-    # ==========================================
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, prayer_reminder_minutes_text_handler),
-        group=-1,
-    )
 
     # ==========================================
     # هندلر پیام‌های متنی
