@@ -67,6 +67,10 @@ from handlers.prayer import (
     prayer_reminder_setmin_callback, prayer_reminder_minutes_text_handler,
     schedule_daily_prayer_reminders,
 )
+from handlers.salavat import (
+    salavat_text_handler, salavat_stats_command,
+    salavat_top_command, salavat_goal_command,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -92,6 +96,9 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
+
+    # صلوات‌شمار گروهی: مستقل از بقیه‌ی جریان‌ها، چون با آیه/سرچ تداخلی نداره
+    await salavat_text_handler(update, context)
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:
@@ -205,6 +212,13 @@ def main():
     filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
     prayer_command
 ))
+
+    # ==========================================
+    # دستورات صلوات‌شمار گروهی
+    # ==========================================
+    app.add_handler(CommandHandler("salavat", salavat_stats_command))
+    app.add_handler(CommandHandler("salavat_top", salavat_top_command))
+    app.add_handler(CommandHandler("salavat_goal", salavat_goal_command))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی

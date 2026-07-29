@@ -213,6 +213,28 @@ def init_db():
     _ensure_column(cur, "prayer_reminders", "group_chat_id", "INTEGER")
     _ensure_column(cur, "prayer_reminders", "user_name", "TEXT")
 
+    # صلوات‌شمار: تعداد صلواتِ هر کاربر در هر گروه
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS salavat_stats (
+            chat_id INTEGER,
+            user_id INTEGER,
+            user_name TEXT,
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )
+    """)
+
+    # صلوات‌شمار: ختم/هدف فعال هر گروه (اختیاری)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS salavat_goals (
+            chat_id INTEGER PRIMARY KEY,
+            goal_count INTEGER,
+            title TEXT,
+            start_total INTEGER DEFAULT 0,
+            announced INTEGER DEFAULT 0
+        )
+    """)
+
     # سازگاری با دیتابیس‌های قدیمی (در صورتی که جداول از قبل ساخته شده باشند)
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
@@ -1306,3 +1328,87 @@ def get_all_enabled_prayer_reminders():
     ).fetchall()
     conn.close()
     return rows
+
+
+# ---------------- توابع مربوط به صلوات‌شمار ----------------
+
+def increment_salavat(chat_id: int, user_id: int, user_name: str):
+    """یک واحد به صلوات‌های این کاربر در این گروه اضافه می‌کند و
+    (تعداد شخصی کاربر، مجموع کل گروه) را برمی‌گرداند."""
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO salavat_stats (chat_id, user_id, user_name, count)
+           VALUES (?, ?, ?, 1)
+           ON CONFLICT(chat_id, user_id)
+           DO UPDATE SET count = count + 1, user_name = excluded.user_name""",
+        (chat_id, user_id, user_name),
+    )
+    conn.commit()
+
+    user_count = conn.execute(
+        "SELECT count FROM salavat_stats WHERE chat_id = ? AND user_id = ?",
+        (chat_id, user_id),
+    ).fetchone()["count"]
+
+    chat_total = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()["t"]
+
+    conn.close()
+    return user_count, chat_total
+
+
+def get_salavat_chat_total(chat_id: int) -> int:
+    conn = get_connection()
+    total = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()["t"]
+    conn.close()
+    return total
+
+
+def get_salavat_top(chat_id: int, limit: int = 10):
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT user_id, user_name, count FROM salavat_stats
+           WHERE chat_id = ? ORDER BY count DESC LIMIT ?""",
+        (chat_id, limit),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_salavat_goal(chat_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM salavat_goals WHERE chat_id = ?", (chat_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def set_salavat_goal(chat_id: int, goal_count: int, title: str):
+    """یک ختم/هدف جدید برای این گروه تعریف می‌کند، از همون لحظه به بعد رو می‌شماره."""
+    start_total = get_salavat_chat_total(chat_id)
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO salavat_goals (chat_id, goal_count, title, start_total, announced)
+           VALUES (?, ?, ?, ?, 0)
+           ON CONFLICT(chat_id)
+           DO UPDATE SET goal_count = excluded.goal_count, title = excluded.title,
+                          start_total = excluded.start_total, announced = 0""",
+        (chat_id, goal_count, title, start_total),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_salavat_goal_announced(chat_id: int):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE salavat_goals SET announced = 1 WHERE chat_id = ?", (chat_id,)
+    )
+    conn.commit()
+    conn.close()
