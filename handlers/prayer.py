@@ -215,8 +215,7 @@ def prayer_keyboard(city_code: int = None, user_id: int = None):
     
     # دکمه‌های عملیاتی
     action_buttons = [
-        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=f"prayer_refresh_{city_code or 1}_{user_id}"),
-         InlineKeyboardButton("⏰ تنظیم یادآور", callback_data=f"prayer_reminder_{user_id}")],
+        [InlineKeyboardButton("⏰ تنظیم یادآور", callback_data=f"prayer_reminder_{user_id}")],
         [InlineKeyboardButton("📋 دریافت همه شهرها", callback_data=f"prayer_all_cities_{user_id}")],
         [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
     ]
