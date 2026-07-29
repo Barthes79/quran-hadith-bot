@@ -25,6 +25,7 @@ async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["search_mode"] = False
     cleanup_msg = await update.message.reply_text("⏳", reply_markup=ReplyKeyboardRemove())
     try:
         await cleanup_msg.delete()
@@ -49,6 +50,12 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
+    # با انتخاب هر دکمه‌ای بجز «جستجو»، از حالت جستجوی آزاد خارج می‌شویم؛
+    # این‌طوری متن‌های بعدی کاربر دوباره به بقیه‌ی بخش‌های ربات (مثل حدیث
+    # موضوعی، نهج‌البلاغه و ...) به‌جای جستجوی آزاد فرستاده می‌شوند.
+    if query.data != "menu_search":
+        context.user_data["search_mode"] = False
+
     if query.data == "menu_quran":
         from handlers.quran import show_surah_list
         await show_surah_list(update, context, page=0)
@@ -58,14 +65,19 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_topics(update, context)
 
     elif query.data == "menu_search":
+        context.user_data["search_mode"] = True
         await query.edit_message_text(
-            "🔍 برای جستجو، کافیست عبارت مورد نظرتان را مستقیماً برای من ارسال کنید "
-            "(مثلاً «صبر» برای جستجوی حدیث).\n\n"
+            "🔍 حالا هر عبارتی که برام بفرستید، جستجو می‌کنم "
+            "(هم‌زمان بین حدیث، نهج‌البلاغه و مفاتیح‌الجنان).\n\n"
             "📖 برای آیه‌ی خاصی از قرآن هم می‌توانید به یکی از این شکل‌ها بنویسید:\n"
             "«2:255» یا «بقره 25» یا «سوره بقره آیه 25»\n\n"
             "همچنین در هر گروه یا چت می‌توانید بنویسید:\n"
-            "`@نام_ربات صبر`\nتا نتایج بدون خروج از چت نمایش داده شود.",
+            "`@نام_ربات صبر`\nتا نتایج بدون خروج از چت نمایش داده شود.\n\n"
+            "برای خروج از حالت جستجو، کافیست از منوی اصلی بخش دیگری را انتخاب کنید.",
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")]]
+            ),
         )
 
     elif query.data == "menu_favorites":

@@ -78,17 +78,22 @@ logger = logging.getLogger(__name__)
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     فرمت‌های صریح آیه («2:255» یا «بقره 25») هم در چت خصوصی و هم در گروه‌ها
-    کار می‌کنند. جستجوی آزاد حدیث (هر متن دلخواه) فقط در چت خصوصی فعال است
-    تا در گروه‌ها به هر پیام معمولی پاسخ ندهیم و اسپم نشود.
+    کار می‌کنند.
+
+    جستجوی آزاد حدیث (هر متن دلخواه) فقط وقتی فعال است که کاربر از منوی
+    اصلی دکمه‌ی «🔍 جستجو» را زده باشد (پرچم context.user_data["search_mode"]).
+    قبلاً هر پیام متنی در پیوی که آیه هم نبود، خودکار سرچ می‌شد؛ که باعث
+    می‌شد پیام‌های معمولی/گفتگوی عادی کاربر هم به‌اشتباه جستجو بشن.
     """
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
+    search_mode = context.user_data.get("search_mode", False)
 
     handled = await ayah_direct_lookup(update, context, text)
     if not handled:
         handled = await surah_name_ayah_lookup(update, context, text)
 
-    if not handled and is_private:
+    if not handled and is_private and search_mode:
         await text_search_handler(update, context, text)
 
 
