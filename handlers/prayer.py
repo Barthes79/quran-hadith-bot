@@ -1,14 +1,35 @@
 # handlers/prayer.py
 import logging
+import html
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
+
+from database import (
+    get_prayer_reminder,
+    upsert_prayer_reminder,
+    toggle_prayer_reminder_azan,
+    set_prayer_reminder_minutes,
+    get_all_enabled_prayer_reminders,
+)
 
 # غیرفعال کردن بررسی SSL
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
+
+IRAN_TZ = ZoneInfo("Asia/Tehran")
+
+# نگاشت کلید داخلی هر اذان به فیلد پاسخ API آوینی و برچسب نمایشی فارسی
+PRAYER_FIELD_MAP = {
+    "fajr": ("fajr", "🌅 اذان صبح"),
+    "noon": ("noon", "🌤 اذان ظهر"),
+    "maghrib": ("maghrib", "🌙 اذان مغرب"),
+}
 
 # لیست کدهای شهرهای اصلی ایران
 # نکته: این کدها دلخواه/پشت‌سرهم نیستن؛ کد واقعی هر شهر توی سیستم آوینی
@@ -72,6 +93,107 @@ def get_prayer_times(city_code: int):
     except requests.exceptions.RequestException as e:
         logger.error(f"خطا در دریافت اوقات شرعی: {e}")
         return {"success": False, "error": str(e)}
+
+
+def _compute_remind_datetime(now: datetime, time_str: str, minutes_before: int):
+    """از روی رشته‌ی ساعت اذان (مثل '04:12') و تعداد دقیقه‌ی قبل از آن،
+    زمان دقیق ارسال یادآور را برمی‌گرداند. اگر فرمت نامعتبر بود None."""
+    try:
+        hh, mm = map(int, time_str.strip().split(":")[:2])
+    except (ValueError, AttributeError):
+        return None
+    azan_dt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    return azan_dt - timedelta(minutes=minutes_before)
+
+
+async def _schedule_reminders_for_row(reminder_row, context: ContextTypes.DEFAULT_TYPE):
+    """برای یک ردیف یادآور (یک کاربر)، اذان‌های امروزِ باقی‌مانده را که فعال کرده،
+    به‌صورت جاب یک‌بارمصرف زمان‌بندی می‌کند."""
+    if not context.job_queue:
+        return
+
+    user_id = reminder_row["user_id"]
+    result = get_prayer_times(reminder_row["city_code"])
+    if not result["success"]:
+        logger.warning(f"عدم امکان زمان‌بندی یادآور برای کاربر {user_id}: خطا در دریافت اوقات شرعی")
+        return
+
+    now = datetime.now(IRAN_TZ)
+    for key, (field, label) in PRAYER_FIELD_MAP.items():
+        job_name = f"prayer_reminder_{user_id}_{key}_{now.date()}"
+
+        if not reminder_row[f"remind_{key}"]:
+            continue
+
+        remind_dt = _compute_remind_datetime(now, result.get(field, ""), reminder_row["minutes_before"])
+        if not remind_dt or remind_dt <= now:
+            continue
+
+        # جلوگیری از زمان‌بندی تکراری در صورتی که قبلاً برای همین روز ساخته شده باشد
+        for j in context.job_queue.get_jobs_by_name(job_name):
+            j.schedule_removal()
+
+        context.job_queue.run_once(
+            send_prayer_reminder,
+            when=remind_dt,
+            data={
+                "user_id": user_id,
+                "label": label,
+                "minutes_before": reminder_row["minutes_before"],
+                "group_chat_id": reminder_row["group_chat_id"],
+                "user_name": reminder_row["user_name"] or "کاربر",
+            },
+            name=job_name,
+        )
+
+
+async def schedule_reminders_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """بلافاصله بعد از تغییر تنظیمات یادآور توسط کاربر صدا زده می‌شود تا همون روز
+    هم اذان‌های باقی‌مانده زمان‌بندی بشن (منتظر جاب نیمه‌شب نمونیم)."""
+    reminder = get_prayer_reminder(user_id)
+    if not reminder or not reminder["enabled"]:
+        return
+    await _schedule_reminders_for_row(reminder, context)
+
+
+async def schedule_daily_prayer_reminders(context: ContextTypes.DEFAULT_TYPE):
+    """جاب روزانه: هر روز خیلی زود صبح اجرا می‌شود، اوقات شرعی امروز را برای
+    تمام کاربرهایی که یادآور فعال دارند می‌گیرد و برای هرکدوم یک جاب
+    یک‌بارمصرف در زمان مناسب می‌سازد."""
+    for reminder_row in get_all_enabled_prayer_reminders():
+        await _schedule_reminders_for_row(reminder_row, context)
+
+
+async def send_prayer_reminder(context: ContextTypes.DEFAULT_TYPE):
+    """جاب یک‌بارمصرفی که در زمان مقرر، پیام یادآوری را هم در پیوی کاربر
+    و هم (در صورت وجود) با تگ کردن او در گروهی که تنظیم را انجام داده، می‌فرستد."""
+    job_data = context.job.data
+    user_id = job_data["user_id"]
+    label = job_data["label"]
+    minutes_before = job_data["minutes_before"]
+    group_chat_id = job_data.get("group_chat_id")
+    user_name = html.escape(job_data.get("user_name") or "کاربر")
+
+    # پیام پیوی
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"⏰ {minutes_before} دقیقه تا {label} مانده است.",
+        )
+    except Exception as e:
+        logger.error(f"خطا در ارسال یادآور اذان (پیوی) به کاربر {user_id}: {e}")
+
+    # پیام گروه با تگ کردن کاربر (اگه یادآور از داخل یه گروه تنظیم شده باشه)
+    if group_chat_id:
+        mention = f'<a href="tg://user?id={user_id}">{user_name}</a>'
+        try:
+            await context.bot.send_message(
+                chat_id=group_chat_id,
+                text=f"⏰ {mention} {minutes_before} دقیقه تا {label} مانده است.",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"خطا در ارسال یادآور اذان (گروه {group_chat_id}) برای کاربر {user_id}: {e}")
 
 
 def prayer_keyboard(city_code: int = None, user_id: int = None):
@@ -431,3 +553,156 @@ async def prayer_all_cities_callback(update: Update, context: ContextTypes.DEFAU
             [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")]
         ])
     )
+
+
+# ==========================================
+# یادآور اذان
+# ==========================================
+
+def _mark(flag) -> str:
+    return "✅" if flag else "❌"
+
+
+def _capture_reminder_context(update: Update, user_id: int):
+    """
+    اسم کاربر رو همیشه ذخیره می‌کنه (برای منشن توی گروه).
+    group_chat_id رو فقط وقتی خود کاربر داخل یه گروه دکمه رو زده آپدیت می‌کنه؛
+    اگه از پیوی داره تنظیمات رو عوض می‌کنه، group_chat_id قبلی (اگه از قبل
+    توی یه گروه ست شده بود) دست‌نخورده می‌مونه.
+    """
+    chat = update.effective_chat
+    user = update.effective_user
+    fields = {"user_name": user.first_name or user.full_name or "کاربر"}
+    if chat.type in ("group", "supergroup"):
+        fields["group_chat_id"] = chat.id
+    upsert_prayer_reminder(user_id, **fields)
+
+
+async def show_reminder_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, city_code: int):
+    """نمایش (یا بروزرسانی) منوی تنظیم یادآور اذان برای یک کاربر"""
+    reminder = get_prayer_reminder(user_id)
+    fajr_on = bool(reminder["remind_fajr"]) if reminder else False
+    noon_on = bool(reminder["remind_noon"]) if reminder else False
+    maghrib_on = bool(reminder["remind_maghrib"]) if reminder else False
+    minutes = reminder["minutes_before"] if reminder else 10
+    enabled = bool(reminder["enabled"]) if reminder else False
+    group_chat_id = reminder["group_chat_id"] if reminder else None
+
+    text = (
+        "⏰ *تنظیم یادآور اذان*\n\n"
+        "هر کدوم از اذان‌ها رو که می‌خوای، فعال کن. من "
+        f"*{minutes} دقیقه* قبل از اون اذان یه پیام یادآوری برات می‌فرستم.\n\n"
+        f"وضعیت کلی: {'🟢 فعال' if enabled else '🔴 غیرفعال'}\n"
+    )
+    if group_chat_id:
+        text += "📌 چون از داخل یه گروه تنظیمش کردی، توی همون گروه هم با تگ کردن خودت یادآوری می‌فرستم.\n"
+
+    keyboard = [
+        [InlineKeyboardButton(f"{_mark(fajr_on)} اذان صبح", callback_data=f"prayer_remind_toggle_fajr_{user_id}")],
+        [InlineKeyboardButton(f"{_mark(noon_on)} اذان ظهر", callback_data=f"prayer_remind_toggle_noon_{user_id}")],
+        [InlineKeyboardButton(f"{_mark(maghrib_on)} اذان مغرب", callback_data=f"prayer_remind_toggle_maghrib_{user_id}")],
+        [InlineKeyboardButton(f"⏱ {minutes} دقیقه قبل (بزن برای تغییر)", callback_data=f"prayer_remind_setmin_{user_id}")],
+        [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")],
+    ]
+
+    query = update.callback_query
+    if query:
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.effective_chat.send_message(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def prayer_reminder_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """باز کردن منوی تنظیم یادآور اذان (دکمه‌ی ⏰ تنظیم یادآور)"""
+    query = update.callback_query
+
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+
+    await query.answer()
+    user_id = update.effective_user.id
+    city_code = context.user_data.get("prayer_city", 1)
+    _capture_reminder_context(update, user_id)
+    await show_reminder_menu(update, context, user_id, city_code)
+
+
+async def prayer_reminder_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تیک زدن/برداشتن یکی از اذان‌ها توی منوی یادآور"""
+    query = update.callback_query
+
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+
+    # callback_data به شکل: prayer_remind_toggle_{azan}_{user_id}
+    parts = query.data.split("_")
+    azan_key = parts[3]
+    user_id = update.effective_user.id
+    city_code = context.user_data.get("prayer_city", 1)
+    _capture_reminder_context(update, user_id)
+
+    new_value = toggle_prayer_reminder_azan(user_id, azan_key)
+
+    if new_value == 0 and context.job_queue:
+        # اگر این اذان خاموش شد، جاب امروزش (اگه ساخته شده بود) رو هم لغو کن
+        job_name = f"prayer_reminder_{user_id}_{azan_key}_{datetime.now(IRAN_TZ).date()}"
+        for j in context.job_queue.get_jobs_by_name(job_name):
+            j.schedule_removal()
+
+    reminder = get_prayer_reminder(user_id)
+    any_on = any([reminder["remind_fajr"], reminder["remind_noon"], reminder["remind_maghrib"]])
+    upsert_prayer_reminder(user_id, city_code=city_code, enabled=1 if any_on else 0)
+
+    if any_on:
+        await schedule_reminders_for_user(user_id, context)
+
+    await query.answer("✅ فعال شد" if new_value else "❌ غیرفعال شد")
+    await show_reminder_menu(update, context, user_id, city_code)
+
+
+async def prayer_reminder_setmin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """درخواست از کاربر برای وارد کردن تعداد دقیقه‌ی قبل از اذان"""
+    query = update.callback_query
+
+    if not check_ownership(update, context):
+        await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
+        return
+
+    await query.answer()
+    context.user_data["awaiting_reminder_minutes"] = True
+    _capture_reminder_context(update, update.effective_user.id)
+
+    await query.edit_message_text(
+        "⏱ چند دقیقه قبل از اذان یادآوری بفرستم؟\n\n"
+        "یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15)."
+    )
+
+
+async def prayer_reminder_minutes_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    گرفتن عدد دقیقه‌ای که کاربر بعد از زدن دکمه‌ی تنظیم دقیقه تایپ می‌کنه.
+    این هندلر باید قبل از هندلر عمومی متن (general_text_handler) و در یک
+    گروه جدا ثبت بشه تا وقتی کاربر منتظر این ورودی نیست، مزاحم بقیه‌ی
+    پیام‌های متنی نشه (چون فقط وقتی پرچم awaiting_reminder_minutes ست
+    شده باشه کاری انجام می‌ده، وگرنه بی‌سروصدا برمی‌گرده).
+    """
+    if not context.user_data.get("awaiting_reminder_minutes"):
+        return
+
+    text = (update.message.text or "").strip()
+    user_id = update.effective_user.id
+
+    if not text.isdigit() or not (1 <= int(text) <= 180):
+        await update.message.reply_text("⚠️ لطفاً فقط یه عدد بین ۱ تا ۱۸۰ بفرست.")
+        return
+
+    minutes = int(text)
+    context.user_data["awaiting_reminder_minutes"] = False
+    _capture_reminder_context(update, user_id)
+    set_prayer_reminder_minutes(user_id, minutes)
+    await schedule_reminders_for_user(user_id, context)
+
+    await update.message.reply_text(f"✅ یادآور روی {minutes} دقیقه‌ی قبل تنظیم شد.")
+    city_code = context.user_data.get("prayer_city", 1)
+    await show_reminder_menu(update, context, user_id, city_code)

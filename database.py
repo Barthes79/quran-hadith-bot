@@ -195,6 +195,24 @@ def init_db():
         )
     """)
 
+    # یادآور اذان (تنظیمات هر کاربر برای دریافت پیام یادآوری قبل از هر اذان)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS prayer_reminders (
+            user_id INTEGER PRIMARY KEY,
+            city_code INTEGER DEFAULT 1,
+            minutes_before INTEGER DEFAULT 10,
+            remind_fajr INTEGER DEFAULT 0,
+            remind_noon INTEGER DEFAULT 0,
+            remind_maghrib INTEGER DEFAULT 0,
+            enabled INTEGER DEFAULT 0,
+            group_chat_id INTEGER,
+            user_name TEXT
+        )
+    """)
+    # مهاجرت برای دیتابیس‌های قدیمی‌تر که این دو ستون را ندارند
+    _ensure_column(cur, "prayer_reminders", "group_chat_id", "INTEGER")
+    _ensure_column(cur, "prayer_reminders", "user_name", "TEXT")
+
     # سازگاری با دیتابیس‌های قدیمی (در صورتی که جداول از قبل ساخته شده باشند)
     try:
         cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
@@ -1218,3 +1236,73 @@ def get_user_stats(user_id: int):
     ).fetchone()["s"]
     conn.close()
     return {"favorites": favorites, "score": quizzes}
+
+
+# ---------------- توابع مربوط به یادآور اذان ----------------
+
+def get_prayer_reminder(user_id: int):
+    """تنظیمات یادآور اذان یک کاربر را برمی‌گرداند (یا None اگر هنوز چیزی تنظیم نکرده)."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM prayer_reminders WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def upsert_prayer_reminder(user_id: int, **fields):
+    """ردیف یادآور یک کاربر را می‌سازد یا فیلدهای دلخواهش را به‌روزرسانی می‌کند.
+    فیلدهای مجاز: city_code, minutes_before, remind_fajr, remind_noon,
+    remind_maghrib, enabled."""
+    if not fields:
+        return
+
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT 1 FROM prayer_reminders WHERE user_id = ?", (user_id,)
+    ).fetchone()
+
+    if existing:
+        set_clause = ", ".join(f"{key} = ?" for key in fields)
+        conn.execute(
+            f"UPDATE prayer_reminders SET {set_clause} WHERE user_id = ?",
+            (*fields.values(), user_id),
+        )
+    else:
+        columns = ["user_id"] + list(fields.keys())
+        placeholders = ", ".join("?" for _ in columns)
+        conn.execute(
+            f"INSERT INTO prayer_reminders ({', '.join(columns)}) VALUES ({placeholders})",
+            (user_id, *fields.values()),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def toggle_prayer_reminder_azan(user_id: int, azan_key: str) -> int:
+    """وضعیت یادآور یک اذان خاص (fajr/noon/maghrib) را برعکس می‌کند
+    و مقدار جدید (0 یا 1) را برمی‌گرداند."""
+    column = f"remind_{azan_key}"
+    existing = get_prayer_reminder(user_id)
+    current = existing[column] if existing else 0
+    new_value = 0 if current else 1
+    upsert_prayer_reminder(user_id, **{column: new_value})
+    return new_value
+
+
+def set_prayer_reminder_minutes(user_id: int, minutes: int):
+    upsert_prayer_reminder(user_id, minutes_before=minutes)
+
+
+def get_all_enabled_prayer_reminders():
+    """تمام کاربرهایی که حداقل یک یادآور فعال دارند را برمی‌گرداند
+    (برای زمان‌بندی روزانه‌ی جاب‌های یادآوری)."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT * FROM prayer_reminders
+           WHERE enabled = 1
+             AND (remind_fajr = 1 OR remind_noon = 1 OR remind_maghrib = 1)"""
+    ).fetchall()
+    conn.close()
+    return rows

@@ -1,4 +1,7 @@
 import logging
+from datetime import time as dtime
+from zoneinfo import ZoneInfo
+
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -60,6 +63,9 @@ from handlers.prayer import (
     prayer_command, prayer_city_callback, prayer_city_list_callback,
     prayer_page_callback, prayer_refresh_callback, prayer_location_callback,
     prayer_location_handler, prayer_back_callback, prayer_all_cities_callback,
+    prayer_reminder_callback, prayer_reminder_toggle_callback,
+    prayer_reminder_setmin_callback, prayer_reminder_minutes_text_handler,
+    schedule_daily_prayer_reminders,
 )
 
 logging.basicConfig(
@@ -254,6 +260,9 @@ def main():
     app.add_handler(CallbackQueryHandler(prayer_location_callback, pattern="^prayer_location_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_back_callback, pattern="^prayer_back_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_all_cities_callback, pattern="^prayer_all_cities_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_reminder_callback, pattern="^prayer_reminder_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_reminder_toggle_callback, pattern="^prayer_remind_toggle_(fajr|noon|maghrib)_\\d+$"))
+    app.add_handler(CallbackQueryHandler(prayer_reminder_setmin_callback, pattern="^prayer_remind_setmin_\\d+$"))
     # ==========================================
     # کالبک‌های تنظیمات گروه
     # ==========================================
@@ -291,6 +300,16 @@ def main():
     app.add_handler(MessageHandler(filters.LOCATION, prayer_location_handler))
 
     # ==========================================
+    # هندلر دریافت عدد دقیقه برای یادآور اذان
+    # (باید در گروه جدا باشه؛ خودش تشخیص می‌ده پیام مال اون نیست یا نه،
+    # و در اون صورت بدون هیچ کاری برمی‌گرده تا general_text_handler عادی اجرا بشه)
+    # ==========================================
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, prayer_reminder_minutes_text_handler),
+        group=-1,
+    )
+
+    # ==========================================
     # هندلر پیام‌های متنی
     # ==========================================
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
@@ -301,6 +320,12 @@ def main():
     # ==========================================
     if app.job_queue:
         app.job_queue.run_repeating(daily_post_job, interval=3600, first=10)
+        # هر روز ساعت ۰۰:۰۵ به وقت تهران، اوقات شرعی امروز رو برای کاربرهایی
+        # که یادآور فعال دارن می‌گیره و جاب‌های اون روز رو زمان‌بندی می‌کنه
+        app.job_queue.run_daily(
+            schedule_daily_prayer_reminders,
+            time=dtime(hour=0, minute=5, tzinfo=ZoneInfo("Asia/Tehran")),
+        )
 
     logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
