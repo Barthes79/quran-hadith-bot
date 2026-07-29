@@ -1,6 +1,7 @@
 # handlers/prayer.py
 import logging
 import html
+import asyncio
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -519,40 +520,69 @@ async def show_prayer_times(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 
 async def prayer_all_cities_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نمایش اوقات شرعی چند شهر اصلی"""
+    """نمایش اوقات شرعی همه‌ی شهرهای موجود در CITY_CODES"""
     query = update.callback_query
-    
+
     # بررسی مالکیت
     if not check_ownership(update, context):
         await query.answer("❌ این دکمه متعلق به شما نیست!", show_alert=True)
         return
-    
-    await query.answer()
+
+    await query.answer("⏳ در حال دریافت اوقات شرعی همه‌ی شهرها...")
     user_id = update.effective_user.id
-    
-    main_cities = [
-        ("تهران", 1), ("مشهد", 13), ("اصفهان", 2),
-        ("شیراز", 8), ("قم", 11)
-    ]
-    
-    message = "🕌 *اوقات شرعی شهرهای اصلی ایران*\n\n"
-    for city_name, code in main_cities:
-        result = get_prayer_times(code)
-        if result["success"]:
-            message += f"**{city_name}:**\n"
-            message += f"🌅 اذان صبح: {result['fajr']}\n"
-            message += f"🌤 اذان ظهر: {result['noon']}\n"
-            message += f"🌙 اذان مغرب: {result['maghrib']}\n\n"
-        else:
-            message += f"⚠️ {city_name}: خطا در دریافت\n\n"
-    
-    await query.edit_message_text(
-        message,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")]
-        ])
+
+    # همه‌ی شهرهای CITY_CODES (نه فقط چندتای ثابت)، مرتب بر اساس نام
+    all_cities = sorted(CITY_CODES.items())
+
+    # درخواست‌ها رو هم‌زمان (نه یکی‌یکی) می‌گیریم چون ۳۰+ شهر داریم و
+    # get_prayer_times یک تابع sync/بلاک‌کننده‌ست؛ اگه یکی‌یکی صدا بزنیم
+    # ممکنه طول بکشه و کاربر فکر کنه ربات هنگ کرده.
+    loop = asyncio.get_running_loop()
+    results = await asyncio.gather(
+        *[loop.run_in_executor(None, get_prayer_times, code) for _, code in all_cities]
     )
+
+    blocks = []
+    for (city_name, _), result in zip(all_cities, results):
+        if result["success"]:
+            blocks.append(
+                f"**{city_name}:**\n"
+                f"🌅 صبح: {result['fajr']}   🌤 ظهر: {result['noon']}   🌙 مغرب: {result['maghrib']}"
+            )
+        else:
+            blocks.append(f"⚠️ {city_name}: خطا در دریافت")
+
+    # چون همه‌ی شهرها با هم ممکنه از سقف ۴۰۹۶ کاراکتری پیام تلگرام رد بشن،
+    # بلوک‌ها رو به چند پیام تقسیم می‌کنیم.
+    MAX_CHARS = 3500
+    chunks = []
+    current = "🕌 *اوقات شرعی همه‌ی شهرها*\n\n"
+    for block in blocks:
+        if len(current) + len(block) + 2 > MAX_CHARS:
+            chunks.append(current)
+            current = ""
+        current += block + "\n\n"
+    if current:
+        chunks.append(current)
+
+    back_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"prayer_back_{user_id}")]
+    ])
+
+    # چانک اول جای همون پیامی میره که دکمه روش زده شده؛ بقیه پیام جدیدن
+    await query.edit_message_text(
+        chunks[0],
+        parse_mode="Markdown",
+        reply_markup=back_markup if len(chunks) == 1 else None,
+    )
+    for i, chunk in enumerate(chunks[1:], start=1):
+        is_last = (i == len(chunks) - 1)
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=chunk,
+            parse_mode="Markdown",
+            reply_markup=back_markup if is_last else None,
+        )
 
 
 # ==========================================
