@@ -530,3 +530,22 @@ async def salavat_global_command(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(text, parse_mode="HTML")
 
 
+async def salavat_count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور /salavat_count -- فقط عدد مجموع صلوات‌های همین گروه، بدون
+    جزئیات ختم‌ها و نفرات برتر (نسخه‌ی سریع و خلاصه‌ی /salavat)."""
+    chat = update.effective_chat
+
+    if chat.type not in GROUP_CHAT_TYPES:
+        await update.message.reply_text(
+            "🌹 صلوات‌شمار فقط داخل گروه‌ها کار می‌کنه."
+        )
+        return
+
+    total = get_salavat_chat_total(chat.id)
+    safe_chat_title = html.escape(chat.title or "این گروه")
+    await update.message.reply_text(
+        f"🌹 توی گروه «{safe_chat_title}» تا الان مجموعاً <b>{total}</b> صلوات فرستاده شده.",
+        parse_mode="HTML",
+    )
+
+
