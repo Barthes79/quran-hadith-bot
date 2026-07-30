@@ -16,6 +16,55 @@ def _ensure_column(cur, table: str, column: str, definition: str):
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _migrate_legacy_salavat_goals_table(cur):
+    """اگه جدول salavat_goals از یه نسخه‌ی خیلی قدیمی‌تر (تک‌ختمی، از
+    قبل از اضافه‌شدن پشتیبانی چند-ختمی) روی دیتابیس مونده باشه، ستون
+    id (کلید اصلیِ ساختار جدید) رو نداره -- چون توی اون نسخه احتمالاً
+    خودِ chat_id کلید اصلی بوده (هر گروه فقط یه ختم).
+
+    SQLite با ALTER TABLE نمی‌ذاره ستونِ PRIMARY KEY اضافه کنی، پس اینجا
+    جدول رو بازسازی می‌کنیم: جدول قدیمی رو rename می‌کنیم، جدول جدید با
+    ساختار درست می‌سازیم، هر داده‌ای که قابل‌انتقاله رو کپی می‌کنیم، و
+    جدول قدیمی رو حذف می‌کنیم."""
+    existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(salavat_goals)").fetchall()}
+    if not existing_cols:
+        return  # جدول اصلاً وجود نداره؛ CREATE TABLE بعدی خودش می‌سازتش
+    if "id" in existing_cols:
+        return  # جدول از قبل ساختار درستی داره، کاری لازم نیست
+
+    cur.execute("ALTER TABLE salavat_goals RENAME TO salavat_goals_legacy")
+    cur.execute("""
+        CREATE TABLE salavat_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            goal_count INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            start_total INTEGER DEFAULT 0,
+            completed INTEGER DEFAULT 0,
+            created_at TIMESTAMP,
+            created_by INTEGER,
+            announced INTEGER DEFAULT 0,
+            completed_at TIMESTAMP
+        )
+    """)
+
+    # فقط ستون‌هایی که هم توی جدول قدیمی و هم جدول جدید هستن رو کپی کن
+    copyable = [
+        c for c in (
+            "chat_id", "goal_count", "title", "start_total",
+            "completed", "created_at", "created_by", "announced", "completed_at",
+        )
+        if c in existing_cols
+    ]
+    if "chat_id" in copyable and "goal_count" in copyable and "title" in copyable:
+        col_list = ", ".join(copyable)
+        cur.execute(
+            f"INSERT INTO salavat_goals ({col_list}) SELECT {col_list} FROM salavat_goals_legacy"
+        )
+
+    cur.execute("DROP TABLE salavat_goals_legacy")
+
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -228,6 +277,7 @@ def init_db():
     # ============================================================
 
     # جدول ختم‌های صلوات (چندین ختم همزمان)
+    _migrate_legacy_salavat_goals_table(cur)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS salavat_goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
