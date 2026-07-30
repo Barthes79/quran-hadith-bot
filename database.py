@@ -242,6 +242,15 @@ def init_db():
             completed_at TIMESTAMP
         )
     """)
+    # روی دیتابیس‌های قدیمی‌تر ممکنه این جدول از قبل با ستون‌های کمتری
+    # ساخته شده باشه (چون CREATE TABLE IF NOT EXISTS دست به schema
+    # موجود نمی‌زنه)؛ پس ستون‌های غایب رو دستی اضافه می‌کنیم.
+    _ensure_column(cur, "salavat_goals", "start_total", "INTEGER DEFAULT 0")
+    _ensure_column(cur, "salavat_goals", "completed", "INTEGER DEFAULT 0")
+    _ensure_column(cur, "salavat_goals", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    _ensure_column(cur, "salavat_goals", "created_by", "INTEGER")
+    _ensure_column(cur, "salavat_goals", "announced", "INTEGER DEFAULT 0")
+    _ensure_column(cur, "salavat_goals", "completed_at", "TIMESTAMP")
 
     # جدول مشارکت کاربران در ختم‌ها
     cur.execute("""
@@ -254,6 +263,8 @@ def init_db():
             FOREIGN KEY (goal_id) REFERENCES salavat_goals(id)
         )
     """)
+    _ensure_column(cur, "salavat_contributions", "user_name", "TEXT")
+    _ensure_column(cur, "salavat_contributions", "amount", "INTEGER DEFAULT 0")
 
     # جدول وضعیت پیام‌های تعاملی (برای حذف پنل‌ها)
     cur.execute("""
@@ -267,6 +278,9 @@ def init_db():
             PRIMARY KEY (chat_id, message_id)
         )
     """)
+    _ensure_column(cur, "interactive_messages", "goal_id", "INTEGER")
+    _ensure_column(cur, "interactive_messages", "message_type", "TEXT")
+
 
     # ستون multi_goal_enabled برای گروه‌ها
     try:
