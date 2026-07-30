@@ -107,49 +107,100 @@ def _compute_remind_datetime(now: datetime, time_str: str, minutes_before: int):
     return azan_dt - timedelta(minutes=minutes_before)
 
 
-async def _schedule_reminders_for_row(reminder_row, context: ContextTypes.DEFAULT_TYPE):
-    """برای یک ردیف یادآور (یک کاربر)، اذان‌های امروزِ باقی‌مانده را که فعال کرده،
-    به‌صورت جاب یک‌بارمصرف زمان‌بندی می‌کند."""
+def _round_to_minute(dt: datetime) -> datetime:
+    return dt.replace(second=0, microsecond=0)
+
+
+async def _rebuild_todays_schedule(context: ContextTypes.DEFAULT_TYPE):
+    """کل زمان‌بندی امروز رو از صفر می‌سازه (جاب‌های قبلیِ امروز رو پاک می‌کنه
+    و دوباره می‌سازه). این‌طوری هم جاب شبانه و هم هر تغییر تنظیماتِ لحظه‌ای
+    یک کاربر، همیشه از یک منطق واحد رد می‌شن و باکت‌بندیِ پیام‌های گروهی
+    (چند کاربر که هم‌زمان توی یه گروه یادآور دارن) درست می‌مونه.
+
+    پیام خصوصی همیشه جدا جدا برای هر کاربر می‌ره (نمیشه پیوی چند نفر رو
+    ادغام کرد)، ولی پیام تگِ گروهی برای کاربرهایی که توی یه گروه، برای
+    همون اذان و همون لحظه یادآور فعال دارن، توی یک پیام واحد ادغام می‌شه
+    تا گروه با چندتا پیام جدا شلوغ نشه. اون پیام گروهی هم بعد از رسیدن وقت
+    اذان (+ چند دقیقه فرصت) خودکار حذف می‌شه تا توی تاریخچه‌ی گروه نمونه."""
     if not context.job_queue:
         logger.error("زمان‌بندی یادآور ممکن نیست: job_queue فعال نیست (احتمالاً APScheduler نصب نشده)")
         return
 
-    user_id = reminder_row["user_id"]
-    result = get_prayer_times(reminder_row["city_code"])
-    if not result["success"]:
-        logger.warning(f"عدم امکان زمان‌بندی یادآور برای کاربر {user_id}: خطا در دریافت اوقات شرعی")
-        return
-
     now = datetime.now(IRAN_TZ)
-    for key, (field, label) in PRAYER_FIELD_MAP.items():
-        job_name = f"prayer_reminder_{user_id}_{key}_{now.date()}"
+    today_str = str(now.date())
 
-        if not reminder_row[f"remind_{key}"]:
-            continue
-
-        remind_dt = _compute_remind_datetime(now, result.get(field, ""), reminder_row["minutes_before"])
-        if not remind_dt:
-            logger.warning(f"[یادآور] کاربر {user_id} / {key}: فرمت ساعت اذان نامعتبر بود: {result.get(field)!r}")
-            continue
-        if remind_dt <= now:
-            logger.info(f"[یادآور] کاربر {user_id} / {key}: زمانش ({remind_dt}) گذشته، امروز زمان‌بندی نمی‌شه")
-            continue
-
-        # جلوگیری از زمان‌بندی تکراری در صورتی که قبلاً برای همین روز ساخته شده باشد
-        for j in context.job_queue.get_jobs_by_name(job_name):
+    # پاک کردن جاب‌های امروز (خصوصی، گروهی و حذفِ گروهی) تا از صفر بسازیم
+    for j in context.job_queue.jobs():
+        if j.name and j.name.startswith("prayer_") and today_str in j.name:
             j.schedule_removal()
 
-        logger.info(f"[یادآور] کاربر {user_id} / {key}: برای ساعت {remind_dt.strftime('%H:%M:%S')} زمان‌بندی شد (اذان: {result.get(field)})")
+    rows = get_all_enabled_prayer_reminders()
 
+    # کش اوقات شرعی هر شهر، چون معمولاً چند کاربر شهر یکسان دارن
+    city_cache: dict = {}
+
+    def _times_for(city_code):
+        if city_code not in city_cache:
+            city_cache[city_code] = get_prayer_times(city_code)
+        return city_cache[city_code]
+
+    # کلید: (group_chat_id, key, دقیقه‌ی رند شده) -> اطلاعات پیام ادغامی
+    group_batches: dict = {}
+
+    for row in rows:
+        user_id = row["user_id"]
+        result = _times_for(row["city_code"])
+        if not result["success"]:
+            logger.warning(f"عدم امکان زمان‌بندی یادآور برای کاربر {user_id}: خطا در دریافت اوقات شرعی")
+            continue
+
+        for key, (field, label) in PRAYER_FIELD_MAP.items():
+            if not row[f"remind_{key}"]:
+                continue
+
+            remind_dt = _compute_remind_datetime(now, result.get(field, ""), row["minutes_before"])
+            if not remind_dt:
+                logger.warning(f"[یادآور] کاربر {user_id} / {key}: فرمت ساعت اذان نامعتبر بود: {result.get(field)!r}")
+                continue
+            if remind_dt <= now:
+                continue
+
+            # پیام خصوصی: مستقل برای هر کاربر
+            context.job_queue.run_once(
+                send_prayer_reminder_private,
+                when=remind_dt,
+                data={"user_id": user_id, "label": label, "minutes_before": row["minutes_before"]},
+                name=f"prayer_private_{user_id}_{key}_{today_str}",
+            )
+
+            # پیام گروهی: توی باکتِ همون گروه/اذان/دقیقه جمع می‌شه
+            if row["group_chat_id"]:
+                azan_dt = remind_dt + timedelta(minutes=row["minutes_before"])
+                bucket_key = (row["group_chat_id"], key, _round_to_minute(remind_dt))
+                bucket = group_batches.setdefault(bucket_key, {
+                    "remind_dt": remind_dt,
+                    "azan_dt": azan_dt,
+                    "label": label,
+                    "minutes_before": row["minutes_before"],
+                    "users": [],
+                })
+                bucket["users"].append((user_id, row["user_name"] or "کاربر"))
+
+    for (group_chat_id, key, _minute), batch in group_batches.items():
+        job_name = f"prayer_group_{group_chat_id}_{key}_{today_str}_{batch['remind_dt'].strftime('%H%M')}"
+        logger.info(
+            f"[یادآور] گروه {group_chat_id} / {key}: پیام ادغامی برای {len(batch['users'])} "
+            f"کاربر در ساعت {batch['remind_dt'].strftime('%H:%M:%S')} زمان‌بندی شد"
+        )
         context.job_queue.run_once(
-            send_prayer_reminder,
-            when=remind_dt,
+            send_prayer_reminder_group,
+            when=batch["remind_dt"],
             data={
-                "user_id": user_id,
-                "label": label,
-                "minutes_before": reminder_row["minutes_before"],
-                "group_chat_id": reminder_row["group_chat_id"],
-                "user_name": reminder_row["user_name"] or "کاربر",
+                "group_chat_id": group_chat_id,
+                "label": batch["label"],
+                "minutes_before": batch["minutes_before"],
+                "users": batch["users"],
+                "azan_dt": batch["azan_dt"],
             },
             name=job_name,
         )
@@ -157,19 +208,14 @@ async def _schedule_reminders_for_row(reminder_row, context: ContextTypes.DEFAUL
 
 async def schedule_reminders_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """بلافاصله بعد از تغییر تنظیمات یادآور توسط کاربر صدا زده می‌شود تا همون روز
-    هم اذان‌های باقی‌مانده زمان‌بندی بشن (منتظر جاب نیمه‌شب نمونیم)."""
-    reminder = get_prayer_reminder(user_id)
-    if not reminder or not reminder["enabled"]:
-        return
-    await _schedule_reminders_for_row(reminder, context)
+    هم اذان‌های باقی‌مانده زمان‌بندی بشن (منتظر جاب نیمه‌شب نمونیم). چون
+    پیام‌های گروهی ادغام می‌شن، کل زمان‌بندی امروز از نو ساخته می‌شه."""
+    await _rebuild_todays_schedule(context)
 
 
 async def schedule_daily_prayer_reminders(context: ContextTypes.DEFAULT_TYPE):
-    """جاب روزانه: هر روز خیلی زود صبح اجرا می‌شود، اوقات شرعی امروز را برای
-    تمام کاربرهایی که یادآور فعال دارند می‌گیرد و برای هرکدوم یک جاب
-    یک‌بارمصرف در زمان مناسب می‌سازد."""
-    for reminder_row in get_all_enabled_prayer_reminders():
-        await _schedule_reminders_for_row(reminder_row, context)
+    """جاب روزانه: هر روز خیلی زود صبح اجرا می‌شود و زمان‌بندی امروز رو می‌سازه."""
+    await _rebuild_todays_schedule(context)
 
 
 async def _send_reminder_messages(context: ContextTypes.DEFAULT_TYPE, *, user_id: int, label: str,
@@ -202,21 +248,56 @@ async def _send_reminder_messages(context: ContextTypes.DEFAULT_TYPE, *, user_id
             raise
 
 
-async def send_prayer_reminder(context: ContextTypes.DEFAULT_TYPE):
-    """جاب یک‌بارمصرفی که در زمان مقرر، پیام یادآوری را هم در پیوی کاربر
-    و هم (در صورت وجود) با تگ کردن او در گروهی که تنظیم را انجام داده، می‌فرستد."""
-    job_data = context.job.data
+async def send_prayer_reminder_private(context: ContextTypes.DEFAULT_TYPE):
+    """جاب یک‌بارمصرف: فقط پیام خصوصی رو به یک کاربر می‌فرسته."""
+    data = context.job.data
     try:
-        await _send_reminder_messages(
-            context,
-            user_id=job_data["user_id"],
-            label=job_data["label"],
-            minutes_before=job_data["minutes_before"],
-            group_chat_id=job_data.get("group_chat_id"),
-            user_name=job_data.get("user_name") or "کاربر",
+        await context.bot.send_message(
+            chat_id=data["user_id"],
+            text=f"⏰ {data['minutes_before']} دقیقه تا {data['label']} مانده است.",
         )
-    except Exception:
-        pass  # خطاها همون تو _send_reminder_messages لاگ می‌شن
+    except Exception as e:
+        logger.error(f"خطا در ارسال یادآور اذان (پیوی) به کاربر {data['user_id']}: {e}")
+
+
+async def send_prayer_reminder_group(context: ContextTypes.DEFAULT_TYPE):
+    """جاب یک‌بارمصرف: یک پیام واحد که همه‌ی کاربرهایی که توی این گروه، برای
+    همین اذان و همین لحظه یادآور فعال دارن رو با هم تگ می‌کنه (به‌جای یه پیام
+    جدا برای هرکدوم که گروه رو شلوغ می‌کرد). بعد از رسیدن وقت اذان (+ ۱۰ دقیقه
+    فرصت)، خودش رو از گروه پاک می‌کنه تا توی تاریخچه‌ی گروه انباشته نشه."""
+    data = context.job.data
+    mentions = "  ".join(
+        f'<a href="tg://user?id={uid}">{html.escape(name)}</a>'
+        for uid, name in data["users"]
+    )
+    try:
+        msg = await context.bot.send_message(
+            chat_id=data["group_chat_id"],
+            text=f"⏰ {mentions}\n{data['minutes_before']} دقیقه تا {data['label']} مانده است.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"خطا در ارسال یادآور اذان (گروه {data['group_chat_id']}): {e}")
+        return
+
+    if context.job_queue:
+        delete_at = data["azan_dt"] + timedelta(minutes=10)
+        context.job_queue.run_once(
+            _delete_group_reminder_message,
+            when=delete_at,
+            data={"chat_id": data["group_chat_id"], "message_id": msg.message_id},
+            name=f"prayer_group_delete_{data['group_chat_id']}_{msg.message_id}",
+        )
+
+
+async def _delete_group_reminder_message(context: ContextTypes.DEFAULT_TYPE):
+    """جاب پاکسازی: پیام یادآور گروهیِ ادغام‌شده رو بعد از گذشتن وقت اذان
+    (+ چند دقیقه فرصت) حذف می‌کنه تا توی تاریخچه‌ی گروه باقی نمونه."""
+    data = context.job.data
+    try:
+        await context.bot.delete_message(chat_id=data["chat_id"], message_id=data["message_id"])
+    except Exception as e:
+        logger.warning(f"عدم امکان حذف پیام یادآور گروهی (چت {data['chat_id']}, پیام {data['message_id']}): {e}")
 
 
 async def prayer_test_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -735,18 +816,14 @@ async def prayer_reminder_toggle_callback(update: Update, context: ContextTypes.
 
     new_value = toggle_prayer_reminder_azan(user_id, azan_key)
 
-    if new_value == 0 and context.job_queue:
-        # اگر این اذان خاموش شد، جاب امروزش (اگه ساخته شده بود) رو هم لغو کن
-        job_name = f"prayer_reminder_{user_id}_{azan_key}_{datetime.now(IRAN_TZ).date()}"
-        for j in context.job_queue.get_jobs_by_name(job_name):
-            j.schedule_removal()
-
     reminder = get_prayer_reminder(user_id)
     any_on = any([reminder["remind_fajr"], reminder["remind_noon"], reminder["remind_maghrib"]])
     upsert_prayer_reminder(user_id, city_code=city_code, enabled=1 if any_on else 0)
 
-    if any_on:
-        await schedule_reminders_for_user(user_id, context)
+    # همیشه زمان‌بندی امروز رو از نو می‌سازیم (چه فعال شده باشه چه خاموش)،
+    # چون rebuild خودش جاب‌های قدیمی امروز رو پاک و از صفر می‌سازه؛ این‌طوری
+    # خاموش کردن هم فوراً روی جاب‌های زمان‌بندی‌شده اثر می‌کنه.
+    await schedule_reminders_for_user(user_id, context)
 
     await query.answer("✅ فعال شد" if new_value else "❌ غیرفعال شد")
     await show_reminder_menu(update, context, user_id, city_code)
