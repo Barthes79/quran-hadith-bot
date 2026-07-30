@@ -247,10 +247,14 @@ def init_db():
     # موجود نمی‌زنه)؛ پس ستون‌های غایب رو دستی اضافه می‌کنیم.
     _ensure_column(cur, "salavat_goals", "start_total", "INTEGER DEFAULT 0")
     _ensure_column(cur, "salavat_goals", "completed", "INTEGER DEFAULT 0")
-    _ensure_column(cur, "salavat_goals", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    _ensure_column(cur, "salavat_goals", "created_at", "TIMESTAMP")
     _ensure_column(cur, "salavat_goals", "created_by", "INTEGER")
     _ensure_column(cur, "salavat_goals", "announced", "INTEGER DEFAULT 0")
     _ensure_column(cur, "salavat_goals", "completed_at", "TIMESTAMP")
+    # ردیف‌های قدیمی که created_at ندارن (چون ستون بدون دیفالت اضافه شد)
+    cur.execute(
+        "UPDATE salavat_goals SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+    )
 
     # جدول مشارکت کاربران در ختم‌ها
     cur.execute("""
