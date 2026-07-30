@@ -94,11 +94,21 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     MessageHandler جدا)، وگرنه وقتی search_mode روشن باشه، همون عدد هم به
     غلط به‌عنوان عبارت جستجو فرستاده می‌شه.
     """
+    # پیام‌های ویرایش‌شده (edited_message) و بعضی آپدیت‌های خاص، update.message
+    # ندارن (None هست)؛ بدون این گارد، خط بعدی با AttributeError کرش می‌کنه.
+    if not update.message or not update.message.text:
+        return
+
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
 
-    # صلوات‌شمار گروهی: مستقل از بقیه‌ی جریان‌ها، چون با آیه/سرچ تداخلی نداره
-    await salavat_text_handler(update, context)
+    # صلوات‌شمار گروهی: مستقل از بقیه‌ی جریان‌ها، چون با آیه/سرچ تداخلی نداره.
+    # توی try/except چون اگه اینجا یه خطای پیش‌بینی‌نشده بیفته (مثلاً توی
+    # فرستادن پیام تبریک رکورد)، نباید جلوی رسیدن به بخش یادآور/سرچ رو بگیره.
+    try:
+        await salavat_text_handler(update, context)
+    except Exception as e:
+        logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:

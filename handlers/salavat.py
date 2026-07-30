@@ -14,6 +14,7 @@
 """
 import logging
 import re
+import html
 
 from telegram import Update
 from telegram.constants import ReactionEmoji
@@ -108,16 +109,20 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         prev_progress = prev_total - goal["start_total"]
         if progress >= goal["goal_count"] > prev_progress:
             mark_salavat_goal_announced(chat.id)
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=(
-                    f"🎉🌹 *ختم صلوات «{goal['title']}» تکمیل شد!*\n\n"
-                    f"مجموع {goal['goal_count']} صلواتی که هدف بود، فرستاده شد. "
-                    f"خدا از همه‌ی عزیزانی که شرکت کردن قبول کنه 🤲\n\n"
-                    f"برای شروع یه ختم جدید، از دستور /salavat_goal استفاده کنید."
-                ),
-                parse_mode="Markdown",
-            )
+            safe_title = html.escape(goal["title"] or "")
+            try:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=(
+                        f"🎉🌹 <b>ختم صلوات «{safe_title}» تکمیل شد!</b>\n\n"
+                        f"مجموع {goal['goal_count']} صلواتی که هدف بود، فرستاده شد. "
+                        f"خدا از همه‌ی عزیزانی که شرکت کردن قبول کنه 🤲\n\n"
+                        f"برای شروع یه ختم جدید، از دستور /salavat_goal استفاده کنید."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.error(f"خطا در ارسال پیام تکمیل ختم صلوات (چت {chat.id}): {e}")
             return True
 
     # پیام تبریک سر رکوردهای رند (وقتی هدف فعالی در کار نیست).
@@ -125,11 +130,14 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # به‌جای total % STEP == 0، عبور از مرز رو چک می‌کنیم.
     elif chat_total // MILESTONE_STEP > prev_total // MILESTONE_STEP:
         milestone = (prev_total // MILESTONE_STEP + 1) * MILESTONE_STEP
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=f"🌹 صلوات‌های این گروه از مرز *{milestone}* رد شد! مجموع الان: *{chat_total}*",
-            parse_mode="Markdown",
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=f"🌹 صلوات‌های این گروه از مرز <b>{milestone}</b> رد شد! مجموع الان: <b>{chat_total}</b>",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"خطا در ارسال پیام رکورد صلوات (چت {chat.id}): {e}")
 
     return True
 
@@ -146,7 +154,8 @@ async def salavat_stats_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     total = get_salavat_chat_total(chat.id)
-    text = f"🌹 *صلوات‌شمار گروه {chat.title}*\n\nمجموع تا الان: *{total}* صلوات\n"
+    safe_chat_title = html.escape(chat.title or "این گروه")
+    text = f"🌹 <b>صلوات‌شمار گروه {safe_chat_title}</b>\n\nمجموع تا الان: <b>{total}</b> صلوات\n"
 
     goal = get_salavat_goal(chat.id)
     if goal and goal["goal_count"] and not goal["announced"]:
@@ -155,20 +164,22 @@ async def salavat_stats_command(update: Update, context: ContextTypes.DEFAULT_TY
         percent = min(100, int(progress * 100 / goal["goal_count"])) if goal["goal_count"] else 0
         filled = percent // 10
         bar = "🟩" * filled + "⬜️" * (10 - filled)
+        safe_goal_title = html.escape(goal["title"] or "")
         text += (
-            f"\n🎯 *ختم فعال:* {goal['title']}\n"
+            f"\n🎯 <b>ختم فعال:</b> {safe_goal_title}\n"
             f"{bar} {percent}٪\n"
             f"{progress} از {goal['goal_count']} ({remaining} مونده)\n"
         )
 
     top = get_salavat_top(chat.id, limit=5)
     if top:
-        text += "\n🏆 *نفرات برتر:*\n"
+        text += "\n🏆 <b>نفرات برتر:</b>\n"
         medals = ["🥇", "🥈", "🥉", "4.", "5."]
         for i, row in enumerate(top):
-            text += f"{medals[i]} {row['user_name']} — {row['count']}\n"
+            safe_name = html.escape(row["user_name"] or "کاربر")
+            text += f"{medals[i]} {safe_name} — {row['count']}\n"
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def salavat_top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,13 +195,15 @@ async def salavat_top_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("هنوز کسی توی این گروه صلواتی ثبت نکرده 🌹")
         return
 
-    text = f"🏆 *نفرات برتر صلوات‌شمار {chat.title}*\n\n"
+    safe_chat_title = html.escape(chat.title or "این گروه")
+    text = f"🏆 <b>نفرات برتر صلوات‌شمار {safe_chat_title}</b>\n\n"
     medals = ["🥇", "🥈", "🥉"]
     for i, row in enumerate(top):
         prefix = medals[i] if i < 3 else f"{i + 1}."
-        text += f"{prefix} {row['user_name']} — {row['count']} صلوات\n"
+        safe_name = html.escape(row["user_name"] or "کاربر")
+        text += f"{prefix} {safe_name} — {row['count']} صلوات\n"
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def salavat_goal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -218,9 +231,9 @@ async def salavat_goal_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not args or not args[0].isdigit():
         await update.message.reply_text(
             "برای شروع یه ختم صلوات جدید بنویسید:\n"
-            "`/salavat_goal 1000 شفای فلانی`\n\n"
+            "<code>/salavat_goal 1000 شفای فلانی</code>\n\n"
             "(عدد اول تعداد هدف، بقیه‌ی متن عنوان اختیاریه)",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
@@ -232,11 +245,12 @@ async def salavat_goal_command(update: Update, context: ContextTypes.DEFAULT_TYP
     title = " ".join(args[1:]).strip() or "بدون عنوان"
     set_salavat_goal(chat.id, goal_count, title)
 
+    safe_title = html.escape(title)
     await update.message.reply_text(
         f"🎯 ختم صلوات جدید شروع شد!\n\n"
-        f"*عنوان:* {title}\n"
-        f"*هدف:* {goal_count} صلوات\n\n"
+        f"<b>عنوان:</b> {safe_title}\n"
+        f"<b>هدف:</b> {goal_count} صلوات\n\n"
         f"هرکس توی گروه بنویسه «صلوات»، به این ختم اضافه میشه. "
         f"وضعیت رو با /salavat می‌تونید ببینید.",
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
