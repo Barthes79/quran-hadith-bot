@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue,socks]==21.4
+python-telegram-bot[job-queue]==20.x
 httpx[socks]==0.27.2
 python-dotenv==1.0.1
 thefuzz==0.22.1
