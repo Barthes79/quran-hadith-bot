@@ -71,14 +71,6 @@ from handlers.salavat import (
     salavat_text_handler,
     salavat_stats_command,
     salavat_top_command,
-    salavat_goal_command,
-    salavat_goals_command,
-    salavat_delete_command,
-    salavat_participants_command,
-    salavat_multi_toggle_command,
-    salavat_callback_handler,
-    salavat_delete_callback,
-    salavat_participants_callback,
 )
 
 logging.basicConfig(
@@ -233,23 +225,10 @@ def main():
     ))
 
     # ==========================================
-    # دستورات صلوات‌شمار گروهی (نسخه کامل با ختم‌های متعدد)
+    # دستورات صلوات‌شمار گروهی
     # ==========================================
     app.add_handler(CommandHandler("salavat", salavat_stats_command))
     app.add_handler(CommandHandler("salavat_top", salavat_top_command))
-    app.add_handler(CommandHandler("salavat_goal", salavat_goal_command))
-    app.add_handler(CommandHandler("salavat_goals", salavat_goals_command))
-    app.add_handler(CommandHandler("salavat_delete", salavat_delete_command))
-    app.add_handler(CommandHandler("salavat_participants", salavat_participants_command))
-    app.add_handler(CommandHandler("salavat_multi", salavat_multi_toggle_command))
-
-    # ==========================================
-    # کل‌بک‌های صلوات‌شمار
-    # ==========================================
-    app.add_handler(CallbackQueryHandler(salavat_callback_handler, pattern="^salavat_goal_"))
-    app.add_handler(CallbackQueryHandler(salavat_delete_callback, pattern="^salavat_delete_goal_"))
-    app.add_handler(CallbackQueryHandler(salavat_participants_callback, pattern="^salavat_participants_"))
-    app.add_handler(CallbackQueryHandler(salavat_callback_handler, pattern="^salavat_cancel$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
