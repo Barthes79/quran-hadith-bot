@@ -1332,16 +1332,19 @@ def get_all_enabled_prayer_reminders():
 
 # ---------------- توابع مربوط به صلوات‌شمار ----------------
 
-def increment_salavat(chat_id: int, user_id: int, user_name: str):
-    """یک واحد به صلوات‌های این کاربر در این گروه اضافه می‌کند و
-    (تعداد شخصی کاربر، مجموع کل گروه) را برمی‌گرداند."""
+def increment_salavat(chat_id: int, user_id: int, user_name: str, amount: int = 1):
+    """
+    `amount` واحد به صلوات‌های این کاربر در این گروه اضافه می‌کند
+    (مثلاً وقتی پیام «صلوات 50» فرستاده، amount=50) و
+    (تعداد شخصی کاربر، مجموع کل گروه) را برمی‌گرداند.
+    """
     conn = get_connection()
     conn.execute(
         """INSERT INTO salavat_stats (chat_id, user_id, user_name, count)
-           VALUES (?, ?, ?, 1)
+           VALUES (?, ?, ?, ?)
            ON CONFLICT(chat_id, user_id)
-           DO UPDATE SET count = count + 1, user_name = excluded.user_name""",
-        (chat_id, user_id, user_name),
+           DO UPDATE SET count = count + excluded.count, user_name = excluded.user_name""",
+        (chat_id, user_id, user_name, amount),
     )
     conn.commit()
 
