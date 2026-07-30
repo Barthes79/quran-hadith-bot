@@ -71,6 +71,7 @@ from handlers.salavat import (
     salavat_text_handler,
     salavat_stats_command,
     salavat_top_command,
+    salavat_goal_command,
 )
 
 logging.basicConfig(
@@ -229,6 +230,7 @@ def main():
     # ==========================================
     app.add_handler(CommandHandler("salavat", salavat_stats_command))
     app.add_handler(CommandHandler("salavat_top", salavat_top_command))
+    app.add_handler(CommandHandler("salavat_goal", salavat_goal_command))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
