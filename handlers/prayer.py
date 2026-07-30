@@ -111,6 +111,7 @@ async def _schedule_reminders_for_row(reminder_row, context: ContextTypes.DEFAUL
     """برای یک ردیف یادآور (یک کاربر)، اذان‌های امروزِ باقی‌مانده را که فعال کرده،
     به‌صورت جاب یک‌بارمصرف زمان‌بندی می‌کند."""
     if not context.job_queue:
+        logger.error("زمان‌بندی یادآور ممکن نیست: job_queue فعال نیست (احتمالاً APScheduler نصب نشده)")
         return
 
     user_id = reminder_row["user_id"]
@@ -127,12 +128,18 @@ async def _schedule_reminders_for_row(reminder_row, context: ContextTypes.DEFAUL
             continue
 
         remind_dt = _compute_remind_datetime(now, result.get(field, ""), reminder_row["minutes_before"])
-        if not remind_dt or remind_dt <= now:
+        if not remind_dt:
+            logger.warning(f"[یادآور] کاربر {user_id} / {key}: فرمت ساعت اذان نامعتبر بود: {result.get(field)!r}")
+            continue
+        if remind_dt <= now:
+            logger.info(f"[یادآور] کاربر {user_id} / {key}: زمانش ({remind_dt}) گذشته، امروز زمان‌بندی نمی‌شه")
             continue
 
         # جلوگیری از زمان‌بندی تکراری در صورتی که قبلاً برای همین روز ساخته شده باشد
         for j in context.job_queue.get_jobs_by_name(job_name):
             j.schedule_removal()
+
+        logger.info(f"[یادآور] کاربر {user_id} / {key}: برای ساعت {remind_dt.strftime('%H:%M:%S')} زمان‌بندی شد (اذان: {result.get(field)})")
 
         context.job_queue.run_once(
             send_prayer_reminder,
@@ -165,36 +172,91 @@ async def schedule_daily_prayer_reminders(context: ContextTypes.DEFAULT_TYPE):
         await _schedule_reminders_for_row(reminder_row, context)
 
 
-async def send_prayer_reminder(context: ContextTypes.DEFAULT_TYPE):
-    """جاب یک‌بارمصرفی که در زمان مقرر، پیام یادآوری را هم در پیوی کاربر
-    و هم (در صورت وجود) با تگ کردن او در گروهی که تنظیم را انجام داده، می‌فرستد."""
-    job_data = context.job.data
-    user_id = job_data["user_id"]
-    label = job_data["label"]
-    minutes_before = job_data["minutes_before"]
-    group_chat_id = job_data.get("group_chat_id")
-    user_name = html.escape(job_data.get("user_name") or "کاربر")
+async def _send_reminder_messages(context: ContextTypes.DEFAULT_TYPE, *, user_id: int, label: str,
+                                   minutes_before: int, group_chat_id, user_name: str, is_test: bool = False):
+    """پیام یادآوری رو هم در پیوی کاربر، هم (در صورت وجود) با تگ کردنش در گروه
+    مربوطه می‌فرسته. هم توسط جاب واقعی زمان‌بندی‌شده استفاده می‌شه، هم توسط
+    دستور تست /prayer_test_reminder."""
+    safe_name = html.escape(user_name or "کاربر")
+    prefix = "🧪 [تستی] " if is_test else ""
 
-    # پیام پیوی
     try:
         await context.bot.send_message(
             chat_id=user_id,
-            text=f"⏰ {minutes_before} دقیقه تا {label} مانده است.",
+            text=f"{prefix}⏰ {minutes_before} دقیقه تا {label} مانده است.",
         )
     except Exception as e:
         logger.error(f"خطا در ارسال یادآور اذان (پیوی) به کاربر {user_id}: {e}")
+        raise
 
-    # پیام گروه با تگ کردن کاربر (اگه یادآور از داخل یه گروه تنظیم شده باشه)
     if group_chat_id:
-        mention = f'<a href="tg://user?id={user_id}">{user_name}</a>'
+        mention = f'<a href="tg://user?id={user_id}">{safe_name}</a>'
         try:
             await context.bot.send_message(
                 chat_id=group_chat_id,
-                text=f"⏰ {mention} {minutes_before} دقیقه تا {label} مانده است.",
+                text=f"{prefix}⏰ {mention} {minutes_before} دقیقه تا {label} مانده است.",
                 parse_mode="HTML",
             )
         except Exception as e:
             logger.error(f"خطا در ارسال یادآور اذان (گروه {group_chat_id}) برای کاربر {user_id}: {e}")
+            raise
+
+
+async def send_prayer_reminder(context: ContextTypes.DEFAULT_TYPE):
+    """جاب یک‌بارمصرفی که در زمان مقرر، پیام یادآوری را هم در پیوی کاربر
+    و هم (در صورت وجود) با تگ کردن او در گروهی که تنظیم را انجام داده، می‌فرستد."""
+    job_data = context.job.data
+    try:
+        await _send_reminder_messages(
+            context,
+            user_id=job_data["user_id"],
+            label=job_data["label"],
+            minutes_before=job_data["minutes_before"],
+            group_chat_id=job_data.get("group_chat_id"),
+            user_name=job_data.get("user_name") or "کاربر",
+        )
+    except Exception:
+        pass  # خطاها همون تو _send_reminder_messages لاگ می‌شن
+
+
+async def prayer_test_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    دستور /prayer_test_reminder -- برای تست فوریِ یادآور، بدون نیاز به صبر
+    کردن تا ساعت واقعی اذان. دقیقاً همون مسیر ارسال واقعی رو طی می‌کنه
+    (هم پیوی، هم تگ در گروه اگه قبلاً از داخل یه گروه یادآور تنظیم شده باشه)،
+    فقط با متن «[تستی]» مشخص میشه که واقعی نیست.
+    """
+    user = update.effective_user
+    reminder = get_prayer_reminder(user.id)
+
+    group_chat_id = reminder["group_chat_id"] if reminder else None
+    user_name = (reminder["user_name"] if reminder and reminder["user_name"] else None) or _display_name_fallback(user)
+    minutes_before = reminder["minutes_before"] if reminder else 10
+
+    try:
+        await _send_reminder_messages(
+            context,
+            user_id=user.id,
+            label="🌅 اذان صبح",
+            minutes_before=minutes_before,
+            group_chat_id=group_chat_id,
+            user_name=user_name,
+            is_test=True,
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ ارسال تستی با خطا مواجه شد: {e}\n\n"
+            "نکته: اگه پیام پیوی می‌گیری ولی توی گروه نه، احتمالاً ربات دیگه "
+            "توی اون گروه ادمین/عضو نیست یا اجازه‌ی ارسال پیام نداره."
+        )
+        return
+
+    extra = " و پیام تگ‌شده توی گروهی که ازش تنظیمش کرده بودی" if group_chat_id else " (یادآور از پیوی تنظیم شده بود، پس فقط همینجا فرستاده شد)"
+    await update.message.reply_text(f"✅ پیام تستی فرستاده شد{extra}.\n\nاگه این پیام رو دیدی، یعنی ارسال واقعی هم موقعش درست کار می‌کنه؛ فقط زمان‌بندیش رو تو لاگ سرور می‌تونی چک کنی.")
+
+
+def _display_name_fallback(user) -> str:
+    return user.first_name or user.full_name or "کاربر"
 
 
 def prayer_keyboard(city_code: int = None, user_id: int = None):

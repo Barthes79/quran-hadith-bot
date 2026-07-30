@@ -65,7 +65,7 @@ from handlers.prayer import (
     prayer_location_handler, prayer_back_callback, prayer_all_cities_callback,
     prayer_reminder_callback, prayer_reminder_toggle_callback,
     prayer_reminder_setmin_callback, prayer_reminder_minutes_text_handler,
-    schedule_daily_prayer_reminders,
+    schedule_daily_prayer_reminders, prayer_test_reminder_command,
 )
 from handlers.salavat import (
     salavat_text_handler, salavat_stats_command,
@@ -206,6 +206,7 @@ def main():
 # ==========================================
 # دستور لاتین
     app.add_handler(CommandHandler("prayer", prayer_command))
+    app.add_handler(CommandHandler("prayer_test_reminder", prayer_test_reminder_command))
 
 # پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
