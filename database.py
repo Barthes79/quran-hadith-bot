@@ -569,6 +569,17 @@ def get_interactive_messages(chat_id: int, user_id: int = None):
     return rows
 
 
+def delete_interactive_message(chat_id: int, message_id: int):
+    """حذف یک پیام تعاملی مشخص (بعد از اینکه کاربر روش تیک زد)."""
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM interactive_messages WHERE chat_id = ? AND message_id = ?",
+        (chat_id, message_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def delete_interactive_messages(chat_id: int, user_id: int = None):
     """حذف پیام‌های تعاملی یک کاربر/گروه."""
     conn = get_connection()
