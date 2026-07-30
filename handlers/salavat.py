@@ -366,6 +366,15 @@ async def salavat_stats_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+    is_admin = await _is_group_admin(context, chat.id, user.id)
+    if not is_admin:
+        await update.message.reply_text(
+            "⛔ پنل مدیریت صلوات فقط برای ادمین‌های گروه در دسترسه.\n\n"
+            "شما هر وقت بخوای می‌تونی توی گروه «صلوات» بنویسی یا فقط یه عدد بفرستی؛ "
+            "اگه ختم فعالی باشه، ازت می‌پرسیم به نیت کدومش بوده 🌹"
+        )
+        return
+
     text, markup = await _build_home_panel(context, chat, user.id)
     await update.message.reply_text(text, reply_markup=markup, parse_mode="HTML")
 
@@ -389,6 +398,11 @@ async def salavat_home_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     if str(clicking_user.id) != owner_id_str:
         await query.answer("این پنل برای شما نیست 🙏 برای دیدن پنل خودت /salavat رو بزن.", show_alert=True)
+        return
+
+    is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
+    if not is_admin:
+        await query.answer("⛔ پنل مدیریت صلوات فقط برای ادمین‌های گروهه.", show_alert=True)
         return
 
     back_button = InlineKeyboardMarkup(
@@ -439,10 +453,6 @@ async def salavat_home_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if action == "salhome_newinfo":
-        is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
-        if not is_admin:
-            await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم جدید تعریف کنن.", show_alert=True)
-            return
         text = (
             "➕ <b>شروع ختم صلوات جدید</b>\n▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️\n\n"
             "برای ساختن ختم جدید، این دستور رو با تعداد هدف و عنوان دلخواه بفرست:\n\n"
@@ -458,10 +468,6 @@ async def salavat_home_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if action == "salhome_delete":
-        is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
-        if not is_admin:
-            await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.", show_alert=True)
-            return
         active_goals = get_active_goals(chat.id)
         if not active_goals:
             await query.answer("در حال حاضر هیچ ختم فعالی نیست.", show_alert=True)
