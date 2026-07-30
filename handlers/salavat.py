@@ -27,7 +27,9 @@ from database import (
     get_salavat_top,
     create_salavat_goal,
     get_active_goals,
+    get_goal_by_id,
     contribute_to_goal,
+    delete_goal,
     save_interactive_message,
     delete_interactive_message,
 )
@@ -399,3 +401,115 @@ async def salavat_goal_command(update: Update, context: ContextTypes.DEFAULT_TYP
         f"وضعیت همه‌ی ختم‌ها رو با /salavat می‌تونید ببینید.",
         parse_mode="HTML",
     )
+
+
+async def salavat_delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور /salavat_delete -- (فقط ادمین) نمایش لیست ختم‌های فعال با
+    دکمه‌ی حذف برای هرکدوم."""
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type not in GROUP_CHAT_TYPES:
+        await update.message.reply_text("🌹 این دستور فقط داخل گروه‌ها کار می‌کنه.")
+        return
+
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        is_admin = member.status in ("administrator", "creator")
+    except Exception as e:
+        logger.error(f"خطا در بررسی ادمین بودن برای حذف ختم صلوات: {e}")
+        is_admin = False
+
+    if not is_admin:
+        await update.message.reply_text("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.")
+        return
+
+    active_goals = get_active_goals(chat.id)
+    if not active_goals:
+        await update.message.reply_text("در حال حاضر هیچ ختم فعالی توی این گروه نیست.")
+        return
+
+    keyboard_rows = []
+    for goal in active_goals:
+        label = f"🗑 {goal['title']} ({goal['total_contributions']}/{goal['goal_count']})"
+        callback_data = f"salrm_{goal['id']}_{user.id}"
+        keyboard_rows.append([InlineKeyboardButton(label, callback_data=callback_data)])
+    keyboard_rows.append(
+        [InlineKeyboardButton("↩️ انصراف", callback_data=f"salrmcancel_{user.id}")]
+    )
+
+    await update.message.reply_text(
+        "کدوم ختم رو می‌خوای حذف کنی؟\n⚠️ این کار قابل بازگشت نیست و همه‌ی مشارکت‌های ثبت‌شده توی این ختم هم پاک می‌شن.",
+        reply_markup=InlineKeyboardMarkup(keyboard_rows),
+    )
+
+
+async def salavat_delete_pick_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پاسخ به تیک زدنِ ادمین روی یکی از دکمه‌های پنل حذف ختم."""
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    chat = update.effective_chat
+    clicking_user = update.effective_user
+    data = query.data
+
+    # --- انصراف ---
+    if data.startswith("salrmcancel_"):
+        owner_id_str = data.split("_", 1)[1]
+        if str(clicking_user.id) != owner_id_str:
+            await query.answer("این پنل برای شما نیست 🙏", show_alert=True)
+            return
+        await query.answer("باشه، لغو شد.")
+        try:
+            await query.message.delete()
+        except Exception as e:
+            logger.debug(f"عدم امکان حذف پنل حذف ختم: {e}")
+        return
+
+    # --- انتخاب یکی از ختم‌ها برای حذف ---
+    if not data.startswith("salrm_"):
+        await query.answer()
+        return
+
+    try:
+        _, goal_id_str, owner_id_str = data.split("_")
+        goal_id = int(goal_id_str)
+    except (ValueError, IndexError):
+        await query.answer("خطای داخلی، لطفاً دوباره /salavat_delete رو بزن.", show_alert=True)
+        return
+
+    if str(clicking_user.id) != owner_id_str:
+        await query.answer("این پنل برای شما نیست 🙏 فقط کسی که دستور رو زده می‌تونه انتخاب کنه.", show_alert=True)
+        return
+
+    # چون حذف برگشت‌ناپذیره، ادمین بودن رو دوباره در لحظه‌ی کلیک هم چک می‌کنیم
+    try:
+        member = await context.bot.get_chat_member(chat.id, clicking_user.id)
+        is_admin = member.status in ("administrator", "creator")
+    except Exception as e:
+        logger.error(f"خطا در بررسی مجدد ادمین بودن برای حذف ختم صلوات: {e}")
+        is_admin = False
+
+    if not is_admin:
+        await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.", show_alert=True)
+        return
+
+    goal = get_goal_by_id(goal_id)
+    if not goal:
+        await query.answer("این ختم قبلاً حذف شده.", show_alert=True)
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return
+
+    delete_goal(goal_id)
+    safe_title = html.escape(goal["title"])
+
+    await query.answer(f"🗑 ختم «{goal['title']}» حذف شد.")
+    try:
+        await query.message.edit_text(f"🗑 ختم «{safe_title}» حذف شد.", parse_mode="HTML")
+    except Exception as e:
+        logger.debug(f"عدم امکان ویرایش پیام بعد از حذف ختم: {e}")
+
