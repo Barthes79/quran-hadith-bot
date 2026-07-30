@@ -422,6 +422,26 @@ def get_salavat_chat_total(chat_id: int) -> int:
     return total
 
 
+def get_salavat_global_total() -> int:
+    """مجموع تمام صلوات‌های فرستاده‌شده توی همه‌ی گروه‌هایی که ربات توشونه."""
+    conn = get_connection()
+    total = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats",
+    ).fetchone()["t"]
+    conn.close()
+    return total
+
+
+def get_salavat_global_group_count() -> int:
+    """تعداد گروه‌هایی که حداقل یه صلوات توشون ثبت شده."""
+    conn = get_connection()
+    count = conn.execute(
+        "SELECT COUNT(DISTINCT chat_id) c FROM salavat_stats",
+    ).fetchone()["c"]
+    conn.close()
+    return count
+
+
 def get_salavat_top(chat_id: int, limit: int = 10):
     conn = get_connection()
     rows = conn.execute(

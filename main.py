@@ -75,6 +75,7 @@ from handlers.salavat import (
     salavat_goal_pick_callback,
     salavat_delete_command,
     salavat_delete_pick_callback,
+    salavat_global_command,
 )
 
 logging.basicConfig(
@@ -235,6 +236,7 @@ def main():
     app.add_handler(CommandHandler("salavat_top", salavat_top_command))
     app.add_handler(CommandHandler("salavat_goal", salavat_goal_command))
     app.add_handler(CommandHandler("salavat_delete", salavat_delete_command))
+    app.add_handler(CommandHandler("salavat_global", salavat_global_command))
     app.add_handler(CallbackQueryHandler(salavat_goal_pick_callback, pattern="^(salgoal_|salskip_)"))
     app.add_handler(CallbackQueryHandler(salavat_delete_pick_callback, pattern="^salrm"))
 

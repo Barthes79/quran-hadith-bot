@@ -24,6 +24,8 @@ from telegram.ext import ContextTypes
 from database import (
     increment_salavat,
     get_salavat_chat_total,
+    get_salavat_global_total,
+    get_salavat_global_group_count,
     get_salavat_top,
     create_salavat_goal,
     get_active_goals,
@@ -512,4 +514,19 @@ async def salavat_delete_pick_callback(update: Update, context: ContextTypes.DEF
         await query.message.edit_text(f"🗑 ختم «{safe_title}» حذف شد.", parse_mode="HTML")
     except Exception as e:
         logger.debug(f"عدم امکان ویرایش پیام بعد از حذف ختم: {e}")
+
+
+async def salavat_global_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور /salavat_global -- نمایش مجموع کل صلوات‌های فرستاده‌شده توی
+    همه‌ی گروه‌هایی که ربات عضوشونه (هم توی پیوی و هم توی گروه کار می‌کنه)."""
+    total = get_salavat_global_total()
+    group_count = get_salavat_global_group_count()
+
+    text = (
+        f"🌹 <b>مجموع کل صلوات‌ها</b>\n\n"
+        f"تا الان توی مجموع <b>{group_count}</b> گروه، "
+        f"<b>{total}</b> صلوات فرستاده شده 🤲"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
 
