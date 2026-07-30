@@ -68,8 +68,17 @@ from handlers.prayer import (
     schedule_daily_prayer_reminders, prayer_test_reminder_command,
 )
 from handlers.salavat import (
-    salavat_text_handler, salavat_stats_command,
-    salavat_top_command, salavat_goal_command,
+    salavat_text_handler,
+    salavat_stats_command,
+    salavat_top_command,
+    salavat_goal_command,
+    salavat_goals_command,
+    salavat_delete_command,
+    salavat_participants_command,
+    salavat_multi_toggle_command,
+    salavat_callback_handler,
+    salavat_delete_callback,
+    salavat_participants_callback,
 )
 
 logging.basicConfig(
@@ -212,24 +221,35 @@ def main():
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ==========================================
-# دستورات اوقات شرعی
-# ==========================================
-# دستور لاتین
+    # دستورات اوقات شرعی
+    # ==========================================
     app.add_handler(CommandHandler("prayer", prayer_command))
     app.add_handler(CommandHandler("prayer_test_reminder", prayer_test_reminder_command))
 
-# پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
+    # پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
-    filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
-    prayer_command
-))
+        filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
+        prayer_command
+    ))
 
     # ==========================================
-    # دستورات صلوات‌شمار گروهی
+    # دستورات صلوات‌شمار گروهی (نسخه کامل با ختم‌های متعدد)
     # ==========================================
     app.add_handler(CommandHandler("salavat", salavat_stats_command))
     app.add_handler(CommandHandler("salavat_top", salavat_top_command))
     app.add_handler(CommandHandler("salavat_goal", salavat_goal_command))
+    app.add_handler(CommandHandler("salavat_goals", salavat_goals_command))
+    app.add_handler(CommandHandler("salavat_delete", salavat_delete_command))
+    app.add_handler(CommandHandler("salavat_participants", salavat_participants_command))
+    app.add_handler(CommandHandler("salavat_multi", salavat_multi_toggle_command))
+
+    # ==========================================
+    # کل‌بک‌های صلوات‌شمار
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(salavat_callback_handler, pattern="^salavat_goal_"))
+    app.add_handler(CallbackQueryHandler(salavat_delete_callback, pattern="^salavat_delete_goal_"))
+    app.add_handler(CallbackQueryHandler(salavat_participants_callback, pattern="^salavat_participants_"))
+    app.add_handler(CallbackQueryHandler(salavat_callback_handler, pattern="^salavat_cancel$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
@@ -303,6 +323,7 @@ def main():
     app.add_handler(CallbackQueryHandler(prayer_reminder_callback, pattern="^prayer_reminder_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_reminder_toggle_callback, pattern="^prayer_remind_toggle_(fajr|noon|maghrib)_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_reminder_setmin_callback, pattern="^prayer_remind_setmin_\\d+$"))
+    
     # ==========================================
     # کالبک‌های تنظیمات گروه
     # ==========================================

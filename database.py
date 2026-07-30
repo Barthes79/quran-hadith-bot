@@ -38,14 +38,14 @@ def init_db():
             arabic_text TEXT NOT NULL,
             translation_text TEXT NOT NULL,
             tafsir_text TEXT,
-            narrator TEXT,           -- معصوم (مثلاً امام علی ع)
-            source_book TEXT,        -- مثلاً الکافی
+            narrator TEXT,
+            source_book TEXT,
             chapter TEXT,
             hadith_number TEXT
         )
     """)
 
-    # موضوعات هر حدیث (یک حدیث می‌تواند چند موضوع داشته باشد)
+    # موضوعات هر حدیث
     cur.execute("""
         CREATE TABLE IF NOT EXISTS hadith_topics (
             hadith_id INTEGER,
@@ -54,7 +54,7 @@ def init_db():
         )
     """)
 
-    # تنظیمات کاربران (چت خصوصی)
+    # تنظیمات کاربران
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -62,12 +62,12 @@ def init_db():
         )
     """)
 
-    # علاقه‌مندی‌های کاربر (بوکمارک)
+    # علاقه‌مندی‌های کاربر
     cur.execute("""
         CREATE TABLE IF NOT EXISTS favorites (
             user_id INTEGER,
-            item_type TEXT,    -- 'ayah' یا 'hadith'
-            item_ref TEXT,     -- مثلاً '2:255' یا شناسه حدیث
+            item_type TEXT,
+            item_ref TEXT,
             PRIMARY KEY (user_id, item_type, item_ref)
         )
     """)
@@ -89,11 +89,12 @@ def init_db():
             welcome_enabled INTEGER DEFAULT 0,
             welcome_text TEXT,
             delete_service_messages INTEGER DEFAULT 0,
-            block_links INTEGER DEFAULT 0
+            block_links INTEGER DEFAULT 0,
+            multi_goal_enabled INTEGER DEFAULT 1
         )
     """)
 
-    # سوالات مسابقه (Quiz)
+    # سوالات مسابقه
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quiz_questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,16 +103,15 @@ def init_db():
             option_b TEXT NOT NULL,
             option_c TEXT NOT NULL,
             option_d TEXT NOT NULL,
-            correct_option TEXT NOT NULL,  -- 'a', 'b', 'c' یا 'd'
-            category TEXT DEFAULT 'general',      -- quran / nahj / hadith / general
-            difficulty TEXT DEFAULT 'medium'      -- easy / medium / hard
+            correct_option TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            difficulty TEXT DEFAULT 'medium'
         )
     """)
-    # مهاجرت برای دیتابیس‌های قدیمی‌تر که این دو ستون را ندارند
     _ensure_column(cur, "quiz_questions", "category", "TEXT DEFAULT 'general'")
     _ensure_column(cur, "quiz_questions", "difficulty", "TEXT DEFAULT 'medium'")
 
-    # امتیاز کاربران در هر گروه (لیدربورد گروهی)
+    # امتیاز کاربران در هر گروه
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quiz_scores (
             chat_id INTEGER,
@@ -122,7 +122,7 @@ def init_db():
         )
     """)
 
-    # آمار کلی هر کاربر (مستقل از گروه) — برای پروفایل، رتبه‌بندی سراسری و نشان‌ها
+    # آمار کلی هر کاربر
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quiz_user_stats (
             user_id INTEGER PRIMARY KEY,
@@ -135,7 +135,7 @@ def init_db():
         )
     """)
 
-    # آمار عملکرد هر کاربر به تفکیک دسته‌بندی (برای نشان‌های تخصصی)
+    # آمار عملکرد هر کاربر به تفکیک دسته‌بندی
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quiz_category_stats (
             user_id INTEGER,
@@ -155,7 +155,7 @@ def init_db():
         )
     """)
 
-    # تفسیر آیات قرآن (ثبت دستی توسط ادمین، چون API رایگان تفسیر فارسی وجود ندارد)
+    # تفسیر آیات قرآن
     cur.execute("""
         CREATE TABLE IF NOT EXISTS quran_tafsir (
             surah INTEGER,
@@ -166,13 +166,13 @@ def init_db():
         )
     """)
 
-    # نهج‌البلاغه: خطبه‌ها (khutbah)، نامه‌ها (letter)، حکمت‌ها (hekmat)
+    # نهج‌البلاغه
     cur.execute("""
         CREATE TABLE IF NOT EXISTS nahj_balagha (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT NOT NULL,      -- 'khutbah' | 'letter' | 'hekmat'
-            number INTEGER NOT NULL,     -- شماره‌ی متعارف (بر اساس نسخه صبحی صالح)
-            title TEXT,                  -- عنوان اختیاری (مثلاً موضوع خطبه)
+            category TEXT NOT NULL,
+            number INTEGER NOT NULL,
+            title TEXT,
             arabic_text TEXT NOT NULL,
             translation_text TEXT NOT NULL,
             tafsir_text TEXT,
@@ -180,22 +180,22 @@ def init_db():
         )
     """)
 
-    # مفاتیح‌الجنان: ادعیه، زیارات، اعمال روزانه/هفتگی/ماهانه، مناجات و...
+    # مفاتیح‌الجنان
     cur.execute("""
         CREATE TABLE IF NOT EXISTS mafatih (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT NOT NULL,      -- daily | ziyarat | weekly | monthly | munajat | special
-            title TEXT NOT NULL,         -- مثلاً 'دعای کمیل' یا 'زیارت عاشورا'
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
             arabic_text TEXT NOT NULL,
             translation_text TEXT,
             tafsir_text TEXT,
-            image_path TEXT,             -- مسیر فایل تصویر (اختیاری)
-            slug TEXT,                   -- شناسه یکتا برای دسترسی مستقیم به آیتم خاص
-            audio_file_id TEXT           -- شناسه فایل صوتی تلگرام (برای پخش صوتی)
+            image_path TEXT,
+            slug TEXT,
+            audio_file_id TEXT
         )
     """)
 
-    # یادآور اذان (تنظیمات هر کاربر برای دریافت پیام یادآوری قبل از هر اذان)
+    # یادآور اذان
     cur.execute("""
         CREATE TABLE IF NOT EXISTS prayer_reminders (
             user_id INTEGER PRIMARY KEY,
@@ -209,7 +209,6 @@ def init_db():
             user_name TEXT
         )
     """)
-    # مهاجرت برای دیتابیس‌های قدیمی‌تر که این دو ستون را ندارند
     _ensure_column(cur, "prayer_reminders", "group_chat_id", "INTEGER")
     _ensure_column(cur, "prayer_reminders", "user_name", "TEXT")
 
@@ -224,24 +223,58 @@ def init_db():
         )
     """)
 
-    # صلوات‌شمار: ختم/هدف فعال هر گروه (اختیاری)
+    # ============================================================
+    # جداول جدید برای ختم‌های چندگانه صلوات
+    # ============================================================
+
+    # جدول ختم‌های صلوات (چندین ختم همزمان)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS salavat_goals (
-            chat_id INTEGER PRIMARY KEY,
-            goal_count INTEGER,
-            title TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            goal_count INTEGER NOT NULL,
+            title TEXT NOT NULL,
             start_total INTEGER DEFAULT 0,
-            announced INTEGER DEFAULT 0
+            completed INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            announced INTEGER DEFAULT 0,
+            completed_at TIMESTAMP
         )
     """)
 
-    # سازگاری با دیتابیس‌های قدیمی (در صورتی که جداول از قبل ساخته شده باشند)
+    # جدول مشارکت کاربران در ختم‌ها
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS salavat_contributions (
+            goal_id INTEGER,
+            user_id INTEGER,
+            user_name TEXT,
+            amount INTEGER DEFAULT 0,
+            PRIMARY KEY (goal_id, user_id),
+            FOREIGN KEY (goal_id) REFERENCES salavat_goals(id)
+        )
+    """)
+
+    # جدول وضعیت پیام‌های تعاملی (برای حذف پنل‌ها)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS interactive_messages (
+            chat_id INTEGER,
+            message_id INTEGER,
+            user_id INTEGER,
+            goal_id INTEGER,
+            message_type TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (chat_id, message_id)
+        )
+    """)
+
+    # ستون multi_goal_enabled برای گروه‌ها
     try:
-        cur.execute("ALTER TABLE group_settings ADD COLUMN post_interval_hours INTEGER DEFAULT 1")
+        cur.execute("ALTER TABLE group_settings ADD COLUMN multi_goal_enabled INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
         pass
 
-    # ستون‌های تنظیمات پیشرفته‌ی گروه (نوع محتوا، بازه‌ی سکوت، خوش‌آمدگویی و ...)
+    # ستون‌های قبلی برای سازگاری
     for _col_def in [
         "content_hadith INTEGER DEFAULT 1",
         "content_ayah INTEGER DEFAULT 1",
@@ -253,41 +286,19 @@ def init_db():
         "welcome_text TEXT",
         "delete_service_messages INTEGER DEFAULT 0",
         "block_links INTEGER DEFAULT 0",
-        "quiz_custom_time INTEGER",              # NULL = استفاده از زمان پیش‌فرض هر سطح سختی
-        "quiz_buzzer_mode INTEGER DEFAULT 0",     # 1 = حالت زنگ‌اول فعال است
-        "quiz_buzzer_next_delay INTEGER DEFAULT 5",  # فاصله تا سوال بعدی در حالت زنگ‌اول (ثانیه)
+        "quiz_custom_time INTEGER",
+        "quiz_buzzer_mode INTEGER DEFAULT 0",
+        "quiz_buzzer_next_delay INTEGER DEFAULT 5",
     ]:
         try:
             cur.execute(f"ALTER TABLE group_settings ADD COLUMN {_col_def}")
         except sqlite3.OperationalError:
             pass
 
-    try:
-        cur.execute("ALTER TABLE mafatih ADD COLUMN image_path TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cur.execute("ALTER TABLE mafatih ADD COLUMN slug TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    # اضافه کردن ستون صوتی به دیتابیس‌های قدیمی در صورت عدم وجود
-    try:
-        cur.execute("ALTER TABLE mafatih ADD COLUMN audio_file_id TEXT")
-    except sqlite3.OperationalError:
-        pass
-
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mafatih_slug ON mafatih(slug)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_salavat_goals_chat_title ON salavat_goals(chat_id, title)")
 
-    # ---------------------------------------------------------------
-    # موتور جستجوی یکپارچه (حدیث + نهج‌البلاغه + مفاتیح‌الجنان)
-    # از FTS5 استفاده می‌کنیم چون نسبت به LIKE هم بسیار سریع‌تر است
-    # (index-based) و هم امکان رتبه‌بندی نتایج (bm25) و جستجوی
-    # پیشوندی/چندکلمه‌ای را می‌دهد. متن قبل از ایندکس شدن با
-    # normalize_for_search پاک‌سازی می‌شود تا اختلاف عربی/فارسی و
-    # اعراب باعث پیدا نشدن نتیجه‌ی درست نشود.
-    # ---------------------------------------------------------------
+    # موتور جستجوی یکپارچه
     cur.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
             source_type UNINDEXED,
@@ -301,283 +312,281 @@ def init_db():
 
 
 # =====================================================================
-# موتور جستجوی یکپارچه — توابع داخلی برای هم‌گام نگه‌داشتن ایندکس FTS
+# توابع مربوط به صلوات‌شمار با پشتیبانی از ختم‌های متعدد
 # =====================================================================
 
-def _index_item(source_type: str, source_id: int, text_parts):
-    """محتوای یک آیتم (حدیث/نهج/مفاتیح) را نرمال‌سازی کرده و در ایندکس جستجو ثبت/به‌روزرسانی می‌کند."""
-    content = normalize_for_search(" \n ".join(str(p) for p in text_parts if p))
+def increment_salavat(chat_id: int, user_id: int, user_name: str, amount: int = 1):
+    """
+    `amount` واحد به صلوات‌های این کاربر در این گروه اضافه می‌کند
+    و (تعداد شخصی کاربر، مجموع کل گروه) را برمی‌گرداند.
+    """
     conn = get_connection()
     conn.execute(
-        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
-        (source_type, source_id),
-    )
-    if content.strip():
-        conn.execute(
-            "INSERT INTO search_fts (source_type, source_id, content) VALUES (?, ?, ?)",
-            (source_type, source_id, content),
-        )
-    conn.commit()
-    conn.close()
-
-
-def _remove_from_index(source_type: str, source_id: int):
-    conn = get_connection()
-    conn.execute(
-        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
-        (source_type, source_id),
+        """INSERT INTO salavat_stats (chat_id, user_id, user_name, count)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(chat_id, user_id)
+           DO UPDATE SET count = count + excluded.count, user_name = excluded.user_name""",
+        (chat_id, user_id, user_name, amount),
     )
     conn.commit()
+
+    user_count = conn.execute(
+        "SELECT count FROM salavat_stats WHERE chat_id = ? AND user_id = ?",
+        (chat_id, user_id),
+    ).fetchone()["count"]
+
+    chat_total = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()["t"]
+
     conn.close()
+    return user_count, chat_total
 
 
-def _reindex_hadith(hadith_id: int):
-    row = get_hadith_by_id(hadith_id)
-    if not row:
-        _remove_from_index("hadith", hadith_id)
-        return
-    topics = get_hadith_topics(hadith_id)
-    _index_item(
-        "hadith",
-        hadith_id,
-        [
-            row["arabic_text"], row["translation_text"], row["tafsir_text"],
-            row["narrator"], row["source_book"], row["chapter"], row["hadith_number"],
-        ] + topics,
-    )
-
-
-def _reindex_nahj(category: str, number: int):
-    row = get_nahj_item(category, number)
-    if not row:
-        return
-    _index_item(
-        "nahj",
-        row["id"],
-        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
-    )
-
-
-def _reindex_mafatih(item_id: int):
-    row = get_mafatih_by_id(item_id)
-    if not row:
-        _remove_from_index("mafatih", item_id)
-        return
-    _index_item(
-        "mafatih",
-        item_id,
-        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
-    )
-
-
-def rebuild_search_index():
-    """بازسازی کامل ایندکس جستجو از روی ۳ جدول اصلی. برای اجرای یک‌بارهٔ اولیه
-    (یا وقتی داده‌ای مستقیم/دستی در دیتابیس تغییر کرده) استفاده کنید."""
+def get_salavat_chat_total(chat_id: int) -> int:
     conn = get_connection()
-    conn.execute("DELETE FROM search_fts")
-    conn.commit()
+    total = conn.execute(
+        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()["t"]
     conn.close()
+    return total
 
+
+def get_salavat_top(chat_id: int, limit: int = 10):
     conn = get_connection()
-    hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
-    nahj_rows = conn.execute("SELECT * FROM nahj_balagha").fetchall()
-    maf_rows = conn.execute("SELECT * FROM mafatih").fetchall()
-    conn.close()
-
-    for h in hadiths:
-        topics = get_hadith_topics(h["id"])
-        _index_item(
-            "hadith", h["id"],
-            [h["arabic_text"], h["translation_text"], h["tafsir_text"],
-             h["narrator"], h["source_book"], h["chapter"], h["hadith_number"]] + topics,
-        )
-    for n in nahj_rows:
-        _index_item("nahj", n["id"], [n["title"], n["arabic_text"], n["translation_text"], n["tafsir_text"]])
-    for m in maf_rows:
-        _index_item("mafatih", m["id"], [m["title"], m["arabic_text"], m["translation_text"], m["tafsir_text"]])
-
-    print(f"✅ ایندکس جستجو بازسازی شد: {len(hadiths)} حدیث، {len(nahj_rows)} نهج‌البلاغه، {len(maf_rows)} مفاتیح.")
-
-
-def ensure_search_index():
-    """اگر ایندکس خالی است (اولین اجرا بعد از این آپدیت، یا دیتابیس تازه)، یک‌بار می‌سازدش.
-    بعد از آن، ایندکس با هر add/update به‌صورت خودکار هم‌گام نگه داشته می‌شود."""
-    conn = get_connection()
-    count = conn.execute("SELECT COUNT(*) AS c FROM search_fts").fetchone()["c"]
-    conn.close()
-    if count == 0:
-        rebuild_search_index()
-
-
-def _fts_query(match_expr: str, types=None, limit: int = 15):
-    conn = get_connection()
-    sql = "SELECT source_type, source_id, bm25(search_fts) AS rank FROM search_fts WHERE search_fts MATCH ?"
-    params = [match_expr]
-    if types:
-        placeholders = ", ".join("?" for _ in types)
-        sql += f" AND source_type IN ({placeholders})"
-        params.extend(types)
-    sql += " ORDER BY rank LIMIT ?"
-    params.append(limit)
-    try:
-        rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
-        rows = []
+    rows = conn.execute(
+        """SELECT user_id, user_name, count FROM salavat_stats
+           WHERE chat_id = ? ORDER BY count DESC LIMIT ?""",
+        (chat_id, limit),
+    ).fetchall()
     conn.close()
     return rows
 
 
-def _fuzzy_fallback(norm_query: str, types=None, limit: int = 15):
-    """وقتی FTS هیچ نتیجه‌ای پیدا نکرد (مثلاً به‌خاطر غلط تایپی)، با تطبیق فازی
-    (rapidfuzz) بین عبارت کاربر و کل محتوای ایندکس‌شده نزدیک‌ترین‌ها را برمی‌گرداند."""
-    try:
-        from rapidfuzz import process, fuzz
-    except ImportError:
-        return []
+# ============ توابع جدید برای ختم‌های چندگانه ============
 
+def create_salavat_goal(chat_id: int, goal_count: int, title: str, created_by: int = None) -> int:
+    """ایجاد ختم جدید."""
+    start_total = get_salavat_chat_total(chat_id)
     conn = get_connection()
-    sql = "SELECT source_type, source_id, content FROM search_fts"
-    params = []
-    if types:
-        placeholders = ", ".join("?" for _ in types)
-        sql += f" WHERE source_type IN ({placeholders})"
-        params.extend(types)
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    if not rows:
-        return []
-
-    choices = {i: r["content"] for i, r in enumerate(rows)}
-    # از partial_ratio استفاده می‌کنیم چون معمولاً عبارت جستجو خیلی کوتاه‌تر از
-    # متن کامل حدیث/دعا است؛ token_set_ratio در این حالت امتیاز واقعی را کم نشان می‌دهد
-    matches = process.extract(
-        norm_query, choices, scorer=fuzz.partial_ratio, limit=limit, score_cutoff=78
+    cur = conn.execute(
+        """INSERT INTO salavat_goals (chat_id, goal_count, title, start_total, created_by)
+           VALUES (?, ?, ?, ?, ?)""",
+        (chat_id, goal_count, title, start_total, created_by),
     )
-    results = []
-    for _, _score, idx in matches:
-        r = rows[idx]
-        results.append({"source_type": r["source_type"], "source_id": r["source_id"]})
-    return results
+    goal_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return goal_id
 
 
-_TYPE_TABLE = {"hadith": "hadiths", "nahj": "nahj_balagha", "mafatih": "mafatih"}
-
-
-def hydrate_results(raw_results):
-    """
-    نتایج خام (source_type/source_id) را به داده‌ی کامل و آماده‌ی نمایش تبدیل می‌کند.
-    برخلاف نسخه‌ی قبلی، این تابع به‌جای یک کوئری جدا برای هر آیتم (که برای
-    صدها نتیجه بسیار کند بود و باعث تایم‌اوت شدن inline query در تلگرام
-    می‌شد)، برای هر نوع محتوا فقط یک کوئری دسته‌ای (WHERE id IN (...)) می‌زند.
-    فقط روی همان لیستی که واقعاً می‌خواهید نمایش بدهید (مثلاً یک صفحه‌ی ۵۰تایی)
-    صدا بزنید، نه کل نتایج خام.
-    """
-    if not raw_results:
-        return []
-
-    ids_by_type = {"hadith": [], "nahj": [], "mafatih": []}
-    order = []
-    seen = set()
-    for r in raw_results:
-        key = (r["source_type"], r["source_id"])
-        if key in seen or r["source_type"] not in ids_by_type:
-            continue
-        seen.add(key)
-        order.append(key)
-        ids_by_type[r["source_type"]].append(r["source_id"])
-
-    rows_by_key = {}
+def get_active_goals(chat_id: int) -> list:
+    """دریافت لیست ختم‌های فعال یک گروه."""
     conn = get_connection()
-    for stype, ids in ids_by_type.items():
-        if not ids:
-            continue
-        table = _TYPE_TABLE[stype]
-        placeholders = ",".join("?" for _ in ids)
-        fetched = conn.execute(
-            f"SELECT * FROM {table} WHERE id IN ({placeholders})", ids
-        ).fetchall()
-        for row in fetched:
-            rows_by_key[(stype, row["id"])] = row
+    rows = conn.execute(
+        """SELECT g.*, 
+                   COALESCE(SUM(c.amount), 0) as total_contributions,
+                   COUNT(DISTINCT c.user_id) as participants_count
+           FROM salavat_goals g
+           LEFT JOIN salavat_contributions c ON g.id = c.goal_id
+           WHERE g.chat_id = ? AND g.completed = 0
+           GROUP BY g.id
+           ORDER BY g.created_at DESC""",
+        (chat_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_goal_by_id(goal_id: int):
+    """دریافت اطلاعات یک ختم با شناسه."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT g.*, 
+                   COALESCE(SUM(c.amount), 0) as total_contributions,
+                   COUNT(DISTINCT c.user_id) as participants_count
+           FROM salavat_goals g
+           LEFT JOIN salavat_contributions c ON g.id = c.goal_id
+           WHERE g.id = ?
+           GROUP BY g.id""",
+        (goal_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_completed_goals(chat_id: int, limit: int = 5):
+    """دریافت ختم‌های تکمیل‌شده اخیر."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT g.*, 
+                   COALESCE(SUM(c.amount), 0) as total_contributions
+           FROM salavat_goals g
+           LEFT JOIN salavat_contributions c ON g.id = c.goal_id
+           WHERE g.chat_id = ? AND g.completed = 1
+           GROUP BY g.id
+           ORDER BY g.completed_at DESC LIMIT ?""",
+        (chat_id, limit)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_goal_by_slug(chat_id: int, title: str):
+    """دریافت ختم بر اساس عنوان."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM salavat_goals WHERE chat_id = ? AND title LIKE ?",
+        (chat_id, f"%{title}%")
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def contribute_to_goal(goal_id: int, user_id: int, user_name: str, amount: int) -> dict:
+    """
+    ثبت مشارکت کاربر در یک ختم.
+    برمی‌گرداند: {goal_id, total_contributions, remaining, user_contribution, completed, goal}
+    """
+    conn = get_connection()
+    
+    # ثبت مشارکت کاربر
+    conn.execute(
+        """INSERT INTO salavat_contributions (goal_id, user_id, user_name, amount)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(goal_id, user_id) DO UPDATE SET
+               amount = amount + excluded.amount,
+               user_name = excluded.user_name""",
+        (goal_id, user_id, user_name, amount),
+    )
+    
+    # محاسبه مجموع مشارکت‌ها
+    total = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM salavat_contributions WHERE goal_id = ?",
+        (goal_id,)
+    ).fetchone()["total"]
+    
+    # دریافت اطلاعات ختم
+    goal = conn.execute(
+        "SELECT * FROM salavat_goals WHERE id = ?", (goal_id,)
+    ).fetchone()
+    
+    # بررسی تکمیل شدن ختم
+    if goal and not goal["completed"] and total >= goal["goal_count"]:
+        conn.execute(
+            "UPDATE salavat_goals SET completed = 1, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (goal_id,)
+        )
+        conn.commit()
+        
+        # دریافت مجدد اطلاعات به‌روز
+        goal = conn.execute(
+            "SELECT * FROM salavat_goals WHERE id = ?", (goal_id,)
+        ).fetchone()
+        
+        conn.close()
+        return {
+            "goal_id": goal_id,
+            "total_contributions": total,
+            "remaining": 0,
+            "completed": True,
+            "goal": goal,
+            "user_contribution": 0,
+        }
+    
+    # مشارکت کاربر
+    user_contrib = conn.execute(
+        "SELECT amount FROM salavat_contributions WHERE goal_id = ? AND user_id = ?",
+        (goal_id, user_id)
+    ).fetchone()
+    
+    conn.commit()
+    conn.close()
+    
+    return {
+        "goal_id": goal_id,
+        "total_contributions": total,
+        "remaining": max(0, goal["goal_count"] - total if goal else 0),
+        "completed": False,
+        "user_contribution": user_contrib["amount"] if user_contrib else 0,
+        "goal": goal,
+    }
+
+
+def delete_goal(goal_id: int):
+    """حذف یک ختم."""
+    conn = get_connection()
+    conn.execute("DELETE FROM salavat_contributions WHERE goal_id = ?", (goal_id,))
+    conn.execute("DELETE FROM salavat_goals WHERE id = ?", (goal_id,))
+    conn.commit()
     conn.close()
 
-    hydrated = []
-    for stype, sid in order:
-        row = rows_by_key.get((stype, sid))
-        if not row:
-            continue
-        if stype == "hadith":
-            hydrated.append({
-                "type": "hadith", "id": sid, "row": row,
-                "title": row["narrator"] or "حدیث",
-                "arabic": row["arabic_text"], "translation": row["translation_text"],
-                "extra": row["source_book"] or "",
-            })
-        elif stype == "nahj":
-            hydrated.append({
-                "type": "nahj", "id": sid, "row": row,
-                "title": row["title"] or "",
-                "arabic": row["arabic_text"], "translation": row["translation_text"],
-                "extra": {"category": row["category"], "number": row["number"]},
-            })
-        elif stype == "mafatih":
-            hydrated.append({
-                "type": "mafatih", "id": sid, "row": row,
-                "title": row["title"] or "",
-                "arabic": row["arabic_text"], "translation": row["translation_text"] or "",
-                "extra": row["category"] or "",
-            })
-    return hydrated
+
+def get_goal_participants(goal_id: int, limit: int = 10):
+    """دریافت لیست مشارکت‌کنندگان در یک ختم."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT user_id, user_name, amount
+           FROM salavat_contributions
+           WHERE goal_id = ?
+           ORDER BY amount DESC LIMIT ?""",
+        (goal_id, limit)
+    ).fetchall()
+    conn.close()
+    return rows
 
 
-def search_raw(query: str, limit: int = 15, types=None):
-    """
-    فقط تطبیق‌های خام (source_type/source_id) را برمی‌گرداند، بدون واکشی کامل
-    اطلاعات هر آیتم — خیلی سریع است چون فقط از ایندکس FTS می‌خواند.
-    وقتی همه‌ی نتایج را لازم ندارید (مثلاً برای صفحه‌بندی در سرچ اینلاین)،
-    این را با limit بالا صدا بزنید و فقط زیرمجموعه‌ی موردنیاز را با
-    hydrate_results کامل کنید.
-    """
-    norm_q = normalize_for_search(query)
-    tokens = [t for t in norm_q.split() if t]
-    if not tokens:
-        return []
+# ============ توابع مدیریت پیام‌های تعاملی ============
 
-    rows = []
-
-    # ۱) عبارت دقیق (برای عبارت‌های چندکلمه‌ای، بیشترین دقت)
-    if len(tokens) > 1:
-        phrase = '"' + " ".join(tokens) + '"'
-        rows = _fts_query(phrase, types=types, limit=limit)
-
-    # ۲) همه‌ی کلمات باید باشند (پیشوندی) — خوب برای عبارت‌های چندکلمه‌ای که ترتیب دقیق ندارند
-    if not rows and len(tokens) > 1:
-        and_expr = " AND ".join(f"{t}*" for t in tokens)
-        rows = _fts_query(and_expr, types=types, limit=limit)
-
-    # ۳) حداقل یکی از کلمات (پیشوندی) — همچنین مسیر اصلی برای عبارت تک‌کلمه‌ای
-    if not rows:
-        or_expr = " OR ".join(f"{t}*" for t in tokens)
-        rows = _fts_query(or_expr, types=types, limit=limit)
-
-    results = [{"source_type": r["source_type"], "source_id": r["source_id"]} for r in rows]
-
-    # ۴) اگر همچنان چیزی پیدا نشد (مثلاً غلط تایپی)، سراغ تطبیق فازی می‌رویم
-    if not results:
-        results = _fuzzy_fallback(norm_q, types=types, limit=limit)
-
-    return results
+def save_interactive_message(chat_id: int, message_id: int, user_id: int, goal_id: int, message_type: str):
+    """ذخیره پیام تعاملی برای حذف بعدی."""
+    conn = get_connection()
+    conn.execute(
+        """INSERT OR REPLACE INTO interactive_messages (chat_id, message_id, user_id, goal_id, message_type)
+           VALUES (?, ?, ?, ?, ?)""",
+        (chat_id, message_id, user_id, goal_id, message_type),
+    )
+    conn.commit()
+    conn.close()
 
 
-def search_all(query: str, limit: int = 15, types=None):
-    """
-    جستجوی یکپارچه روی حدیث/نهج‌البلاغه/مفاتیح (شناسه‌یابی + واکشی کامل، یکجا).
-    types: تاپل اختیاری برای محدود کردن به یک یا چند نوع، مثلاً ("hadith",)
-    خروجی: لیستی از دیکشنری‌های آماده‌ی نمایش (به ترتیب ارتباط/رتبه).
-    برای لیست‌های بزرگ/صفحه‌بندی‌شده (مثل سرچ اینلاین) به‌جای این تابع از
-    search_raw + hydrate_results (فقط روی همان صفحه) استفاده کنید تا سریع‌تر باشد.
-    """
-    return hydrate_results(search_raw(query, limit=limit, types=types))
+def get_interactive_messages(chat_id: int, user_id: int = None):
+    """دریافت پیام‌های تعاملی یک کاربر/گروه."""
+    conn = get_connection()
+    if user_id:
+        rows = conn.execute(
+            "SELECT * FROM interactive_messages WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM interactive_messages WHERE chat_id = ?",
+            (chat_id,)
+        ).fetchall()
+    conn.close()
+    return rows
 
+
+def delete_interactive_messages(chat_id: int, user_id: int = None):
+    """حذف پیام‌های تعاملی یک کاربر/گروه."""
+    conn = get_connection()
+    if user_id:
+        conn.execute(
+            "DELETE FROM interactive_messages WHERE chat_id = ? AND user_id = ?",
+            (chat_id, user_id)
+        )
+    else:
+        conn.execute(
+            "DELETE FROM interactive_messages WHERE chat_id = ?",
+            (chat_id,)
+        )
+    conn.commit()
+    conn.close()
+
+
+# ============ بقیه توابع دیتابیس ============
 
 def get_user_translation(user_id: int) -> str:
     conn = get_connection()
@@ -802,9 +811,6 @@ def get_random_mafatih_item():
 
 
 def search_hadiths(query: str, limit: int = 20):
-    """جستجوی احادیث با موتور یکپارچه (نرمال‌سازی عربی/فارسی + FTS + فال‌بک فازی).
-    برای سازگاری با کدهای قبلی (findhadith، چت خصوصی و...) خروجی همچنان
-    لیستی از ردیف‌های خام جدول hadiths است."""
     results = search_all(query, limit=limit, types=("hadith",))
     return [r["row"] for r in results]
 
@@ -899,7 +905,6 @@ def count_quiz_questions(category: str = None) -> int:
 
 
 def add_score(chat_id: int, user_id: int, username: str, points: int = 1):
-    """امتیاز گروهی (لیدربورد داخل گروه)."""
     conn = get_connection()
     conn.execute(
         """INSERT INTO quiz_scores (chat_id, user_id, username, score)
@@ -935,10 +940,6 @@ def get_global_leaderboard(limit: int = 10):
 
 def record_quiz_result(chat_id: int, user_id: int, username: str, category: str,
                         is_correct: bool, points: int = 0):
-    """
-    ثبت نتیجه‌ی یک پاسخ در آمار سراسری کاربر (امتیاز کلی، استریک، دسته‌بندی).
-    خروجی: دیکشنری آمار به‌روزشده‌ی کاربر (برای بررسی نشان‌های جدید).
-    """
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1014,7 +1015,6 @@ def get_user_quiz_stats(user_id: int):
 
 
 def award_badge(user_id: int, badge_key: str) -> bool:
-    """نشان را ثبت می‌کند. اگر قبلاً داشته False، اگر تازه گرفته True برمی‌گرداند."""
     conn = get_connection()
     cur = conn.execute(
         "INSERT OR IGNORE INTO quiz_badges (user_id, badge_key) VALUES (?, ?)",
@@ -1118,9 +1118,6 @@ MAFATIH_CATEGORIES = ("daily", "ziyarat", "weekly", "monthly", "munajat", "speci
 def add_mafatih_item(category: str, title: str, arabic_text: str = "",
                       translation_text: str = None, tafsir_text: str = None,
                       image_path: str = None, slug: str = None, audio_file_id: str = None):
-    """
-    ثبت یا بروزرسانی آیتم‌های مفاتیح الجنان همراه با قابلیت پشتیبانی از فایل صوتی.
-    """
     conn = get_connection()
     if slug:
         cur = conn.execute(
@@ -1213,12 +1210,6 @@ def update_mafatih_image(item_id: int, image_path: str):
 
 
 def update_mafatih_audio(item_id: int, audio_file_id: str):
-    """
-    برای اصلاح دستی audio_file_id یک دعا (مثلاً وقتی file_id قبلی نامعتبر
-    شده یا مال بات دیگری بوده و باید با file_id جدیدی که همین بات از یک
-    فایل صوتی گرفته جایگزین شود). توسط دستور ادمین /setmafaudio استفاده
-    می‌شود.
-    """
     conn = get_connection()
     conn.execute(
         "UPDATE mafatih SET audio_file_id = ? WHERE id = ?", (audio_file_id, item_id)
@@ -1263,7 +1254,6 @@ def get_user_stats(user_id: int):
 # ---------------- توابع مربوط به یادآور اذان ----------------
 
 def get_prayer_reminder(user_id: int):
-    """تنظیمات یادآور اذان یک کاربر را برمی‌گرداند (یا None اگر هنوز چیزی تنظیم نکرده)."""
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM prayer_reminders WHERE user_id = ?", (user_id,)
@@ -1273,9 +1263,6 @@ def get_prayer_reminder(user_id: int):
 
 
 def upsert_prayer_reminder(user_id: int, **fields):
-    """ردیف یادآور یک کاربر را می‌سازد یا فیلدهای دلخواهش را به‌روزرسانی می‌کند.
-    فیلدهای مجاز: city_code, minutes_before, remind_fajr, remind_noon,
-    remind_maghrib, enabled."""
     if not fields:
         return
 
@@ -1303,8 +1290,6 @@ def upsert_prayer_reminder(user_id: int, **fields):
 
 
 def toggle_prayer_reminder_azan(user_id: int, azan_key: str) -> int:
-    """وضعیت یادآور یک اذان خاص (fajr/noon/maghrib) را برعکس می‌کند
-    و مقدار جدید (0 یا 1) را برمی‌گرداند."""
     column = f"remind_{azan_key}"
     existing = get_prayer_reminder(user_id)
     current = existing[column] if existing else 0
@@ -1318,8 +1303,6 @@ def set_prayer_reminder_minutes(user_id: int, minutes: int):
 
 
 def get_all_enabled_prayer_reminders():
-    """تمام کاربرهایی که حداقل یک یادآور فعال دارند را برمی‌گرداند
-    (برای زمان‌بندی روزانه‌ی جاب‌های یادآوری)."""
     conn = get_connection()
     rows = conn.execute(
         """SELECT * FROM prayer_reminders
@@ -1330,88 +1313,245 @@ def get_all_enabled_prayer_reminders():
     return rows
 
 
-# ---------------- توابع مربوط به صلوات‌شمار ----------------
+# =====================================================================
+# توابع موتور جستجو
+# =====================================================================
 
-def increment_salavat(chat_id: int, user_id: int, user_name: str, amount: int = 1):
-    """
-    `amount` واحد به صلوات‌های این کاربر در این گروه اضافه می‌کند
-    (مثلاً وقتی پیام «صلوات 50» فرستاده، amount=50) و
-    (تعداد شخصی کاربر، مجموع کل گروه) را برمی‌گرداند.
-    """
+def _index_item(source_type: str, source_id: int, text_parts):
+    content = normalize_for_search(" \n ".join(str(p) for p in text_parts if p))
     conn = get_connection()
     conn.execute(
-        """INSERT INTO salavat_stats (chat_id, user_id, user_name, count)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(chat_id, user_id)
-           DO UPDATE SET count = count + excluded.count, user_name = excluded.user_name""",
-        (chat_id, user_id, user_name, amount),
+        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
+        (source_type, source_id),
+    )
+    if content.strip():
+        conn.execute(
+            "INSERT INTO search_fts (source_type, source_id, content) VALUES (?, ?, ?)",
+            (source_type, source_id, content),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _remove_from_index(source_type: str, source_id: int):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM search_fts WHERE source_type = ? AND source_id = ?",
+        (source_type, source_id),
     )
     conn.commit()
-
-    user_count = conn.execute(
-        "SELECT count FROM salavat_stats WHERE chat_id = ? AND user_id = ?",
-        (chat_id, user_id),
-    ).fetchone()["count"]
-
-    chat_total = conn.execute(
-        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
-        (chat_id,),
-    ).fetchone()["t"]
-
     conn.close()
-    return user_count, chat_total
 
 
-def get_salavat_chat_total(chat_id: int) -> int:
+def _reindex_hadith(hadith_id: int):
+    row = get_hadith_by_id(hadith_id)
+    if not row:
+        _remove_from_index("hadith", hadith_id)
+        return
+    topics = get_hadith_topics(hadith_id)
+    _index_item(
+        "hadith",
+        hadith_id,
+        [
+            row["arabic_text"], row["translation_text"], row["tafsir_text"],
+            row["narrator"], row["source_book"], row["chapter"], row["hadith_number"],
+        ] + topics,
+    )
+
+
+def _reindex_nahj(category: str, number: int):
+    row = get_nahj_item(category, number)
+    if not row:
+        return
+    _index_item(
+        "nahj",
+        row["id"],
+        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
+    )
+
+
+def _reindex_mafatih(item_id: int):
+    row = get_mafatih_by_id(item_id)
+    if not row:
+        _remove_from_index("mafatih", item_id)
+        return
+    _index_item(
+        "mafatih",
+        item_id,
+        [row["title"], row["arabic_text"], row["translation_text"], row["tafsir_text"]],
+    )
+
+
+def rebuild_search_index():
     conn = get_connection()
-    total = conn.execute(
-        "SELECT COALESCE(SUM(count), 0) t FROM salavat_stats WHERE chat_id = ?",
-        (chat_id,),
-    ).fetchone()["t"]
+    conn.execute("DELETE FROM search_fts")
+    conn.commit()
     conn.close()
-    return total
 
-
-def get_salavat_top(chat_id: int, limit: int = 10):
     conn = get_connection()
-    rows = conn.execute(
-        """SELECT user_id, user_name, count FROM salavat_stats
-           WHERE chat_id = ? ORDER BY count DESC LIMIT ?""",
-        (chat_id, limit),
-    ).fetchall()
+    hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
+    nahj_rows = conn.execute("SELECT * FROM nahj_balagha").fetchall()
+    maf_rows = conn.execute("SELECT * FROM mafatih").fetchall()
+    conn.close()
+
+    for h in hadiths:
+        topics = get_hadith_topics(h["id"])
+        _index_item(
+            "hadith", h["id"],
+            [h["arabic_text"], h["translation_text"], h["tafsir_text"],
+             h["narrator"], h["source_book"], h["chapter"], h["hadith_number"]] + topics,
+        )
+    for n in nahj_rows:
+        _index_item("nahj", n["id"], [n["title"], n["arabic_text"], n["translation_text"], n["tafsir_text"]])
+    for m in maf_rows:
+        _index_item("mafatih", m["id"], [m["title"], m["arabic_text"], m["translation_text"], m["tafsir_text"]])
+
+    print(f"✅ ایندکس جستجو بازسازی شد: {len(hadiths)} حدیث، {len(nahj_rows)} نهج‌البلاغه، {len(maf_rows)} مفاتیح.")
+
+
+def ensure_search_index():
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) AS c FROM search_fts").fetchone()["c"]
+    conn.close()
+    if count == 0:
+        rebuild_search_index()
+
+
+def _fts_query(match_expr: str, types=None, limit: int = 15):
+    conn = get_connection()
+    sql = "SELECT source_type, source_id, bm25(search_fts) AS rank FROM search_fts WHERE search_fts MATCH ?"
+    params = [match_expr]
+    if types:
+        placeholders = ", ".join("?" for _ in types)
+        sql += f" AND source_type IN ({placeholders})"
+        params.extend(types)
+    sql += " ORDER BY rank LIMIT ?"
+    params.append(limit)
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
     conn.close()
     return rows
 
 
-def get_salavat_goal(chat_id: int):
+def _fuzzy_fallback(norm_query: str, types=None, limit: int = 15):
+    try:
+        from rapidfuzz import process, fuzz
+    except ImportError:
+        return []
+
     conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM salavat_goals WHERE chat_id = ?", (chat_id,)
-    ).fetchone()
+    sql = "SELECT source_type, source_id, content FROM search_fts"
+    params = []
+    if types:
+        placeholders = ", ".join("?" for _ in types)
+        sql += f" WHERE source_type IN ({placeholders})"
+        params.extend(types)
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
-    return row
+    if not rows:
+        return []
 
-
-def set_salavat_goal(chat_id: int, goal_count: int, title: str):
-    """یک ختم/هدف جدید برای این گروه تعریف می‌کند، از همون لحظه به بعد رو می‌شماره."""
-    start_total = get_salavat_chat_total(chat_id)
-    conn = get_connection()
-    conn.execute(
-        """INSERT INTO salavat_goals (chat_id, goal_count, title, start_total, announced)
-           VALUES (?, ?, ?, ?, 0)
-           ON CONFLICT(chat_id)
-           DO UPDATE SET goal_count = excluded.goal_count, title = excluded.title,
-                          start_total = excluded.start_total, announced = 0""",
-        (chat_id, goal_count, title, start_total),
+    choices = {i: r["content"] for i, r in enumerate(rows)}
+    matches = process.extract(
+        norm_query, choices, scorer=fuzz.partial_ratio, limit=limit, score_cutoff=78
     )
-    conn.commit()
-    conn.close()
+    results = []
+    for _, _score, idx in matches:
+        r = rows[idx]
+        results.append({"source_type": r["source_type"], "source_id": r["source_id"]})
+    return results
 
 
-def mark_salavat_goal_announced(chat_id: int):
+_TYPE_TABLE = {"hadith": "hadiths", "nahj": "nahj_balagha", "mafatih": "mafatih"}
+
+
+def hydrate_results(raw_results):
+    if not raw_results:
+        return []
+
+    ids_by_type = {"hadith": [], "nahj": [], "mafatih": []}
+    order = []
+    seen = set()
+    for r in raw_results:
+        key = (r["source_type"], r["source_id"])
+        if key in seen or r["source_type"] not in ids_by_type:
+            continue
+        seen.add(key)
+        order.append(key)
+        ids_by_type[r["source_type"]].append(r["source_id"])
+
+    rows_by_key = {}
     conn = get_connection()
-    conn.execute(
-        "UPDATE salavat_goals SET announced = 1 WHERE chat_id = ?", (chat_id,)
-    )
-    conn.commit()
+    for stype, ids in ids_by_type.items():
+        if not ids:
+            continue
+        table = _TYPE_TABLE[stype]
+        placeholders = ",".join("?" for _ in ids)
+        fetched = conn.execute(
+            f"SELECT * FROM {table} WHERE id IN ({placeholders})", ids
+        ).fetchall()
+        for row in fetched:
+            rows_by_key[(stype, row["id"])] = row
     conn.close()
+
+    hydrated = []
+    for stype, sid in order:
+        row = rows_by_key.get((stype, sid))
+        if not row:
+            continue
+        if stype == "hadith":
+            hydrated.append({
+                "type": "hadith", "id": sid, "row": row,
+                "title": row["narrator"] or "حدیث",
+                "arabic": row["arabic_text"], "translation": row["translation_text"],
+                "extra": row["source_book"] or "",
+            })
+        elif stype == "nahj":
+            hydrated.append({
+                "type": "nahj", "id": sid, "row": row,
+                "title": row["title"] or "",
+                "arabic": row["arabic_text"], "translation": row["translation_text"],
+                "extra": {"category": row["category"], "number": row["number"]},
+            })
+        elif stype == "mafatih":
+            hydrated.append({
+                "type": "mafatih", "id": sid, "row": row,
+                "title": row["title"] or "",
+                "arabic": row["arabic_text"], "translation": row["translation_text"] or "",
+                "extra": row["category"] or "",
+            })
+    return hydrated
+
+
+def search_raw(query: str, limit: int = 15, types=None):
+    norm_q = normalize_for_search(query)
+    tokens = [t for t in norm_q.split() if t]
+    if not tokens:
+        return []
+
+    rows = []
+
+    if len(tokens) > 1:
+        phrase = '"' + " ".join(tokens) + '"'
+        rows = _fts_query(phrase, types=types, limit=limit)
+
+    if not rows and len(tokens) > 1:
+        and_expr = " AND ".join(f"{t}*" for t in tokens)
+        rows = _fts_query(and_expr, types=types, limit=limit)
+
+    if not rows:
+        or_expr = " OR ".join(f"{t}*" for t in tokens)
+        rows = _fts_query(or_expr, types=types, limit=limit)
+
+    results = [{"source_type": r["source_type"], "source_id": r["source_id"]} for r in rows]
+
+    if not results:
+        results = _fuzzy_fallback(norm_q, types=types, limit=limit)
+
+    return results
+
+
+def search_all(query: str, limit: int = 15, types=None):
+    return hydrate_results(search_raw(query, limit=limit, types=types))
