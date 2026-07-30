@@ -11,6 +11,9 @@
   فرستنده می‌پرسه این صلوات‌ها رو به نیت کدوم ختم می‌فرسته.
 - به محض اینکه خودِ همون کاربر روی یکی از دکمه‌ها بزنه، اون مقدار به ختم
   انتخاب‌شده اضافه می‌شه و پنل حذف می‌شه تا گروه شلوغ نمونه.
+- دستور /salavat یه پنل شیشه‌ای کامل با دکمه‌های ➕ ختم جدید، 🗑 حذف ختم،
+  🏆 نفرات برتر، 🌍 آمار جهانی و 🔄 تازه‌سازی باز می‌کنه (همه‌چیز با ویرایش
+  همون یه پیام انجام می‌شه، نه ارسال پیام‌های جدید).
 """
 
 import logging
@@ -106,6 +109,76 @@ def _goal_status_lines(goal) -> str:
         f"{progress} از {goal['goal_count']} ({remaining} مونده) — "
         f"{goal['participants_count']} نفر شرکت کردن\n"
     )
+
+
+async def _is_group_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
+    """چک می‌کنه کاربر داده‌شده ادمین یا سازنده‌ی گروهه یا نه."""
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        return member.status in ("administrator", "creator")
+    except Exception as e:
+        logger.error(f"خطا در بررسی ادمین بودن (چت {chat_id}, کاربر {user_id}): {e}")
+        return False
+
+
+async def _build_home_panel(context: ContextTypes.DEFAULT_TYPE, chat, owner_id: int):
+    """پنل اصلی /salavat رو می‌سازه: خلاصه‌ی کل + ختم‌های فعال + نفرات برتر
+    + دکمه‌های شیشه‌ای برای مدیریت. برمی‌گردونه (text, InlineKeyboardMarkup)."""
+    total = get_salavat_chat_total(chat.id)
+    active_goals = get_active_goals(chat.id)
+    top = get_salavat_top(chat.id, limit=3)
+    is_admin = await _is_group_admin(context, chat.id, owner_id)
+
+    safe_chat_title = html.escape(chat.title or "این گروه")
+    lines = [
+        f"🕌 <b>پنل صلوات‌شمار «{safe_chat_title}»</b>",
+        "▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️",
+        "",
+        f"📿 مجموع صلوات‌های ثبت‌شده: <b>{total}</b>",
+        "",
+    ]
+
+    if active_goals:
+        lines.append(f"🎯 <b>ختم‌های فعال ({len(active_goals)})</b>")
+        lines.append("▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️")
+        shown = active_goals[:MAX_GOALS_IN_PANEL]
+        for goal in shown:
+            lines.append(_goal_status_lines(goal))
+        if len(active_goals) > MAX_GOALS_IN_PANEL:
+            lines.append(f"… و {len(active_goals) - MAX_GOALS_IN_PANEL} ختم فعال دیگه")
+    else:
+        lines.append("این لحظه هیچ ختم فعالی توی این گروه نیست.")
+        if is_admin:
+            lines.append("با دکمه‌ی «➕ ختم جدید» می‌تونی یکی شروع کنی.")
+        lines.append("")
+
+    if top:
+        lines.append("🏆 <b>سه نفر برتر</b>")
+        lines.append("▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️")
+        medals = ["🥇", "🥈", "🥉"]
+        for i, row in enumerate(top):
+            safe_name = html.escape(row["user_name"] or "کاربر")
+            lines.append(f"{medals[i]} {safe_name} — {row['count']} صلوات")
+        lines.append("")
+
+    lines.append("👇 از دکمه‌های زیر استفاده کن:")
+    text = "\n".join(lines)
+
+    keyboard = []
+    if is_admin:
+        keyboard.append([
+            InlineKeyboardButton("➕ ختم جدید", callback_data=f"salhome_newinfo_{owner_id}"),
+            InlineKeyboardButton("🗑 حذف ختم", callback_data=f"salhome_delete_{owner_id}"),
+        ])
+    keyboard.append([
+        InlineKeyboardButton("🏆 نفرات برتر", callback_data=f"salhome_top_{owner_id}"),
+        InlineKeyboardButton("🌍 آمار جهانی", callback_data=f"salhome_global_{owner_id}"),
+    ])
+    keyboard.append([
+        InlineKeyboardButton("🔄 تازه‌سازی", callback_data=f"salhome_summary_{owner_id}"),
+    ])
+
+    return text, InlineKeyboardMarkup(keyboard)
 
 
 async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -281,8 +354,10 @@ async def salavat_goal_pick_callback(update: Update, context: ContextTypes.DEFAU
 
 
 async def salavat_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور /salavat -- نمایش مجموع گروه، همه‌ی ختم‌های فعال، و نفرات برتر"""
+    """دستور /salavat -- پنل شیشه‌ای اصلی: خلاصه‌ی کل + ختم‌های فعال +
+    نفرات برتر + دکمه‌های مدیریت (اضافه/حذف ختم، آمار جهانی، ...)."""
     chat = update.effective_chat
+    user = update.effective_user
 
     if chat.type not in GROUP_CHAT_TYPES:
         await update.message.reply_text(
@@ -291,29 +366,127 @@ async def salavat_stats_command(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    total = get_salavat_chat_total(chat.id)
-    safe_chat_title = html.escape(chat.title or "این گروه")
-    text = f"🌹 <b>صلوات‌شمار گروه {safe_chat_title}</b>\n\nمجموع تا الان: <b>{total}</b> صلوات\n"
+    text, markup = await _build_home_panel(context, chat, user.id)
+    await update.message.reply_text(text, reply_markup=markup, parse_mode="HTML")
 
-    # همه‌ی ختم‌های فعال
-    active_goals = get_active_goals(chat.id)
-    if active_goals:
-        text += f"\n🎯 <b>ختم‌های فعال ({len(active_goals)}):</b>\n\n"
+
+async def salavat_home_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پاسخ به دکمه‌های پنل اصلی /salavat (سلپنل‌های داخلی: خلاصه، نفرات
+    برتر، آمار جهانی، راهنمای ختم جدید، لیست حذف ختم)."""
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    chat = update.effective_chat
+    clicking_user = update.effective_user
+    data = query.data
+
+    try:
+        action, owner_id_str = data.rsplit("_", 1)
+    except ValueError:
+        await query.answer()
+        return
+
+    if str(clicking_user.id) != owner_id_str:
+        await query.answer("این پنل برای شما نیست 🙏 برای دیدن پنل خودت /salavat رو بزن.", show_alert=True)
+        return
+
+    back_button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"salhome_summary_{clicking_user.id}")]]
+    )
+
+    if action == "salhome_summary":
+        text, markup = await _build_home_panel(context, chat, clicking_user.id)
+        await query.answer()
+        try:
+            await query.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        except Exception as e:
+            logger.debug(f"عدم امکان ویرایش پنل صلوات: {e}")
+        return
+
+    if action == "salhome_top":
+        top = get_salavat_top(chat.id, limit=15)
+        safe_chat_title = html.escape(chat.title or "این گروه")
+        if top:
+            lines = [f"🏆 <b>نفرات برتر صلوات‌شمار «{safe_chat_title}»</b>", "▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️", ""]
+            medals = ["🥇", "🥈", "🥉"]
+            for i, row in enumerate(top):
+                prefix = medals[i] if i < 3 else f"{i + 1}."
+                safe_name = html.escape(row["user_name"] or "کاربر")
+                lines.append(f"{prefix} {safe_name} — {row['count']} صلوات")
+            text = "\n".join(lines)
+        else:
+            text = "هنوز کسی توی این گروه صلواتی ثبت نکرده 🌹"
+        await query.answer()
+        try:
+            await query.message.edit_text(text, reply_markup=back_button, parse_mode="HTML")
+        except Exception as e:
+            logger.debug(f"عدم امکان ویرایش پنل نفرات برتر: {e}")
+        return
+
+    if action == "salhome_global":
+        total = get_salavat_global_total()
+        group_count = get_salavat_global_group_count()
+        text = (
+            "🌍 <b>مجموع کل صلوات‌ها (همه‌ی گروه‌ها)</b>\n▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️\n\n"
+            f"تا الان توی مجموع <b>{group_count}</b> گروه، <b>{total}</b> صلوات فرستاده شده 🤲"
+        )
+        await query.answer()
+        try:
+            await query.message.edit_text(text, reply_markup=back_button, parse_mode="HTML")
+        except Exception as e:
+            logger.debug(f"عدم امکان ویرایش پنل آمار جهانی: {e}")
+        return
+
+    if action == "salhome_newinfo":
+        is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
+        if not is_admin:
+            await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم جدید تعریف کنن.", show_alert=True)
+            return
+        text = (
+            "➕ <b>شروع ختم صلوات جدید</b>\n▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️\n\n"
+            "برای ساختن ختم جدید، این دستور رو با تعداد هدف و عنوان دلخواه بفرست:\n\n"
+            "<code>/salavat_goal 1000 شفای فلانی</code>\n\n"
+            "بعد از ثبت، ختم جدید بلافاصله فعال می‌شه و توی همین پنل نشون داده می‌شه. "
+            "می‌تونی هم‌زمان چند ختم فعال هم داشته باشی."
+        )
+        await query.answer()
+        try:
+            await query.message.edit_text(text, reply_markup=back_button, parse_mode="HTML")
+        except Exception as e:
+            logger.debug(f"عدم امکان ویرایش پنل ختم جدید: {e}")
+        return
+
+    if action == "salhome_delete":
+        is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
+        if not is_admin:
+            await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.", show_alert=True)
+            return
+        active_goals = get_active_goals(chat.id)
+        if not active_goals:
+            await query.answer("در حال حاضر هیچ ختم فعالی نیست.", show_alert=True)
+            return
+        keyboard_rows = []
         for goal in active_goals:
-            text += _goal_status_lines(goal) + "\n"
-    else:
-        text += "\nختم فعالی این لحظه نیست. یه ادمین می‌تونه با /salavat_goal یکی شروع کنه.\n"
+            label = f"🗑 {goal['title']} ({goal['total_contributions']}/{goal['goal_count']})"
+            keyboard_rows.append(
+                [InlineKeyboardButton(label, callback_data=f"salrm_{goal['id']}_{clicking_user.id}")]
+            )
+        keyboard_rows.append(
+            [InlineKeyboardButton("🔙 بازگشت", callback_data=f"salhome_summary_{clicking_user.id}")]
+        )
+        text = (
+            "🗑 <b>حذف ختم</b>\n▫️▫️▫️▫️▫️▫️▫️▫️▫️▫️\n\n"
+            "کدوم ختم رو می‌خوای حذف کنی؟\n⚠️ این کار قابل بازگشت نیست و مشارکت‌های ثبت‌شده هم پاک می‌شن."
+        )
+        await query.answer()
+        try:
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard_rows), parse_mode="HTML")
+        except Exception as e:
+            logger.debug(f"عدم امکان ویرایش پنل حذف ختم: {e}")
+        return
 
-    # نفرات برتر
-    top = get_salavat_top(chat.id, limit=5)
-    if top:
-        text += "\n🏆 <b>نفرات برتر:</b>\n"
-        medals = ["🥇", "🥈", "🥉", "4.", "5."]
-        for i, row in enumerate(top):
-            safe_name = html.escape(row["user_name"] or "کاربر")
-            text += f"{medals[i]} {safe_name} — {row['count']}\n"
-
-    await update.message.reply_text(text, parse_mode="HTML")
+    await query.answer()
 
 
 async def salavat_top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -353,13 +526,7 @@ async def salavat_goal_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # فقط ادمین‌های گروه بتونن ختم تعریف کنن
-    try:
-        member = await context.bot.get_chat_member(chat.id, user.id)
-        is_admin = member.status in ("administrator", "creator")
-    except Exception as e:
-        logger.error(f"خطا در بررسی ادمین بودن برای صلوات‌شمار: {e}")
-        is_admin = False
-
+    is_admin = await _is_group_admin(context, chat.id, user.id)
     if not is_admin:
         await update.message.reply_text("⛔ فقط ادمین‌های گروه می‌تونن ختم صلوات تعریف کنن.")
         return
@@ -415,13 +582,7 @@ async def salavat_delete_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("🌹 این دستور فقط داخل گروه‌ها کار می‌کنه.")
         return
 
-    try:
-        member = await context.bot.get_chat_member(chat.id, user.id)
-        is_admin = member.status in ("administrator", "creator")
-    except Exception as e:
-        logger.error(f"خطا در بررسی ادمین بودن برای حذف ختم صلوات: {e}")
-        is_admin = False
-
+    is_admin = await _is_group_admin(context, chat.id, user.id)
     if not is_admin:
         await update.message.reply_text("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.")
         return
@@ -456,17 +617,18 @@ async def salavat_delete_pick_callback(update: Update, context: ContextTypes.DEF
     clicking_user = update.effective_user
     data = query.data
 
-    # --- انصراف ---
+    # --- انصراف: برگرد به پنل اصلی ---
     if data.startswith("salrmcancel_"):
         owner_id_str = data.split("_", 1)[1]
         if str(clicking_user.id) != owner_id_str:
             await query.answer("این پنل برای شما نیست 🙏", show_alert=True)
             return
         await query.answer("باشه، لغو شد.")
+        text, markup = await _build_home_panel(context, chat, clicking_user.id)
         try:
-            await query.message.delete()
+            await query.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         except Exception as e:
-            logger.debug(f"عدم امکان حذف پنل حذف ختم: {e}")
+            logger.debug(f"عدم امکان بازگشت به پنل اصلی: {e}")
         return
 
     # --- انتخاب یکی از ختم‌ها برای حذف ---
@@ -486,13 +648,7 @@ async def salavat_delete_pick_callback(update: Update, context: ContextTypes.DEF
         return
 
     # چون حذف برگشت‌ناپذیره، ادمین بودن رو دوباره در لحظه‌ی کلیک هم چک می‌کنیم
-    try:
-        member = await context.bot.get_chat_member(chat.id, clicking_user.id)
-        is_admin = member.status in ("administrator", "creator")
-    except Exception as e:
-        logger.error(f"خطا در بررسی مجدد ادمین بودن برای حذف ختم صلوات: {e}")
-        is_admin = False
-
+    is_admin = await _is_group_admin(context, chat.id, clicking_user.id)
     if not is_admin:
         await query.answer("⛔ فقط ادمین‌های گروه می‌تونن ختم حذف کنن.", show_alert=True)
         return
@@ -500,20 +656,21 @@ async def salavat_delete_pick_callback(update: Update, context: ContextTypes.DEF
     goal = get_goal_by_id(goal_id)
     if not goal:
         await query.answer("این ختم قبلاً حذف شده.", show_alert=True)
+        text, markup = await _build_home_panel(context, chat, clicking_user.id)
         try:
-            await query.message.delete()
+            await query.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         except Exception:
             pass
         return
 
     delete_goal(goal_id)
-    safe_title = html.escape(goal["title"])
-
     await query.answer(f"🗑 ختم «{goal['title']}» حذف شد.")
+
+    text, markup = await _build_home_panel(context, chat, clicking_user.id)
     try:
-        await query.message.edit_text(f"🗑 ختم «{safe_title}» حذف شد.", parse_mode="HTML")
+        await query.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     except Exception as e:
-        logger.debug(f"عدم امکان ویرایش پیام بعد از حذف ختم: {e}")
+        logger.debug(f"عدم امکان بازگشت به پنل اصلی بعد از حذف ختم: {e}")
 
 
 async def salavat_global_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

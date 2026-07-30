@@ -77,6 +77,7 @@ from handlers.salavat import (
     salavat_delete_pick_callback,
     salavat_global_command,
     salavat_count_command,
+    salavat_home_callback,
 )
 
 logging.basicConfig(
@@ -241,6 +242,7 @@ def main():
     app.add_handler(CommandHandler("salavat_count", salavat_count_command))
     app.add_handler(CallbackQueryHandler(salavat_goal_pick_callback, pattern="^(salgoal_|salskip_)"))
     app.add_handler(CallbackQueryHandler(salavat_delete_pick_callback, pattern="^salrm"))
+    app.add_handler(CallbackQueryHandler(salavat_home_callback, pattern="^salhome_"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
