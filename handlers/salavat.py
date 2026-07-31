@@ -111,6 +111,29 @@ def _goal_status_lines(goal) -> str:
     )
 
 
+async def _auto_delete_message_job(context: ContextTypes.DEFAULT_TYPE):
+    """جاب یک‌بارمصرف عمومی: یه پیام مشخص رو با chat_id/message_id حذف می‌کنه.
+    برای هر جایی که بخوایم یه پیام رو بعد از چند ثانیه خودکار پاک کنیم استفاده می‌شه."""
+    data = context.job.data
+    try:
+        await context.bot.delete_message(chat_id=data["chat_id"], message_id=data["message_id"])
+    except Exception as e:
+        logger.warning(f"عدم امکان حذف خودکار پیام (چت {data['chat_id']}, پیام {data['message_id']}): {e}")
+
+
+def _schedule_message_auto_delete(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay_seconds: int):
+    """اگه job_queue فعال باشه، حذف یه پیام مشخص رو بعد از delay_seconds ثانیه زمان‌بندی می‌کنه."""
+    if not context.job_queue:
+        logger.warning(f"عدم امکان زمان‌بندی حذف خودکار پیام (چت {chat_id}, پیام {message_id}): job_queue فعال نیست")
+        return
+    context.job_queue.run_once(
+        _auto_delete_message_job,
+        when=delay_seconds,
+        data={"chat_id": chat_id, "message_id": message_id},
+        name=f"auto_delete_{chat_id}_{message_id}",
+    )
+
+
 async def _is_group_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
     """چک می‌کنه کاربر داده‌شده ادمین یا سازنده‌ی گروهه یا نه."""
     try:
@@ -336,6 +359,20 @@ async def salavat_goal_pick_callback(update: Update, context: ContextTypes.DEFAU
     except Exception as e:
         logger.debug(f"عدم امکان حذف پنل صلوات: {e}")
     delete_interactive_message(chat.id, query.message.message_id)
+
+    # پیام تشکر توی همون گروه که بعد از ۲۰ ثانیه خودش رو پاک می‌کنه
+    try:
+        thanks_msg = await context.bot.send_message(
+            chat_id=chat.id,
+            text=(
+                f"🌹 {html.escape(user_name)} عزیز، {amount} صلواتت رو به نیت "
+                f"ختم «{safe_title}» ثبت کردم؛ ممنون از همراهیت 🤲"
+            ),
+            parse_mode="HTML",
+        )
+        _schedule_message_auto_delete(context, chat.id, thanks_msg.message_id, delay_seconds=20)
+    except Exception as e:
+        logger.error(f"خطا در ارسال پیام تشکر صلوات (چت {chat.id}): {e}")
 
     if result["completed"]:
         try:
