@@ -11,9 +11,10 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
         [InlineKeyboardButton("🕋 اوقات شرعی", callback_data="menu_prayer"),
-         InlineKeyboardButton("🔍 جستجو", callback_data="menu_search")],
-        [InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites"),
-         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
+         InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
+        [InlineKeyboardButton("🔍 جستجو", callback_data="menu_search"),
+         InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
+        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
         [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -95,6 +96,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_prayer":
         from handlers.prayer import prayer_back_callback
         await prayer_back_callback(update, context)
+
+    elif query.data == "menu_madahi":
+        from handlers.madahi import madahi_menu_callback
+        await madahi_menu_callback(update, context)
 
     elif query.data == "menu_main":
         await query.edit_message_text(

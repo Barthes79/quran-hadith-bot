@@ -42,6 +42,17 @@ async def madahi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def madahi_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نسخه‌ی callback_query این منو، برای صدا زده شدن از منوی اصلی ربات
+    (دکمه‌ی «🎙 مداحی و مولودی» توی start.py -> menu_madahi)."""
+    query = update.callback_query
+    await query.edit_message_text(
+        "🎙 *مداحی و مولودی*\n\nکدوم رو می‌خوای؟",
+        parse_mode="Markdown",
+        reply_markup=_type_keyboard(),
+    )
+
+
 async def madahi_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """کاربر بین مداحی/مولودی یکی رو انتخاب کرده؛ حالا لیست مناسبت‌ها رو نشون بده"""
     query = update.callback_query
