@@ -368,8 +368,12 @@ def _display_name_fallback(user) -> str:
     return user.first_name or user.full_name or "کاربر"
 
 
-def prayer_keyboard(city_code: int = None, user_id: int = None):
-    """کیبورد دکمه‌های اوقات شرعی با شناسه کاربر"""
+def prayer_keyboard(city_code: int = None, user_id: int = None, is_group: bool = False):
+    """کیبورد دکمه‌های اوقات شرعی با شناسه کاربر.
+
+    is_group=True یعنی این کیبورد داخل یه گروه نمایش داده می‌شه؛ توی این
+    حالت دکمه‌ی «⬅️ بازگشت به منو» نشون داده نمی‌شه (اون دکمه فقط برای
+    برگشتن به منوی اصلی ربات توی پیوی معنی داره)."""
     buttons = []
     
     # دکمه‌های شهرهای پرکاربرد
@@ -388,8 +392,11 @@ def prayer_keyboard(city_code: int = None, user_id: int = None):
     action_buttons = [
         [InlineKeyboardButton("⏰ تنظیم یادآور", callback_data=f"prayer_reminder_{user_id}")],
         [InlineKeyboardButton("📋 دریافت همه شهرها", callback_data=f"prayer_all_cities_{user_id}")],
-        [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
     ]
+    if not is_group:
+        action_buttons.append(
+            [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")]
+        )
     
     buttons.extend(city_buttons)
     buttons.extend(action_buttons)
@@ -417,7 +424,7 @@ async def prayer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         message,
         parse_mode="Markdown",
-        reply_markup=prayer_keyboard(context.user_data["prayer_city"], user_id)
+        reply_markup=prayer_keyboard(context.user_data["prayer_city"], user_id, is_group=(chat_type != "private"))
     )
 
 
@@ -609,13 +616,19 @@ async def prayer_location_handler(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(
                 f"⚠️ متاسفانه شهر '{city}' در لیست ما موجود نیست.\n"
                 "لطفاً یکی از شهرهای موجود را انتخاب کنید.",
-                reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
+                reply_markup=prayer_keyboard(
+                    context.user_data.get("prayer_city", 1), user_id,
+                    is_group=(update.effective_chat.type != "private"),
+                )
             )
     except Exception as e:
         logger.error(f"خطا در تبدیل موقعیت: {e}")
         await update.message.reply_text(
             "⚠️ خطا در دریافت اطلاعات موقعیت. لطفاً شهر مورد نظر را از لیست انتخاب کنید.",
-            reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
+            reply_markup=prayer_keyboard(
+                context.user_data.get("prayer_city", 1), user_id,
+                is_group=(update.effective_chat.type != "private"),
+            )
         )
 
 
@@ -634,7 +647,10 @@ async def prayer_back_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text(
         "🕌 *اوقات شرعی*\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
         parse_mode="Markdown",
-        reply_markup=prayer_keyboard(context.user_data.get("prayer_city", 1), user_id)
+        reply_markup=prayer_keyboard(
+            context.user_data.get("prayer_city", 1), user_id,
+            is_group=(update.effective_chat.type != "private"),
+        )
     )
 
 
@@ -647,10 +663,11 @@ async def show_prayer_times(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     if not result["success"]:
         error_msg = f"⚠️ خطا در دریافت اوقات شرعی: {result.get('error', 'خطای ناشناخته')}\n\nلطفاً دوباره تلاش کنید."
+        is_group = update.effective_chat.type != "private"
         if query:
-            await query.edit_message_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id))
+            await query.edit_message_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id, is_group=is_group))
         else:
-            await update.message.reply_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id))
+            await update.message.reply_text(error_msg, reply_markup=prayer_keyboard(city_code, user_id, is_group=is_group))
         return
     
     message = f"""🕌 *اوقات شرعی {result['city']}*
