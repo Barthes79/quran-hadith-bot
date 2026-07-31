@@ -370,6 +370,12 @@ def main():
             schedule_daily_prayer_reminders,
             time=dtime(hour=0, minute=5, tzinfo=ZoneInfo("Asia/Tehran")),
         )
+    else:
+        logger.error(
+            "⚠️ app.job_queue خالیه! پست روزانه و یادآور اذان هرگز اجرا نمی‌شن. "
+            "این یعنی پکیج job-queue نصب نیست -- روی سرور بزن: "
+            "pip install \"python-telegram-bot[job-queue]\" و ربات رو ری‌استارت کن."
+        )
 
     logger.info("Bot started polling...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

@@ -1,6 +1,7 @@
 # handlers/prayer.py
 import logging
 import html
+import re
 import asyncio
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -111,7 +112,28 @@ def _round_to_minute(dt: datetime) -> datetime:
     return dt.replace(second=0, microsecond=0)
 
 
-async def _rebuild_todays_schedule(context: ContextTypes.DEFAULT_TYPE):
+_DIGIT_TRANSLATION = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_MINUTES_PATTERN = re.compile(r"(\d+)\s*دقیقه|دقیقه\s*(\d+)")
+
+
+def _extract_minutes(text: str):
+    """از روی متنی که کاربر برای «چند دقیقه قبل از اذان» فرستاده، عدد رو
+    استخراج می‌کنه. هم عدد خالی قبوله (مثلاً «15»)، هم عدد همراه با کلمه‌ی
+    «دقیقه» (مثلاً «15 دقیقه» یا «۱۵ دقیقه»). اگه چیزی پیدا نشه None."""
+    normalized = text.strip().translate(_DIGIT_TRANSLATION)
+    if normalized.isdigit():
+        return int(normalized)
+    match = _MINUTES_PATTERN.search(normalized)
+    if not match:
+        return None
+    num_str = match.group(1) or match.group(2)
+    try:
+        return int(num_str)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _rebuild_todays_schedule(context: ContextTypes.DEFAULT_TYPE) -> bool:
     """کل زمان‌بندی امروز رو از صفر می‌سازه (جاب‌های قبلیِ امروز رو پاک می‌کنه
     و دوباره می‌سازه). این‌طوری هم جاب شبانه و هم هر تغییر تنظیماتِ لحظه‌ای
     یک کاربر، همیشه از یک منطق واحد رد می‌شن و باکت‌بندیِ پیام‌های گروهی
@@ -121,10 +143,13 @@ async def _rebuild_todays_schedule(context: ContextTypes.DEFAULT_TYPE):
     ادغام کرد)، ولی پیام تگِ گروهی برای کاربرهایی که توی یه گروه، برای
     همون اذان و همون لحظه یادآور فعال دارن، توی یک پیام واحد ادغام می‌شه
     تا گروه با چندتا پیام جدا شلوغ نشه. اون پیام گروهی هم بعد از رسیدن وقت
-    اذان (+ چند دقیقه فرصت) خودکار حذف می‌شه تا توی تاریخچه‌ی گروه نمونه."""
+    اذان (+ چند دقیقه فرصت) خودکار حذف می‌شه تا توی تاریخچه‌ی گروه نمونه.
+
+    برمی‌گردونه True اگه job_queue فعال بود و زمان‌بندی واقعاً انجام شد،
+    وگرنه False (یعنی هیچ یادآوری‌ای هیچ‌وقت خودکار ارسال نمی‌شه)."""
     if not context.job_queue:
-        logger.error("زمان‌بندی یادآور ممکن نیست: job_queue فعال نیست (احتمالاً APScheduler نصب نشده)")
-        return
+        logger.error("زمان‌بندی یادآور ممکن نیست: job_queue فعال نیست (احتمالاً پکیج APScheduler/job-queue نصب نشده)")
+        return False
 
     now = datetime.now(IRAN_TZ)
     today_str = str(now.date())
@@ -205,12 +230,15 @@ async def _rebuild_todays_schedule(context: ContextTypes.DEFAULT_TYPE):
             name=job_name,
         )
 
+    return True
 
-async def schedule_reminders_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+
+async def schedule_reminders_for_user(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """بلافاصله بعد از تغییر تنظیمات یادآور توسط کاربر صدا زده می‌شود تا همون روز
     هم اذان‌های باقی‌مانده زمان‌بندی بشن (منتظر جاب نیمه‌شب نمونیم). چون
-    پیام‌های گروهی ادغام می‌شن، کل زمان‌بندی امروز از نو ساخته می‌شه."""
-    await _rebuild_todays_schedule(context)
+    پیام‌های گروهی ادغام می‌شن، کل زمان‌بندی امروز از نو ساخته می‌شه.
+    برمی‌گردونه True/False (نتیجه‌ی _rebuild_todays_schedule)."""
+    return await _rebuild_todays_schedule(context)
 
 
 async def schedule_daily_prayer_reminders(context: ContextTypes.DEFAULT_TYPE):
@@ -823,9 +851,22 @@ async def prayer_reminder_toggle_callback(update: Update, context: ContextTypes.
     # همیشه زمان‌بندی امروز رو از نو می‌سازیم (چه فعال شده باشه چه خاموش)،
     # چون rebuild خودش جاب‌های قدیمی امروز رو پاک و از صفر می‌سازه؛ این‌طوری
     # خاموش کردن هم فوراً روی جاب‌های زمان‌بندی‌شده اثر می‌کنه.
-    await schedule_reminders_for_user(user_id, context)
+    scheduled_ok = await schedule_reminders_for_user(user_id, context)
 
     await query.answer("✅ فعال شد" if new_value else "❌ غیرفعال شد")
+    if new_value and not scheduled_ok:
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "⚠️ تنظیماتت ذخیره شد، ولی زمان‌بند (Job Queue) ربات الان فعال نیست، "
+                    "پس این یادآور واقعاً ارسال نمی‌شه. لطفاً به ادمین ربات بگو پکیج job-queue رو "
+                    "نصب/فعال کنه: <code>pip install \"python-telegram-bot[job-queue]\"</code>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.debug(f"عدم امکان ارسال هشدار job_queue به کاربر {user_id}: {e}")
     await show_reminder_menu(update, context, user_id, city_code)
 
 
@@ -843,7 +884,7 @@ async def prayer_reminder_setmin_callback(update: Update, context: ContextTypes.
 
     await query.edit_message_text(
         "⏱ چند دقیقه قبل از اذان یادآوری بفرستم؟\n\n"
-        "یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15)."
+        "یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15 یا «15 دقیقه»)."
     )
 
 
@@ -870,17 +911,24 @@ async def prayer_reminder_minutes_text_handler(update: Update, context: ContextT
     text = (update.message.text or "").strip()
     user_id = update.effective_user.id
 
-    if not text.isdigit() or not (1 <= int(text) <= 180):
-        await update.message.reply_text("⚠️ لطفاً فقط یه عدد بین ۱ تا ۱۸۰ بفرست.")
+    minutes = _extract_minutes(text)
+    if minutes is None or not (1 <= minutes <= 180):
+        await update.message.reply_text(
+            "⚠️ لطفاً یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15 یا «15 دقیقه»)."
+        )
         return True
 
-    minutes = int(text)
     context.user_data["awaiting_reminder_minutes"] = False
     _capture_reminder_context(update, user_id)
     set_prayer_reminder_minutes(user_id, minutes)
-    await schedule_reminders_for_user(user_id, context)
+    scheduled_ok = await schedule_reminders_for_user(user_id, context)
 
     await update.message.reply_text(f"✅ یادآور روی {minutes} دقیقه‌ی قبل تنظیم شد.")
+    if not scheduled_ok:
+        await update.message.reply_text(
+            "⚠️ ولی زمان‌بند (Job Queue) ربات الان فعال نیست، پس این یادآور واقعاً ارسال نمی‌شه. "
+            "لطفاً به ادمین ربات اطلاع بده."
+        )
     city_code = context.user_data.get("prayer_city", 1)
     await show_reminder_menu(update, context, user_id, city_code)
     return True
