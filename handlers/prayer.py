@@ -290,8 +290,9 @@ async def send_prayer_reminder_private(context: ContextTypes.DEFAULT_TYPE):
 async def send_prayer_reminder_group(context: ContextTypes.DEFAULT_TYPE):
     """جاب یک‌بارمصرف: یک پیام واحد که همه‌ی کاربرهایی که توی این گروه، برای
     همین اذان و همین لحظه یادآور فعال دارن رو با هم تگ می‌کنه (به‌جای یه پیام
-    جدا برای هرکدوم که گروه رو شلوغ می‌کرد). بعد از رسیدن وقت اذان (+ ۱۰ دقیقه
-    فرصت)، خودش رو از گروه پاک می‌کنه تا توی تاریخچه‌ی گروه انباشته نشه."""
+    جدا برای هرکدوم که گروه رو شلوغ می‌کرد). بعد از رسیدن وقت اذان (+ به همون
+    تعداد دقیقه‌ای که خودشون برای یادآور تنظیم کرده بودن، به‌عنوان فرصت)،
+    خودش رو از گروه پاک می‌کنه تا توی تاریخچه‌ی گروه انباشته نشه."""
     data = context.job.data
     mentions = "  ".join(
         f'<a href="tg://user?id={uid}">{html.escape(name)}</a>'
@@ -308,7 +309,7 @@ async def send_prayer_reminder_group(context: ContextTypes.DEFAULT_TYPE):
         return
 
     if context.job_queue:
-        delete_at = data["azan_dt"] + timedelta(minutes=10)
+        delete_at = data["azan_dt"] + timedelta(minutes=data["minutes_before"])
         context.job_queue.run_once(
             _delete_group_reminder_message,
             when=delete_at,
