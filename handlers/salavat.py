@@ -46,24 +46,29 @@ MILESTONE_STEP = 50
 MAX_SALAVAT_PER_MESSAGE = 1000
 MAX_GOALS_IN_PANEL = 8  # اگه ختم‌های فعال خیلی زیاد شدن، پنل رو خیلی بزرگ نکنیم
 
-_SALAVAT_PATTERN = re.compile(r"صلوات")
-
-_SALAVAT_NUMBER_PATTERN = re.compile(
-    r"(?:(\d+)\s*(?:تا)?\s*صلوات)|(?:صلوات\s*(?:تا)?\s*(\d+))"
-)
-_PURE_NUMBER_PATTERN = re.compile(r"^\d{1,4}$")
 _DIGIT_TRANSLATION = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
+# پیام باید *کلاً* یکی از این دو شکل باشه تا صلوات حساب بشه (نه فقط شامل کلمه‌ی
+# «صلوات» جایی وسط یه متن بلندتر):
+#   ۱) فقط خودِ کلمه‌ی «صلوات»                -> «صلوات»
+#   ۲) یه عدد + (اختیاری) «تا» + «صلوات»      -> «10 صلوات» یا «10 تا صلوات»
+_SALAVAT_FULL_PATTERN = re.compile(r"^(?:(\d+)\s*(?:تا)?\s*)?صلوات$")
+_PURE_NUMBER_PATTERN = re.compile(r"^\d{1,4}$")
 
-def _extract_salavat_amount(text: str) -> int:
-    """اگه کنار کلمه‌ی صلوات یه عدد نوشته شده باشه (مثل «صلوات 50» یا
-    «۱۰۰ صلوات») همون عدد رو برمی‌گردونه، وگرنه ۱ (یک صلوات ساده)."""
-    normalized = text.translate(_DIGIT_TRANSLATION)
-    match = _SALAVAT_NUMBER_PATTERN.search(normalized)
+
+def _match_salavat_keyword(text: str):
+    """اگه کل پیام دقیقاً یکی از دو فرمتِ «صلوات» یا «عدد [تا] صلوات» باشه،
+    مقدار (amount) رو برمی‌گردونه؛ وگرنه None. دیگه به این که کلمه‌ی «صلوات»
+    یه‌جای وسط یه پیام بلند باشه توجه نمی‌کنیم."""
+    normalized = text.strip().translate(_DIGIT_TRANSLATION)
+    match = _SALAVAT_FULL_PATTERN.match(normalized)
     if not match:
+        return None
+
+    num_str = match.group(1)
+    if not num_str:
         return 1
 
-    num_str = match.group(1) or match.group(2)
     try:
         amount = int(num_str)
     except (TypeError, ValueError):
@@ -217,10 +222,11 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return False
 
     text = message.text.strip()
-    has_keyword = bool(_SALAVAT_PATTERN.search(text))
+    keyword_amount = _match_salavat_keyword(text)
+    has_keyword = keyword_amount is not None
 
     if has_keyword:
-        amount = _extract_salavat_amount(text)
+        amount = keyword_amount
     else:
         # پیام فقط یه عدد ساده هست؛ فقط وقتی به‌حساب صلوات می‌ذاریمش که
         # الان توی این گروه حداقل یه ختم فعال وجود داشته باشه (وگرنه هر
