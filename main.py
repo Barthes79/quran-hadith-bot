@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-from config import BOT_TOKEN, PROXY_URL
+from config import BOT_TOKEN, PROXY_URL, ADMIN_IDS
 from database import init_db, ensure_search_index
 
 from handlers.start import start_command, menu_callback, set_translation_callback, clear_keyboard_command
@@ -138,8 +138,11 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد"""
+    """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد.
+    فقط برای ادمین‌ها کار می‌کنه تا file_id فایل‌ها به کاربرهای عادی لو نره."""
     if not update.message:
+        return
+    if update.effective_user.id not in ADMIN_IDS:
         return
 
     if update.message.audio:
@@ -223,6 +226,14 @@ def main():
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
     app.add_handler(CommandHandler("setmafaudio", set_mafatih_audio_command))
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
+
+    # ثبت توی یه group جدا (group=1) تا با هندلر بالا (که برای آپلود صوت
+    # مفاتیح‌الجنانه) تداخل نکنه؛ توی PTB هر group مستقل از بقیه پردازش
+    # می‌شه، پس همون فایل هم به مافاتیح می‌ره هم دیباگش (فقط برای ادمین) چاپ می‌شه.
+    app.add_handler(
+        MessageHandler(filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, get_file_id_debug),
+        group=1,
+    )
 
     # ==========================================
     # دستورات اوقات شرعی
