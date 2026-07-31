@@ -244,6 +244,19 @@ def init_db():
         )
     """)
 
+    # مداحی و مولودی (فایل‌های صوتی، بر اساس مناسبت)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS madahi (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type TEXT NOT NULL DEFAULT 'madahi',
+            occasion TEXT NOT NULL,
+            title TEXT NOT NULL,
+            reciter TEXT,
+            audio_file_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # یادآور اذان
     cur.execute("""
         CREATE TABLE IF NOT EXISTS prayer_reminders (
@@ -1325,6 +1338,103 @@ def update_mafatih_translation(item_id: int, translation_text: str):
     conn.commit()
     conn.close()
     _reindex_mafatih(item_id)
+
+
+# ===== مداحی و مولودی =====
+
+# مناسبت‌های ثابت پیش‌فرض که همیشه به‌عنوان دکمه نمایش داده می‌شن، حتی اگه
+# هنوز هیچ فایلی براشون اضافه نشده باشه. مناسبت‌های دیگه‌ای که ادمین دستی
+# اضافه کنه (خارج از این لیست) هم خودکار توی منو ظاهر می‌شن، چون
+# get_madahi_occasions اونا رو مستقیم از خودِ دیتابیس می‌خونه.
+MADAHI_DEFAULT_OCCASIONS = [
+    "محرم و عاشورا",
+    "اربعین حسینی",
+    "فاطمیه",
+    "شهادت ائمه",
+    "رحلت پیامبر و ائمه",
+    "ماه رمضان",
+]
+
+MOLODI_DEFAULT_OCCASIONS = [
+    "میلاد پیامبر(ص)",
+    "میلاد امام علی(ع)",
+    "میلاد حضرت زهرا(س)",
+    "میلاد امام حسین(ع)",
+    "نیمه شعبان (امام زمان عج)",
+    "عید غدیر",
+    "عید فطر",
+    "عید قربان",
+]
+
+
+def add_madahi(content_type: str, occasion: str, title: str, audio_file_id: str, reciter: str = None):
+    """یه فایل مداحی/مولودی جدید اضافه می‌کنه. content_type باید 'madahi' یا 'molodi' باشه."""
+    conn = get_connection()
+    cur = conn.execute(
+        """INSERT INTO madahi (content_type, occasion, title, reciter, audio_file_id)
+           VALUES (?, ?, ?, ?, ?)""",
+        (content_type, occasion, title, reciter, audio_file_id),
+    )
+    item_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return item_id
+
+
+def get_madahi_occasions(content_type: str):
+    """لیست مناسبت‌های موجود برای یک نوع محتوا (madahi/molodi)، ترکیب‌شده از
+    مناسبت‌های ثابت پیش‌فرض + هر مناسبت دیگه‌ای که توی دیتابیس واقعاً فایل داره.
+    ترتیب: اول ثابت‌ها (به همون ترتیب تعریف‌شده)، بعد بقیه به ترتیب الفبا."""
+    defaults = MADAHI_DEFAULT_OCCASIONS if content_type == "madahi" else MOLODI_DEFAULT_OCCASIONS
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT occasion FROM madahi WHERE content_type = ? ORDER BY occasion",
+        (content_type,),
+    ).fetchall()
+    conn.close()
+
+    existing = {r["occasion"] for r in rows}
+    ordered = [o for o in defaults]  # ثابت‌ها همیشه نشون داده می‌شن، حتی خالی
+    extra = sorted(o for o in existing if o not in defaults)
+    ordered.extend(extra)
+    return ordered
+
+
+def get_madahi_by_occasion(content_type: str, occasion: str):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM madahi WHERE content_type = ? AND occasion = ? ORDER BY id",
+        (content_type, occasion),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_madahi_by_id(item_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM madahi WHERE id = ?", (item_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def delete_madahi(item_id: int):
+    conn = get_connection()
+    conn.execute("DELETE FROM madahi WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
+
+def count_madahi(content_type: str = None):
+    conn = get_connection()
+    if content_type:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM madahi WHERE content_type = ?", (content_type,)
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) AS c FROM madahi").fetchone()
+    conn.close()
+    return row["c"]
 
 
 # ===== User profile helpers =====

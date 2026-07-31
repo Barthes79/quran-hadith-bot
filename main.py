@@ -67,6 +67,11 @@ from handlers.prayer import (
     prayer_reminder_setmin_callback, prayer_reminder_minutes_text_handler,
     schedule_daily_prayer_reminders, prayer_test_reminder_command,
 )
+from handlers.madahi import (
+    madahi_command, madahi_type_callback, madahi_back_types_callback,
+    madahi_occasion_callback, madahi_page_callback, madahi_play_callback,
+    add_madahi_command, delete_madahi_command, madahi_stats_command,
+)
 from handlers.salavat import (
     salavat_text_handler,
     salavat_stats_command,
@@ -225,6 +230,20 @@ def main():
     app.add_handler(CommandHandler("prayer", prayer_command))
     app.add_handler(CommandHandler("prayer_test_reminder", prayer_test_reminder_command))
 
+    # ==========================================
+    # دستورات مداحی و مولودی
+    # ==========================================
+    app.add_handler(CommandHandler("madahi", madahi_command))
+    app.add_handler(CommandHandler("addmadahi", add_madahi_command))
+    app.add_handler(CommandHandler("delmadahi", delete_madahi_command))
+    app.add_handler(CommandHandler("madahistats", madahi_stats_command))
+
+    # پاسخ به پیام "مداحی"/"مولودی" در چت خصوصی (بدون اسلش)
+    app.add_handler(MessageHandler(
+        filters.Regex("^(مداحی|مولودی|🎙 مداحی و مولودی)$") & filters.ChatType.PRIVATE,
+        madahi_command
+    ))
+
     # پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
         filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
@@ -316,7 +335,16 @@ def main():
     app.add_handler(CallbackQueryHandler(prayer_reminder_callback, pattern="^prayer_reminder_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_reminder_toggle_callback, pattern="^prayer_remind_toggle_(fajr|noon|maghrib)_\\d+$"))
     app.add_handler(CallbackQueryHandler(prayer_reminder_setmin_callback, pattern="^prayer_remind_setmin_\\d+$"))
-    
+
+    # ==========================================
+    # کالبک‌های مداحی و مولودی
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(madahi_type_callback, pattern="^madahi_type_(madahi|molodi)$"))
+    app.add_handler(CallbackQueryHandler(madahi_back_types_callback, pattern="^madahi_back_types$"))
+    app.add_handler(CallbackQueryHandler(madahi_occasion_callback, pattern="^madahi_occ_(madahi|molodi)_\\d+$"))
+    app.add_handler(CallbackQueryHandler(madahi_page_callback, pattern="^madahi_page_(madahi|molodi)_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(madahi_play_callback, pattern="^madahi_play_\\d+$"))
+
     # ==========================================
     # کالبک‌های تنظیمات گروه
     # ==========================================
