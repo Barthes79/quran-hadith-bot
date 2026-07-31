@@ -118,11 +118,10 @@ _MINUTES_PATTERN = re.compile(r"(\d+)\s*دقیقه|دقیقه\s*(\d+)")
 
 def _extract_minutes(text: str):
     """از روی متنی که کاربر برای «چند دقیقه قبل از اذان» فرستاده، عدد رو
-    استخراج می‌کنه. هم عدد خالی قبوله (مثلاً «15»)، هم عدد همراه با کلمه‌ی
-    «دقیقه» (مثلاً «15 دقیقه» یا «۱۵ دقیقه»). اگه چیزی پیدا نشه None."""
+    استخراج می‌کنه. فقط وقتی قبول می‌شه که کلمه‌ی «دقیقه» هم کنار عدد باشه
+    (مثلاً «15 دقیقه» یا «۱۵ دقیقه»)؛ عدد تنها (مثل «15») دیگه قبول نیست.
+    اگه چیزی پیدا نشه None برمی‌گرده."""
     normalized = text.strip().translate(_DIGIT_TRANSLATION)
-    if normalized.isdigit():
-        return int(normalized)
     match = _MINUTES_PATTERN.search(normalized)
     if not match:
         return None
@@ -884,7 +883,8 @@ async def prayer_reminder_setmin_callback(update: Update, context: ContextTypes.
 
     await query.edit_message_text(
         "⏱ چند دقیقه قبل از اذان یادآوری بفرستم؟\n\n"
-        "یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15 یا «15 دقیقه»)."
+        "عدد رو حتماً همراه با کلمه‌ی «دقیقه» بنویس، مثلاً: 15 دقیقه\n"
+        "(بین ۱ تا ۱۸۰)"
     )
 
 
@@ -914,7 +914,8 @@ async def prayer_reminder_minutes_text_handler(update: Update, context: ContextT
     minutes = _extract_minutes(text)
     if minutes is None or not (1 <= minutes <= 180):
         await update.message.reply_text(
-            "⚠️ لطفاً یه عدد بین ۱ تا ۱۸۰ بفرست (مثلاً 15 یا «15 دقیقه»)."
+            "⚠️ باید عدد رو حتماً همراه با کلمه‌ی «دقیقه» بنویسی، مثلاً: 15 دقیقه\n"
+            "(عدد باید بین ۱ تا ۱۸۰ باشه.)"
         )
         return True
 
