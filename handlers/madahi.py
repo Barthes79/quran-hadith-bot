@@ -35,7 +35,19 @@ TYPE_LABELS = {
 # پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
 # ==========================================
 
-MAIN_CATEGORIES = [
+# ==========================================
+# دسته‌بندی ثابتِ مناسبت‌ها (جدا برای مداحی و مولودی)
+# این لیست‌ها دیگه از دیتابیس خونده نمی‌شن؛ ثابت و از قبل تعریف شدن.
+# اگه مناسبتی زیرشاخه داشته باشه (مثل «ماه‌ محرم و صفر» یا «اعیاد شعبانیه»)،
+# باید توی sub همون نوع، زیرشاخه‌ش تعریف بشه؛ در غیر این صورت با انتخابش
+# مستقیم لیست فایل‌های همون مناسبت نشون داده می‌شه.
+#
+# نکته‌ی مهم برای ادمین: وقتی با /addmadahi یا ویزارد داخل منو مداحی/مولودی
+# اضافه می‌کنی، «مناسبت» باید دقیقاً همین متن‌ها باشه (بدون 🏴 یا ❇️)، چون
+# همین متن برای پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
+# ==========================================
+
+MADAHI_MAIN_CATEGORIES = [
     "ماه‌ محرم و صفر",
     "حضرت زهرا س",
     "امیرالمومنین ع",
@@ -51,7 +63,7 @@ MAIN_CATEGORIES = [
     "امام حسن عسکری ع",
 ]
 
-SUB_CATEGORIES = {
+MADAHI_SUB_CATEGORIES = {
     "ماه‌ محرم و صفر": [
         "دهه اول محرم",
         "امام حسین",
@@ -60,9 +72,61 @@ SUB_CATEGORIES = {
     ],
 }
 
+MOLODI_MAIN_CATEGORIES = [
+    "اعیاد شعبانیه",
+    "پیامبر اکرم ص و امام صادق ع",
+    "حضرت زهرا س",
+    "امیرالمومنین ع",
+    "امام حسن ع",
+    "امام زمان عج",
+    "امام باقر ع",
+    "امام کاظم ع",
+    "امام رضا ع",
+    "امام جواد ع",
+    "امام هادی ع",
+    "امام حسن عسکری ع",
+]
 
-def _flag(text: str) -> str:
-    return f"🏴{text}"
+MOLODI_SUB_CATEGORIES = {
+    "اعیاد شعبانیه": [
+        "ولادت امام حسین ع",
+        "ولادت امام سجاد ع",
+        "ولادت حضرت ابالفضل ع",
+        "ولادت حضرت علی اکبر ع",
+    ],
+    "پیامبر اکرم ص و امام صادق ع": [
+        "ولادت پیامبر اکرم ص",
+        "ولادت امام صادق ع",
+        "عید مبعث",
+    ],
+    "امیرالمومنین ع": [
+        "ولادت",
+        "عید غدیر",
+    ],
+    "امام زمان عج": [
+        "ولادت",
+        "امامت",
+    ],
+}
+
+# نگاشتِ نوع محتوا به دسته‌بندی و ایموجیِ مخصوص خودش
+_CATEGORY_CONFIG = {
+    "madahi": {"flag": "🏴", "main": MADAHI_MAIN_CATEGORIES, "sub": MADAHI_SUB_CATEGORIES},
+    "molodi": {"flag": "❇️", "main": MOLODI_MAIN_CATEGORIES, "sub": MOLODI_SUB_CATEGORIES},
+}
+
+
+def _main_categories(content_type: str):
+    return _CATEGORY_CONFIG.get(content_type, {}).get("main", [])
+
+
+def _sub_categories(content_type: str):
+    return _CATEGORY_CONFIG.get(content_type, {}).get("sub", {})
+
+
+def _flag(content_type: str, text: str) -> str:
+    emoji = _CATEGORY_CONFIG.get(content_type, {}).get("flag", "")
+    return f"{emoji}{text}"
 
 
 def _type_keyboard():
@@ -106,10 +170,10 @@ async def madahi_type_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def show_category_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str):
-    """نمایش لیست ثابتِ دسته‌های اصلی (مثل «ماه‌ محرم و صفر»، «حضرت زهرا س» و...)"""
+    """نمایش لیست ثابتِ دسته‌های اصلی (مخصوص هر نوع محتوا: مداحی یا مولودی)"""
     keyboard = []
-    for idx, cat in enumerate(MAIN_CATEGORIES):
-        keyboard.append([InlineKeyboardButton(_flag(cat), callback_data=f"madahi_cat_{content_type}_{idx}")])
+    for idx, cat in enumerate(_main_categories(content_type)):
+        keyboard.append([InlineKeyboardButton(_flag(content_type, cat), callback_data=f"madahi_cat_{content_type}_{idx}")])
     keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="madahi_back_types")])
 
     text = f"{TYPE_LABELS[content_type]}\n\nمناسبت مورد نظرت رو انتخاب کن:"
@@ -156,9 +220,10 @@ def _list_keyboard(content_type: str, path: str, rows, page: int, is_admin: bool
     return InlineKeyboardMarkup(keyboard)
 
 
-def _resolve_category(idx: int):
-    if 0 <= idx < len(MAIN_CATEGORIES):
-        return MAIN_CATEGORIES[idx]
+def _resolve_category(content_type: str, idx: int):
+    categories = _main_categories(content_type)
+    if 0 <= idx < len(categories):
+        return categories[idx]
     return None
 
 
@@ -171,15 +236,15 @@ def _resolve_path(content_type: str, path: str):
         if "-" in path:
             cat_idx_str, sub_idx_str = path.split("-")
             cat_idx, sub_idx = int(cat_idx_str), int(sub_idx_str)
-            category = _resolve_category(cat_idx)
+            category = _resolve_category(content_type, cat_idx)
             if category is None:
                 return None
-            subs = SUB_CATEGORIES.get(category)
+            subs = _sub_categories(content_type).get(category)
             if not subs or not (0 <= sub_idx < len(subs)):
                 return None
             return subs[sub_idx]
         else:
-            return _resolve_category(int(path))
+            return _resolve_category(content_type, int(path))
     except (ValueError, IndexError):
         return None
 
@@ -193,19 +258,19 @@ async def madahi_category_callback(update: Update, context: ContextTypes.DEFAULT
     # callback_data: madahi_cat_{content_type}_{idx}
     _, _, content_type, idx_str = query.data.split("_")
     cat_idx = int(idx_str)
-    category = _resolve_category(cat_idx)
+    category = _resolve_category(content_type, cat_idx)
     if category is None:
         await query.answer("⚠️ این دسته پیدا نشد.", show_alert=True)
         await show_category_menu(update, context, content_type)
         return
 
-    subs = SUB_CATEGORIES.get(category)
+    subs = _sub_categories(content_type).get(category)
     if subs:
         keyboard = []
         for sub_idx, sub in enumerate(subs):
-            keyboard.append([InlineKeyboardButton(_flag(sub), callback_data=f"madahi_occ_{content_type}_{cat_idx}-{sub_idx}")])
+            keyboard.append([InlineKeyboardButton(_flag(content_type, sub), callback_data=f"madahi_occ_{content_type}_{cat_idx}-{sub_idx}")])
         keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")])
-        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(category)}\n\nزیرمجموعه مورد نظرت رو انتخاب کن:"
+        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(content_type, category)}\n\nزیرمجموعه مورد نظرت رو انتخاب کن:"
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
@@ -258,7 +323,7 @@ async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE
     is_admin = update.effective_user.id in ADMIN_IDS
 
     if not rows:
-        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(occasion)}\n\nهنوز چیزی برای این مناسبت اضافه نشده."
+        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(content_type, occasion)}\n\nهنوز چیزی برای این مناسبت اضافه نشده."
         keyboard = []
         if is_admin:
             keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{path}")])
@@ -266,7 +331,7 @@ async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(occasion)}\n\n{len(rows)} مورد پیدا شد:"
+    text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(content_type, occasion)}\n\n{len(rows)} مورد پیدا شد:"
     await query.edit_message_text(
         text,
         reply_markup=_list_keyboard(content_type, path, rows, page, is_admin=is_admin, back_callback=back_callback),
@@ -483,7 +548,7 @@ async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAUL
     }
     await query.edit_message_text(
         f"➕ *افزودن مداحی جدید*\n"
-        f"{TYPE_LABELS.get(content_type, '')} | 📌 {_flag(occasion)}\n\n"
+        f"{TYPE_LABELS.get(content_type, '')} | 📌 {_flag(content_type, occasion)}\n\n"
         "عنوان مداحی رو بفرست (مثلاً «السلام علیک یا اباعبدالله»).\n"
         "برای لغو، در هر مرحله بنویس «لغو».",
         parse_mode="Markdown",
@@ -565,7 +630,7 @@ async def madahi_add_audio_handler(update: Update, context: ContextTypes.DEFAULT
         [InlineKeyboardButton("🏁 پایان و بازگشت به لیست", callback_data=f"madahi_occ_{content_type}_{index_str}")],
     ])
     await message.reply_text(
-        f"✅ اضافه شد (id={item_id})\n🎙 {title}\n📌 مناسبت: {_flag(occasion)}\n\n"
+        f"✅ اضافه شد (id={item_id})\n🎙 {title}\n📌 مناسبت: {_flag(content_type, occasion)}\n\n"
         "می‌خوای همین‌جا یکی دیگه هم برای همین مناسبت اضافه کنی؟",
         reply_markup=keyboard,
     )
