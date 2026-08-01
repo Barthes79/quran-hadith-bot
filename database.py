@@ -1,4 +1,5 @@
 import sqlite3
+import datetime
 from config import DATABASE_PATH
 from text_utils import normalize_for_search
 
@@ -108,6 +109,23 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             preferred_translation TEXT DEFAULT 'makarem'
+        )
+    """)
+
+    # چت‌هایی که ربات توشون حضور داره یا داشته (خصوصی/گروه/سوپرگروه/کانال).
+    # برای دستور ادمین «آمار ربات» استفاده می‌شه: توی کدوم گروه‌هاست و چند
+    # نفر باهاش تعامل داشتن. با ChatMemberHandler (my_chat_member) خودکار
+    # به‌روز می‌مونه؛ is_active=0 یعنی ربات از اون چت حذف/بلاک شده.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chats (
+            chat_id INTEGER PRIMARY KEY,
+            chat_type TEXT,
+            title TEXT,
+            username TEXT,
+            member_count INTEGER,
+            first_seen TEXT,
+            last_seen TEXT,
+            is_active INTEGER DEFAULT 1
         )
     """)
 
@@ -1448,6 +1466,75 @@ def register_user(user_id: int, username: str = None):
     )
     conn.commit()
     conn.close()
+
+
+def count_users() -> int:
+    """تعداد کل کاربرهایی که حداقل یک‌بار با ربات (در پیوی) تعامل داشتن."""
+    conn = get_connection()
+    row = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+    conn.close()
+    return row["c"]
+
+
+# ===== Chat tracking (برای دستور ادمین «آمار ربات») =====
+def upsert_chat(chat_id: int, chat_type: str, title: str = None, username: str = None,
+                 member_count: int = None, is_active: bool = True):
+    """هر بار وضعیت عضویت ربات توی یک چت تغییر کنه (اضافه/حذف/بلاک) یا فقط
+    بخوایم اطلاعاتش رو تازه کنیم، این تابع صدا زده می‌شه. اگه چت قبلاً ثبت
+    نشده بود، یه ردیف جدید می‌سازه؛ وگرنه فقط فیلدهاش رو به‌روز می‌کنه."""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO chats (chat_id, chat_type, title, username, member_count, first_seen, last_seen, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            chat_type = excluded.chat_type,
+            title = excluded.title,
+            username = excluded.username,
+            member_count = COALESCE(excluded.member_count, chats.member_count),
+            last_seen = excluded.last_seen,
+            is_active = excluded.is_active
+        """,
+        (chat_id, chat_type, title, username, member_count, now, now, 1 if is_active else 0),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_active_groups():
+    """لیست گروه‌ها/سوپرگروه‌هایی که ربات الان توشونه (is_active=1)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM chats WHERE is_active = 1 AND chat_type IN ('group', 'supergroup') "
+        "ORDER BY last_seen DESC"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def count_active_groups() -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM chats WHERE is_active = 1 AND chat_type IN ('group', 'supergroup')"
+    ).fetchone()
+    conn.close()
+    return row["c"]
+
+
+def get_known_group_chat_ids():
+    """همه‌ی chat_id هایی که توی جدول‌های مربوط به فعالیت گروهی (تنظیمات
+    گروه، صلوات‌شمار، امتیاز مسابقه) قبلاً دیده شدن — صرف‌نظر از این‌که
+    my_chat_member براشون فایر شده باشه یا نه. فقط برای بک‌فیل یک‌بارهی
+    جدول chats (backfill_chats.py) استفاده می‌شه، تا گروه‌هایی که ربات از
+    قبلِ این قابلیت توشون بوده هم توی /botstats دیده بشن."""
+    conn = get_connection()
+    chat_ids = set()
+    for table in ("group_settings", "salavat_stats", "quiz_scores"):
+        rows = conn.execute(f"SELECT DISTINCT chat_id FROM {table} WHERE chat_id IS NOT NULL").fetchall()
+        chat_ids.update(r["chat_id"] for r in rows)
+    conn.close()
+    return sorted(chat_ids)
 
 
 def get_user_stats(user_id: int):

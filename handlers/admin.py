@@ -8,6 +8,7 @@ from database import (
     get_group_settings, update_group_settings, get_all_active_daily_groups,
     get_random_hadith, get_random_nahj_item, get_random_mafatih_item, get_connection,
     get_mafatih_item_flexible, update_mafatih_audio,
+    upsert_chat, get_active_groups, count_users, register_user,
 )
 from config import ADMIN_IDS
 from handlers.hadith import format_hadith
@@ -560,6 +561,93 @@ async def member_update_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await msg.delete()
         except Exception:
             pass
+
+
+# =====================================================================
+# ردیابی گروه‌هایی که ربات توشونه + آمار کلی برای ادمین‌ها
+# =====================================================================
+# member_update_handler بالا فقط پیام سرویسِ «فلان کاربر اضافه/حذف شد» رو
+# می‌گیره که همیشه قابل‌اعتماد نیست (مثلاً اگه ربات از طریق لینک به گروه
+# اضافه بشه، یا از گروه بلاک/حذف بشه، ممکنه این پیام اصلاً ارسال نشه).
+# my_chat_member رسمی‌ترین و مطمئن‌ترین راهیه که تلگرام برای فهمیدنِ تغییر
+# وضعیت *خودِ ربات* (اضافه شدن/حذف شدن/بلاک شدن/ارتقا) در یک چت می‌ده، پس
+# جدول chats رو همیشه از همین‌جا به‌روز نگه می‌داریم.
+
+_ACTIVE_STATUSES = ("member", "administrator", "creator", "restricted")
+
+
+async def bot_chat_member_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """هر بار وضعیت عضویت خودِ ربات در یک چت تغییر کنه (اضافه شدن به گروه،
+    حذف/ترک/بلاک شدن، ارتقا به ادمین و ...)، این هندلر صدا زده می‌شه و جدول
+    chats رو به‌روز می‌کنه؛ پایه‌ی دستور /botstats همینه."""
+    result = update.my_chat_member
+    if not result:
+        return
+
+    chat = result.chat
+    new_status = result.new_chat_member.status
+    is_active = new_status in _ACTIVE_STATUSES
+
+    member_count = None
+    if is_active and chat.type in ("group", "supergroup"):
+        try:
+            member_count = await context.bot.get_chat_member_count(chat.id)
+        except Exception:
+            member_count = None
+
+    upsert_chat(
+        chat.id, chat.type, title=chat.title, username=chat.username,
+        member_count=member_count, is_active=is_active,
+    )
+
+
+async def track_user_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """با هر آپدیتی که از یک کاربر واقعی میاد (پیام، دکمه، اینلاین‌کوئری و
+    ...) همون کاربر رو (اگه قبلاً نبوده) توی جدول users ثبت می‌کنه؛ مبنای
+    شمارش «چند نفر از ربات استفاده می‌کنن» توی /botstats همینه. چون
+    register_user با INSERT OR IGNORE کار می‌کنه، اجرای مکررش هزینه‌ای نداره
+    و نیازی به شرط اضافه نیست."""
+    user = update.effective_user
+    if not user or user.is_bot:
+        return
+    register_user(user.id, user.username)
+
+
+async def bot_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دستور ادمین: /botstats — تعداد کاربرهای پیوی + لیست گروه‌هایی که ربات
+    الان توشونه. فقط برای ADMIN_IDS کار می‌کنه؛ برای بقیه اصلاً پاسخی داده
+    نمی‌شه، تا حتی وجود این دستور هم برای کاربر عادی لو نره."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+
+    total_users = count_users()
+    groups = get_active_groups()
+
+    lines = [
+        "📊 *آمار ربات* (فقط ادمین‌ها این را می‌بینند)\n",
+        f"👤 کاربران چت خصوصی: {total_users}",
+        f"👥 گروه‌هایی که ربات الان توشونه: {len(groups)}",
+    ]
+
+    MAX_LISTED = 40
+    if groups:
+        lines.append("\n*لیست گروه‌ها:*")
+        for g in groups[:MAX_LISTED]:
+            title = g["title"] or "(بدون نام)"
+            username_part = f" (@{g['username']})" if g["username"] else ""
+            count_part = f" — {g['member_count']} عضو" if g["member_count"] else ""
+            lines.append(f"• {title}{username_part}{count_part}")
+        if len(groups) > MAX_LISTED:
+            lines.append(f"\n… و {len(groups) - MAX_LISTED} گروه دیگر")
+
+    text = "\n".join(lines)
+    try:
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception:
+        # اسم بعضی گروه‌ها ممکنه کاراکترهای خاص مارک‌داون (مثل _ یا *) داشته
+        # باشه و parse رو خراب کنه؛ در این حالت بدون parse_mode می‌فرستیم تا
+        # حداقل خودِ آمار از دست نره.
+        await update.message.reply_text(text)
 
 
 # =====================================================================

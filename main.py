@@ -5,7 +5,8 @@ from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, InlineQueryHandler, filters, ContextTypes,
+    MessageHandler, InlineQueryHandler, ChatMemberHandler, TypeHandler,
+    filters, ContextTypes,
 )
 from telegram.request import HTTPXRequest
 
@@ -52,6 +53,7 @@ from handlers.admin import (
     group_settings_command, group_settings_router,
     daily_post_job, set_welcome_command, member_update_handler, link_guard_handler,
     set_mafatih_audio_command, mafatih_audio_upload_handler,
+    bot_chat_member_update_handler, bot_stats_command, track_user_activity,
 )
 from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
@@ -200,6 +202,7 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(CommandHandler("botstats", bot_stats_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
     app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
@@ -328,7 +331,7 @@ def main():
     app.add_handler(CallbackQueryHandler(hadith_view_callback, pattern="^hadithview_"))
     app.add_handler(CallbackQueryHandler(search_exit_callback, pattern="^search_exit$"))
     app.add_handler(CallbackQueryHandler(search_back_callback, pattern="^search_back$"))
-    # دکمه‌ی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih)
+    # دکمه‌ی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih/madahi)
     app.add_handler(CallbackQueryHandler(search_start_callback, pattern="^search_start_"))
 
     # ==========================================
@@ -398,6 +401,17 @@ def main():
         filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER,
         member_update_handler,
     ))
+
+    # ردیابی مطمئنِ اضافه/حذف شدن خودِ ربات از هر چت (گروه/سوپرگروه/کانال)؛
+    # پایه‌ی دستور ادمین /botstats. برخلاف هندلر بالا (که فقط پیام سرویسِ
+    # داخل گروه رو می‌بینه)، my_chat_member رو تلگرام همیشه و مستقیم برای
+    # خودِ ربات می‌فرسته، حتی اگه اضافه/حذف شدن از طریق لینک یا بلاک باشه.
+    app.add_handler(ChatMemberHandler(bot_chat_member_update_handler, ChatMemberHandler.MY_CHAT_MEMBER))
+
+    # ثبت خاموشِ کاربرهای واقعی (برای شمارش «چند نفر از ربات استفاده
+    # می‌کنن» در /botstats). group=-1 یعنی مستقل و قبل از بقیه‌ی هندلرها
+    # اجرا می‌شه و جلوی هیچ‌کدوم از هندلرهای دیگه رو نمی‌گیره.
+    app.add_handler(TypeHandler(Update, track_user_activity), group=-1)
 
     # ==========================================
     # ضداسپم لینک
