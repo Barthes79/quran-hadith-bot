@@ -2,6 +2,7 @@ import re
 import logging
 import hashlib
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from database import (
     get_all_topics, get_hadiths_by_topic, get_random_hadith,
@@ -217,7 +218,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     from database import search_all
 
-    results = search_all(text, limit=100)
+    results = search_all(text, limit=15)
 
     if not results:
         await update.message.reply_text("چیزی با این عبارت پیدا نشد.")
@@ -232,11 +233,19 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
     from handlers.mafatih import MAFATIH_ITEM_LOCATION
 
+    # تلگرام حجم reply_markup را محدود می‌کند؛ با نتایج زیاد (لیبل‌های فارسی
+    # چندبایتی) به‌راحتی از این حد رد می‌شویم و کل پیام با خطای «Reply markup
+    # is too long» رد می‌شود (بدون هیچ پیامی به کاربر). برای امنیت، حداکثر
+    # ۱۰ دکمه نشان می‌دهیم و لیبل هر کدام را کوتاه‌تر می‌کنیم.
+    MAX_BUTTONS = 10
+    LABEL_LEN = 35
+    shown_results = results[:MAX_BUTTONS]
+
     buttons = []
-    for item in results:
+    for item in shown_results:
         row = item["row"]
         if item["type"] == "hadith":
-            preview = (row["translation_text"] or row["arabic_text"] or "")[:35]
+            preview = (row["translation_text"] or row["arabic_text"] or "")[:LABEL_LEN]
             label = f"📿 {preview}"
             callback_data = f"hadithview_{row['id']}"
         elif item["type"] == "nahj":
@@ -254,12 +263,27 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             sub_label = location[1] if location else "📗 مفاتیح‌الجنان"
             label = f"{sub_label} — {row['title']}"
             callback_data = f"mafitem_{identifier}"
-        buttons.append([InlineKeyboardButton(label[:60], callback_data=callback_data)])
+        buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
 
-    await update.message.reply_text(
-        f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:",
-        reply_markup=InlineKeyboardMarkup(buttons),
+    count_note = (
+        f" (۱۰ مورد اول نشان داده شد؛ برای دیدن همه‌ی نتایج از @نام_ربات {text} استفاده کنید)"
+        if len(results) > MAX_BUTTONS else ""
     )
+    message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:{count_note}"
+
+    try:
+        await update.message.reply_text(
+            message_text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+    except BadRequest as e:
+        # اگر بازهم (مثلاً به دلیل کاراکترهای خاص) از حد تلگرام رد شدیم، حداقل
+        # یک پیام متنی بدون دکمه بفرست تا کاربر بی‌پاسخ نماند.
+        logger.warning(f"reply_markup سرچ رد شد ({e})؛ ارسال fallback بدون دکمه.")
+        await update.message.reply_text(
+            f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد.\n"
+            f"برای دیدن نتایج از حالت اینلاین استفاده کنید: @نام_ربات {text}"
+        )
 
 
 # ---------------- دستور ادمین برای افزودن حدیث ----------------
