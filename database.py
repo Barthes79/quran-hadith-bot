@@ -922,7 +922,7 @@ def get_random_mafatih_item():
     return row
 
 
-def search_hadiths(query: str, limit: int = 20):
+def search_hadiths(query: str, limit: int = 100):
     results = search_all(query, limit=limit, types=("hadith",))
     return [r["row"] for r in results]
 
@@ -1626,7 +1626,7 @@ def ensure_search_index():
         rebuild_search_index()
 
 
-def _fts_query(match_expr: str, types=None, limit: int = 15):
+def _fts_query(match_expr: str, types=None, limit: int = 100):
     conn = get_connection()
     sql = "SELECT source_type, source_id, bm25(search_fts) AS rank FROM search_fts WHERE search_fts MATCH ?"
     params = [match_expr]
@@ -1644,7 +1644,7 @@ def _fts_query(match_expr: str, types=None, limit: int = 15):
     return rows
 
 
-def _fuzzy_fallback(norm_query: str, types=None, limit: int = 15):
+def _fuzzy_fallback(norm_query: str, types=None, limit: int = 100):
     try:
         from rapidfuzz import process, fuzz
     except ImportError:
@@ -1734,7 +1734,7 @@ def hydrate_results(raw_results):
     return hydrated
 
 
-def search_raw(query: str, limit: int = 15, types=None):
+def search_raw(query: str, limit: int = 100, types=None):
     norm_q = normalize_for_search(query)
     tokens = [t for t in norm_q.split() if t]
     if not tokens:
@@ -1762,5 +1762,5 @@ def search_raw(query: str, limit: int = 15, types=None):
     return results
 
 
-def search_all(query: str, limit: int = 15, types=None):
+def search_all(query: str, limit: int = 100, types=None):
     return hydrate_results(search_raw(query, limit=limit, types=types))
