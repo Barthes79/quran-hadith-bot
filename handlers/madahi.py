@@ -1,5 +1,6 @@
 # handlers/madahi.py
 import logging
+import time
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, filters as tg_filters
@@ -290,39 +291,68 @@ async def madahi_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
 # ==========================================
 
 # user_id ادمین -> وضعیت ویزارد جاری‌اش
-# {"content_type", "occasion", "index_str", "step": "title"|"reciter"|"audio", "title", "reciter"}
+# {"chat_id", "content_type", "occasion", "index_str", "step": "title"|"reciter"|"audio",
+#  "title", "reciter", "updated_at"}
 _PENDING_MADAHI_ADD: dict[int, dict] = {}
 
+# اگه بیش از این مدت از آخرین قدمِ ویزارد بگذره، خودش خودکار لغو می‌شه؛ این
+# جلوی این حالت رو می‌گیره که یه ویزاردِ نیمه‌کاره و فراموش‌شده برای همیشه
+# فعال بمونه و بعداً پیام‌های عادیِ ادمین رو (حتی توی یه گروه بی‌ربط) قاپ بزنه.
+_ADD_WIZARD_TIMEOUT_SECONDS = 10 * 60
 
-def has_pending_madahi_add(user_id: int) -> bool:
-    """آیا این ادمین وسط ویزارد افزودن مداحیه (هر مرحله‌ای: عنوان/مداح/صوت).
+
+def _get_active_state(user_id: int, chat_id: int = None):
+    """وضعیت جاریِ ویزارد رو برمی‌گردونه، فقط اگه هنوز منقضی نشده باشه و
+    (در صورت دادنِ chat_id) توی همون چتی باشه که ویزارد توش شروع شده. در غیر
+    این صورت (منقضی شده یا چت فرق داره)، وضعیت رو پاک می‌کنه و None برمی‌گردونه."""
+    state = _PENDING_MADAHI_ADD.get(user_id)
+    if not state:
+        return None
+
+    if time.time() - state.get("updated_at", 0) > _ADD_WIZARD_TIMEOUT_SECONDS:
+        _PENDING_MADAHI_ADD.pop(user_id, None)
+        return None
+
+    if chat_id is not None and state.get("chat_id") != chat_id:
+        return None
+
+    return state
+
+
+def has_pending_madahi_add(user_id: int, chat_id: int) -> bool:
+    """آیا این ادمین، توی همین چت، وسط ویزارد افزودن مداحیه (هر مرحله‌ای).
     برای فیلتر هندلر متنی توی main.py استفاده می‌شه، تا فقط وقتی این True
     باشه پیام متنی رو بگیریم، وگرنه general_text_handler عادی کار خودشو بکنه."""
-    return user_id in _PENDING_MADAHI_ADD
+    return _get_active_state(user_id, chat_id) is not None
 
 
-def is_awaiting_madahi_audio(user_id: int) -> bool:
-    """آیا این ادمین دقیقاً منتظر فرستادن فایل صوتیه (مرحله‌ی آخر ویزارد).
-    برای فیلتر هندلر صوتی توی main.py استفاده می‌شه، تا فقط توی این حالت
-    جلوی mafatih_audio_upload_handler عمومی رو بگیریم."""
-    state = _PENDING_MADAHI_ADD.get(user_id)
+def is_awaiting_madahi_audio(user_id: int, chat_id: int) -> bool:
+    """آیا این ادمین، توی همین چت، دقیقاً منتظر فرستادن فایل صوتیه (مرحله‌ی
+    آخر ویزارد). برای فیلتر هندلر صوتی توی main.py استفاده می‌شه."""
+    state = _get_active_state(user_id, chat_id)
     return bool(state and state.get("step") == "audio")
 
 
 class _MadahiPendingTextFilter(tg_filters.MessageFilter):
-    """True فقط وقتی فرستنده‌ی پیام وسط ویزارد افزودن مداحیه."""
+    """True فقط وقتی فرستنده‌ی پیام، توی همین چت، وسط ویزارد افزودن مداحیه."""
 
     def filter(self, message):
         user = message.from_user
-        return bool(user) and has_pending_madahi_add(user.id)
+        chat = message.chat
+        if not user or not chat:
+            return False
+        return has_pending_madahi_add(user.id, chat.id)
 
 
 class _MadahiPendingAudioFilter(tg_filters.MessageFilter):
-    """True فقط وقتی فرستنده‌ی پیام دقیقاً منتظر فایل صوتیِ ویزارده."""
+    """True فقط وقتی فرستنده‌ی پیام، توی همین چت، دقیقاً منتظر فایل صوتیِ ویزارده."""
 
     def filter(self, message):
         user = message.from_user
-        return bool(user) and is_awaiting_madahi_audio(user.id)
+        chat = message.chat
+        if not user or not chat:
+            return False
+        return is_awaiting_madahi_audio(user.id, chat.id)
 
 
 # این دوتا رو مستقیماً توی main.py ایمپورت و به‌عنوان فیلترِ MessageHandler
@@ -349,10 +379,12 @@ async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAUL
 
     await query.answer()
     _PENDING_MADAHI_ADD[user_id] = {
+        "chat_id": update.effective_chat.id,
         "content_type": content_type,
         "occasion": occasion,
         "index_str": index_str,
         "step": "title",
+        "updated_at": time.time(),
     }
     await query.edit_message_text(
         f"➕ *افزودن مداحی جدید*\n"
@@ -368,7 +400,7 @@ async def madahi_add_text_handler(update: Update, context: ContextTypes.DEFAULT_
     یا اسم مداح) می‌گیره. اگه این ادمین وسط ویزارد نباشه، کاری نمی‌کنه تا
     هندلرهای دیگه‌ی پیام متنی (مثل جستجوی حدیث/آیه) خودشون پیام رو بگیرن."""
     user_id = update.effective_user.id
-    state = _PENDING_MADAHI_ADD.get(user_id)
+    state = _get_active_state(user_id, update.effective_chat.id)
     if not state:
         return
 
@@ -379,6 +411,8 @@ async def madahi_add_text_handler(update: Update, context: ContextTypes.DEFAULT_
         _PENDING_MADAHI_ADD.pop(user_id, None)
         await message.reply_text("❌ عملیات افزودن مداحی لغو شد.")
         return
+
+    state["updated_at"] = time.time()
 
     if state["step"] == "title":
         if not text:
@@ -403,7 +437,7 @@ async def madahi_add_audio_handler(update: Update, context: ContextTypes.DEFAULT
     """وقتی ادمینی که وسط ویزارد افزودن مداحیه و منتظر فایل صوتیه، audio یا
     voice بفرسته، همینجا در دیتابیس ثبتش می‌کنه."""
     user_id = update.effective_user.id
-    state = _PENDING_MADAHI_ADD.get(user_id)
+    state = _get_active_state(user_id, update.effective_chat.id)
     if not state or state.get("step") != "audio":
         return
 
