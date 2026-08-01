@@ -265,11 +265,15 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             callback_data = f"mafitem_{identifier}"
         buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
 
-    count_note = (
-        f" (۱۰ مورد اول نشان داده شد؛ برای دیدن همه‌ی نتایج از @Laheghbot {text} استفاده کنید)"
-        if len(results) > MAX_BUTTONS else ""
-    )
-    message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:{count_note}"
+    if len(results) > MAX_BUTTONS:
+        buttons.append([
+            InlineKeyboardButton(
+                "🔎 دیدن همه‌ی نتایج (حالت اینلاین)",
+                switch_inline_query_current_chat=text,
+            )
+        ])
+
+    message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:"
 
     try:
         await update.message.reply_text(
@@ -281,8 +285,10 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         # یک پیام متنی بدون دکمه بفرست تا کاربر بی‌پاسخ نماند.
         logger.warning(f"reply_markup سرچ رد شد ({e})؛ ارسال fallback بدون دکمه.")
         await update.message.reply_text(
-            f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد.\n"
-            f"برای دیدن نتایج از حالت اینلاین استفاده کنید: @Laheghbot {text}"
+            f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔎 دیدن نتایج (حالت اینلاین)", switch_inline_query_current_chat=text)]]
+            ),
         )
 
 
