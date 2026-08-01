@@ -266,7 +266,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
 
     count_note = (
-        f" (۱۰ مورد اول نشان داده شد؛ برای دیدن همه‌ی نتایج از @نام_ربات {text} استفاده کنید)"
+        f" (۱۰ مورد اول نشان داده شد؛ برای دیدن همه‌ی نتایج از @Laheghbot {text} استفاده کنید)"
         if len(results) > MAX_BUTTONS else ""
     )
     message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:{count_note}"
@@ -282,7 +282,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.warning(f"reply_markup سرچ رد شد ({e})؛ ارسال fallback بدون دکمه.")
         await update.message.reply_text(
             f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد.\n"
-            f"برای دیدن نتایج از حالت اینلاین استفاده کنید: @نام_ربات {text}"
+            f"برای دیدن نتایج از حالت اینلاین استفاده کنید: @Laheghbot {text}"
         )
 
 
