@@ -71,6 +71,8 @@ from handlers.madahi import (
     madahi_command, madahi_type_callback, madahi_back_types_callback,
     madahi_occasion_callback, madahi_page_callback, madahi_play_callback,
     add_madahi_command, delete_madahi_command, madahi_stats_command,
+    madahi_add_start_callback, madahi_add_text_handler, madahi_add_audio_handler,
+    madahi_pending_text_filter, madahi_pending_audio_filter,
 )
 from handlers.salavat import (
     salavat_text_handler,
@@ -225,6 +227,11 @@ def main():
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
     app.add_handler(CommandHandler("setmafaudio", set_mafatih_audio_command))
+    # باید قبل از هندلر عمومی زیر ثبت بشه: توی PTB اولین هندلرِ هم‌گروهی که
+    # فیلترش match کنه انتخاب می‌شه، پس وقتی ادمینی وسط ویزارد افزودن مداحی
+    # و منتظر فایل صوتیه، این یکی جلوی mafatih_audio_upload_handler رو
+    # می‌گیره؛ در غیر این صورت (فیلترش False باشه) هندلر بعدی طبق روال قبل کار می‌کنه.
+    app.add_handler(MessageHandler((filters.AUDIO | filters.VOICE) & madahi_pending_audio_filter, madahi_add_audio_handler))
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ثبت توی یه group جدا (group=1) تا با هندلر بالا (که برای آپلود صوت
@@ -248,6 +255,10 @@ def main():
     app.add_handler(CommandHandler("addmadahi", add_madahi_command))
     app.add_handler(CommandHandler("delmadahi", delete_madahi_command))
     app.add_handler(CommandHandler("madahistats", madahi_stats_command))
+
+    # ویزارد افزودن سریع مداحی از توی خودِ منو (دکمه‌ی «➕ افزودن مداحی به
+    # این مناسبت»). هندلر متنی‌اش پایین‌تر، کنار general_text_handler ثبت شده.
+    app.add_handler(CallbackQueryHandler(madahi_add_start_callback, pattern="^madahi_addstart_"))
 
     # پاسخ به پیام "مداحی"/"مولودی" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
@@ -395,6 +406,10 @@ def main():
     # ==========================================
     # هندلر پیام‌های متنی
     # ==========================================
+    # باید قبل از general_text_handler ثبت بشه؛ فیلترش فقط وقتی True می‌شه که
+    # فرستنده وسط ویزارد افزودن مداحی باشه (مرحله‌ی عنوان یا اسم مداح)، پس
+    # برای بقیه‌ی کاربران هیچ تغییری توی رفتار general_text_handler ایجاد نمی‌شه.
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & madahi_pending_text_filter, madahi_add_text_handler))
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
 
