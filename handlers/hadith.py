@@ -217,7 +217,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     from database import search_all
 
-    results = search_all(text, limit=15)
+    results = search_all(text, limit=100)
 
     if not results:
         await update.message.reply_text("چیزی با این عبارت پیدا نشد.")
