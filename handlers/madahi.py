@@ -2,7 +2,7 @@
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, filters as tg_filters
 
 from config import ADMIN_IDS
 from database import (
@@ -94,7 +94,7 @@ async def madahi_back_types_callback(update: Update, context: ContextTypes.DEFAU
     )
 
 
-def _list_keyboard(content_type: str, index_str: str, rows, page: int):
+def _list_keyboard(content_type: str, index_str: str, rows, page: int, is_admin: bool = False):
     start = page * PAGE_SIZE
     page_rows = rows[start:start + PAGE_SIZE]
 
@@ -112,6 +112,9 @@ def _list_keyboard(content_type: str, index_str: str, rows, page: int):
         nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"madahi_page_{content_type}_{index_str}_{page + 1}"))
     if nav_row:
         keyboard.append(nav_row)
+
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{index_str}")])
 
     keyboard.append([InlineKeyboardButton("⬅️ بازگشت به مناسبت‌ها", callback_data=f"madahi_type_{content_type}")])
     return InlineKeyboardMarkup(keyboard)
@@ -159,17 +162,19 @@ async def madahi_page_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str, occasion: str, index_str: str, page: int):
     rows = get_madahi_by_occasion(content_type, occasion)
     query = update.callback_query
+    is_admin = update.effective_user.id in ADMIN_IDS
 
     if not rows:
         text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {occasion}\n\nهنوز چیزی برای این مناسبت اضافه نشده."
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")]
-        ])
-        await query.edit_message_text(text, reply_markup=keyboard)
+        keyboard = []
+        if is_admin:
+            keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{index_str}")])
+        keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {occasion}\n\n{len(rows)} مورد پیدا شد:"
-    await query.edit_message_text(text, reply_markup=_list_keyboard(content_type, index_str, rows, page))
+    await query.edit_message_text(text, reply_markup=_list_keyboard(content_type, index_str, rows, page, is_admin=is_admin))
 
 
 async def madahi_play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -274,4 +279,164 @@ async def madahi_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
         f"🎙 مداحی: {madahi_count}\n"
         f"🎉 مولودی: {molodi_count}\n"
         f"جمع کل: {total}"
+    )
+
+
+# ==========================================
+# ویزارد افزودن سریع مداحی از توی خودِ منو
+# (ادمین توی «مداحی و مولودی» تا مناسبت مورد نظر جلو می‌ره، دکمه‌ی
+# «➕ افزودن مداحی به این مناسبت» رو می‌زنه، عنوان و اسم مداح رو می‌فرسته و
+# در آخر فایل صوتی/ویس رو می‌فرسته؛ همون‌جا و بدون نوشتن دستور دستی ثبت می‌شه)
+# ==========================================
+
+# user_id ادمین -> وضعیت ویزارد جاری‌اش
+# {"content_type", "occasion", "index_str", "step": "title"|"reciter"|"audio", "title", "reciter"}
+_PENDING_MADAHI_ADD: dict[int, dict] = {}
+
+
+def has_pending_madahi_add(user_id: int) -> bool:
+    """آیا این ادمین وسط ویزارد افزودن مداحیه (هر مرحله‌ای: عنوان/مداح/صوت).
+    برای فیلتر هندلر متنی توی main.py استفاده می‌شه، تا فقط وقتی این True
+    باشه پیام متنی رو بگیریم، وگرنه general_text_handler عادی کار خودشو بکنه."""
+    return user_id in _PENDING_MADAHI_ADD
+
+
+def is_awaiting_madahi_audio(user_id: int) -> bool:
+    """آیا این ادمین دقیقاً منتظر فرستادن فایل صوتیه (مرحله‌ی آخر ویزارد).
+    برای فیلتر هندلر صوتی توی main.py استفاده می‌شه، تا فقط توی این حالت
+    جلوی mafatih_audio_upload_handler عمومی رو بگیریم."""
+    state = _PENDING_MADAHI_ADD.get(user_id)
+    return bool(state and state.get("step") == "audio")
+
+
+class _MadahiPendingTextFilter(tg_filters.MessageFilter):
+    """True فقط وقتی فرستنده‌ی پیام وسط ویزارد افزودن مداحیه."""
+
+    def filter(self, message):
+        user = message.from_user
+        return bool(user) and has_pending_madahi_add(user.id)
+
+
+class _MadahiPendingAudioFilter(tg_filters.MessageFilter):
+    """True فقط وقتی فرستنده‌ی پیام دقیقاً منتظر فایل صوتیِ ویزارده."""
+
+    def filter(self, message):
+        user = message.from_user
+        return bool(user) and is_awaiting_madahi_audio(user.id)
+
+
+# این دوتا رو مستقیماً توی main.py ایمپورت و به‌عنوان فیلترِ MessageHandler
+# استفاده کن (پایین‌تر توضیح داده شده).
+madahi_pending_text_filter = _MadahiPendingTextFilter()
+madahi_pending_audio_filter = _MadahiPendingAudioFilter()
+
+
+async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """کاربر دکمه‌ی «➕ افزودن مداحی به این مناسبت» رو زده."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await query.answer("فقط ادمین‌ها می‌تونن مداحی اضافه کنن.", show_alert=True)
+        return
+
+    # callback_data: madahi_addstart_{content_type}_{index_str}
+    _, _, content_type, index_str = query.data.split("_")
+    occasion = _resolve_occasion(content_type, int(index_str))
+    if occasion is None:
+        await query.answer("⚠️ لیست به‌روزرسانی شد، دوباره امتحان کن.", show_alert=True)
+        await show_occasion_menu(update, context, content_type)
+        return
+
+    await query.answer()
+    _PENDING_MADAHI_ADD[user_id] = {
+        "content_type": content_type,
+        "occasion": occasion,
+        "index_str": index_str,
+        "step": "title",
+    }
+    await query.edit_message_text(
+        f"➕ *افزودن مداحی جدید*\n"
+        f"{TYPE_LABELS.get(content_type, '')} | 📌 {occasion}\n\n"
+        "عنوان مداحی رو بفرست (مثلاً «السلام علیک یا اباعبدالله»).\n"
+        "برای لغو، در هر مرحله بنویس «لغو».",
+        parse_mode="Markdown",
+    )
+
+
+async def madahi_add_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیام‌های متنیِ ادمین رو وقتی وسط ویزارد افزودن مداحیه (مرحله‌ی عنوان
+    یا اسم مداح) می‌گیره. اگه این ادمین وسط ویزارد نباشه، کاری نمی‌کنه تا
+    هندلرهای دیگه‌ی پیام متنی (مثل جستجوی حدیث/آیه) خودشون پیام رو بگیرن."""
+    user_id = update.effective_user.id
+    state = _PENDING_MADAHI_ADD.get(user_id)
+    if not state:
+        return
+
+    message = update.message
+    text = (message.text or "").strip()
+
+    if text in ("لغو", "/cancel", "cancel"):
+        _PENDING_MADAHI_ADD.pop(user_id, None)
+        await message.reply_text("❌ عملیات افزودن مداحی لغو شد.")
+        return
+
+    if state["step"] == "title":
+        if not text:
+            await message.reply_text("عنوان نمی‌تونه خالی باشه. دوباره بفرست:")
+            return
+        state["title"] = text
+        state["step"] = "reciter"
+        await message.reply_text("اسم مداح رو بفرست (اگه نداری بنویس «-»):")
+        return
+
+    if state["step"] == "reciter":
+        state["reciter"] = None if text == "-" else text
+        state["step"] = "audio"
+        await message.reply_text("🎧 حالا فایل صوتی (audio) یا ویس همین مداحی رو بفرست.")
+        return
+
+    if state["step"] == "audio":
+        await message.reply_text("این مرحله باید یه فایل صوتی یا ویس بفرستی، نه متن. (یا بنویس «لغو»)")
+
+
+async def madahi_add_audio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """وقتی ادمینی که وسط ویزارد افزودن مداحیه و منتظر فایل صوتیه، audio یا
+    voice بفرسته، همینجا در دیتابیس ثبتش می‌کنه."""
+    user_id = update.effective_user.id
+    state = _PENDING_MADAHI_ADD.get(user_id)
+    if not state or state.get("step") != "audio":
+        return
+
+    message = update.message
+    file_id = None
+    if message.audio:
+        file_id = message.audio.file_id
+    elif message.voice:
+        file_id = message.voice.file_id
+
+    if not file_id:
+        return
+
+    item_id = add_madahi(
+        state["content_type"], state["occasion"], state["title"],
+        file_id, reciter=state.get("reciter"),
+    )
+
+    content_type = state["content_type"]
+    occasion = state["occasion"]
+    index_str = state["index_str"]
+    title = state["title"]
+
+    # بعد از ثبت، ویزارد رو کامل می‌بندیم؛ دکمه‌ی زیر دوباره یه ویزارد تازه
+    # برای همین مناسبت شروع می‌کنه تا اضافه کردن پشت‌سرهم راحت باشه.
+    _PENDING_MADAHI_ADD.pop(user_id, None)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ افزودن مداحی بعدی به همین مناسبت", callback_data=f"madahi_addstart_{content_type}_{index_str}")],
+        [InlineKeyboardButton("🏁 پایان و بازگشت به لیست", callback_data=f"madahi_occ_{content_type}_{index_str}")],
+    ])
+    await message.reply_text(
+        f"✅ اضافه شد (id={item_id})\n🎙 {title}\n📌 مناسبت: {occasion}\n\n"
+        "می‌خوای همین‌جا یکی دیگه هم برای همین مناسبت اضافه کنی؟",
+        reply_markup=keyboard,
     )
