@@ -27,8 +27,8 @@ TYPE_LABELS = {
 
 def _type_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🎙 مداحی (محرم، فاطمیه، اربعین و...)", callback_data="madahi_type_madahi")],
-        [InlineKeyboardButton("🎉 مولودی‌خوانی (اعیاد و میلادها)", callback_data="madahi_type_molodi")],
+        [InlineKeyboardButton("مداحی)", callback_data="madahi_type_madahi")],
+        [InlineKeyboardButton("مولودی‌)", callback_data="madahi_type_molodi")],
         [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
     ]
     return InlineKeyboardMarkup(keyboard)
