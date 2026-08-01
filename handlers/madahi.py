@@ -8,7 +8,6 @@ from telegram.ext import ContextTypes, filters as tg_filters
 from config import ADMIN_IDS
 from database import (
     add_madahi,
-    get_madahi_occasions,
     get_madahi_by_occasion,
     get_madahi_by_id,
     delete_madahi,
@@ -23,6 +22,47 @@ TYPE_LABELS = {
     "madahi": "مداحی",
     "molodi": "مولودی",
 }
+
+# ==========================================
+# دسته‌بندی ثابتِ مناسبت‌ها
+# این لیست دیگه از دیتابیس خونده نمی‌شه؛ ثابت و از قبل تعریف شده‌ست.
+# اگه مناسبتی توی این لیست زیرشاخه داشته باشه (مثل «ماه‌ محرم و صفر»)، باید
+# توی SUB_CATEGORIES هم براش زیرشاخه تعریف بشه؛ در غیر این صورت با انتخابش
+# مستقیم لیست فایل‌های همون مناسبت نشون داده می‌شه.
+#
+# نکته‌ی مهم برای ادمین: وقتی با /addmadahi یا ویزارد داخل منو مداحی اضافه
+# می‌کنی، «مناسبت» باید دقیقاً همین متن‌ها باشه (بدون 🏴)، چون همین متن برای
+# پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
+# ==========================================
+
+MAIN_CATEGORIES = [
+    "ماه‌ محرم و صفر",
+    "حضرت زهرا س",
+    "امیرالمومنین ع",
+    "مناجات با امام زمان عج",
+    "پیامبراکرم ص و امام حسن ع",
+    "امام سجاد ع",
+    "امام باقر ع",
+    "امام صادق ع",
+    "امام کاظم ع",
+    "امام رضا ع",
+    "امام جواد ع",
+    "امام هادی ع",
+    "امام حسن عسکری ع",
+]
+
+SUB_CATEGORIES = {
+    "ماه‌ محرم و صفر": [
+        "دهه اول محرم",
+        "امام حسین",
+        "حضرت زینب",
+        "اربعین حسینی",
+    ],
+}
+
+
+def _flag(text: str) -> str:
+    return f"🏴{text}"
 
 
 def _type_keyboard():
@@ -55,26 +95,21 @@ async def madahi_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def madahi_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """کاربر بین مداحی/مولودی یکی رو انتخاب کرده؛ حالا لیست مناسبت‌ها رو نشون بده"""
+    """کاربر بین مداحی/مولودی یکی رو انتخاب کرده (یا از دکمه‌ی «بازگشت» به
+    این‌جا برگشته)؛ حالا لیست دسته‌های اصلیِ ثابت رو نشون بده"""
     query = update.callback_query
     await query.answer()
 
     content_type = query.data.split("_")[-1]  # madahi_type_madahi -> madahi
     context.user_data["madahi_type"] = content_type
-    await show_occasion_menu(update, context, content_type)
+    await show_category_menu(update, context, content_type)
 
 
-async def show_occasion_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str):
-    occasions = get_madahi_occasions(content_type)
-
-    # نکته‌ی مهم: توی callback_data به‌جای خودِ متن مناسبت، اندیسش توی لیست رو
-    # می‌فرستیم (madahi_occ_{content_type}_{index})، چون callback_data تلگرام
-    # حداکثر ۶۴ بایته و بعضی اسم‌های مناسبت (مثل «نیمه شعبان (امام زمان عج)»)
-    # با پیشوندها روی هم از این حد رد می‌شن. هندلر بعدی دوباره همین لیست رو
-    # می‌سازه و با همون اندیس متن واقعی رو پیدا می‌کنه.
+async def show_category_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str):
+    """نمایش لیست ثابتِ دسته‌های اصلی (مثل «ماه‌ محرم و صفر»، «حضرت زهرا س» و...)"""
     keyboard = []
-    for idx, occ in enumerate(occasions):
-        keyboard.append([InlineKeyboardButton(occ, callback_data=f"madahi_occ_{content_type}_{idx}")])
+    for idx, cat in enumerate(MAIN_CATEGORIES):
+        keyboard.append([InlineKeyboardButton(_flag(cat), callback_data=f"madahi_cat_{content_type}_{idx}")])
     keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="madahi_back_types")])
 
     text = f"{TYPE_LABELS[content_type]}\n\nمناسبت مورد نظرت رو انتخاب کن:"
@@ -95,7 +130,7 @@ async def madahi_back_types_callback(update: Update, context: ContextTypes.DEFAU
     )
 
 
-def _list_keyboard(content_type: str, index_str: str, rows, page: int, is_admin: bool = False):
+def _list_keyboard(content_type: str, path: str, rows, page: int, is_admin: bool = False, back_callback: str = None):
     start = page * PAGE_SIZE
     page_rows = rows[start:start + PAGE_SIZE]
 
@@ -108,74 +143,134 @@ def _list_keyboard(content_type: str, index_str: str, rows, page: int, is_admin:
 
     nav_row = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"madahi_page_{content_type}_{index_str}_{page - 1}"))
+        nav_row.append(InlineKeyboardButton("◀️ قبلی", callback_data=f"madahi_page_{content_type}_{path}_{page - 1}"))
     if start + PAGE_SIZE < len(rows):
-        nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"madahi_page_{content_type}_{index_str}_{page + 1}"))
+        nav_row.append(InlineKeyboardButton("بعدی ▶️", callback_data=f"madahi_page_{content_type}_{path}_{page + 1}"))
     if nav_row:
         keyboard.append(nav_row)
 
     if is_admin:
-        keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{index_str}")])
+        keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{path}")])
 
-    keyboard.append([InlineKeyboardButton("⬅️ بازگشت به مناسبت‌ها", callback_data=f"madahi_type_{content_type}")])
+    keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=back_callback or f"madahi_type_{content_type}")])
     return InlineKeyboardMarkup(keyboard)
 
 
-def _resolve_occasion(content_type: str, index: int):
-    """اندیسِ توی callback_data رو به متن واقعی مناسبت تبدیل می‌کنه.
-    اگه لیست عوض شده باشه (مثلاً ادمین همزمان مناسبت جدید اضافه کرده) و
-    اندیس دیگه معتبر نباشه، None برمی‌گردونه."""
-    occasions = get_madahi_occasions(content_type)
-    if 0 <= index < len(occasions):
-        return occasions[index]
+def _resolve_category(idx: int):
+    if 0 <= idx < len(MAIN_CATEGORIES):
+        return MAIN_CATEGORIES[idx]
     return None
 
 
-async def madahi_occasion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """کاربر یه مناسبت رو انتخاب کرده؛ لیست مداحی‌های همون مناسبت رو نشون بده"""
+def _resolve_path(content_type: str, path: str):
+    """path می‌تونه یکی از این دو شکل باشه:
+    - "5"    -> مستقیم دسته‌ی اصلیِ شماره ۵ (اگه زیرشاخه نداشته باشه)
+    - "0-2"  -> زیرشاخه‌ی شماره ۲ از دسته‌ی اصلیِ شماره ۰
+    خروجی: متن مناسبت، یا None اگه نامعتبر بود."""
+    try:
+        if "-" in path:
+            cat_idx_str, sub_idx_str = path.split("-")
+            cat_idx, sub_idx = int(cat_idx_str), int(sub_idx_str)
+            category = _resolve_category(cat_idx)
+            if category is None:
+                return None
+            subs = SUB_CATEGORIES.get(category)
+            if not subs or not (0 <= sub_idx < len(subs)):
+                return None
+            return subs[sub_idx]
+        else:
+            return _resolve_category(int(path))
+    except (ValueError, IndexError):
+        return None
+
+
+async def madahi_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """کاربر یه دسته‌ی اصلی رو انتخاب کرده. اگه زیرشاخه داشته باشه، منوی
+    زیرشاخه‌ها رو نشون بده؛ وگرنه مستقیم لیست فایل‌های همون مناسبت رو بده."""
     query = update.callback_query
     await query.answer()
 
-    # callback_data: madahi_occ_{content_type}_{index}
-    _, _, content_type, index_str = query.data.split("_")
-    occasion = _resolve_occasion(content_type, int(index_str))
-    if occasion is None:
-        await query.answer("⚠️ لیست به‌روزرسانی شد، دوباره امتحان کن.", show_alert=True)
-        await show_occasion_menu(update, context, content_type)
+    # callback_data: madahi_cat_{content_type}_{idx}
+    _, _, content_type, idx_str = query.data.split("_")
+    cat_idx = int(idx_str)
+    category = _resolve_category(cat_idx)
+    if category is None:
+        await query.answer("⚠️ این دسته پیدا نشد.", show_alert=True)
+        await show_category_menu(update, context, content_type)
         return
-    await _show_occasion_list(update, context, content_type, occasion, index_str, page=0)
+
+    subs = SUB_CATEGORIES.get(category)
+    if subs:
+        keyboard = []
+        for sub_idx, sub in enumerate(subs):
+            keyboard.append([InlineKeyboardButton(_flag(sub), callback_data=f"madahi_occ_{content_type}_{cat_idx}-{sub_idx}")])
+        keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")])
+        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(category)}\n\nزیرمجموعه مورد نظرت رو انتخاب کن:"
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    await _show_occasion_list(update, context, content_type, category, path=str(cat_idx), page=0,
+                               back_callback=f"madahi_type_{content_type}")
+
+
+async def madahi_occasion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """کاربر یه زیرشاخه رو انتخاب کرده؛ لیست فایل‌های همون مناسبت رو نشون بده"""
+    query = update.callback_query
+    await query.answer()
+
+    # callback_data: madahi_occ_{content_type}_{path}   (path مثلاً "0-2")
+    _, _, content_type, path = query.data.split("_")
+    occasion = _resolve_path(content_type, path)
+    if occasion is None:
+        await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
+        await show_category_menu(update, context, content_type)
+        return
+
+    cat_idx = int(path.split("-")[0])
+    back_callback = f"madahi_cat_{content_type}_{cat_idx}"
+    await _show_occasion_list(update, context, content_type, occasion, path=path, page=0, back_callback=back_callback)
 
 
 async def madahi_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # callback_data: madahi_page_{content_type}_{index}_{page}
-    _, _, content_type, index_str, page_str = query.data.split("_")
-    occasion = _resolve_occasion(content_type, int(index_str))
+    # callback_data: madahi_page_{content_type}_{path}_{page}
+    _, _, content_type, path, page_str = query.data.split("_")
+    occasion = _resolve_path(content_type, path)
     if occasion is None:
-        await query.answer("⚠️ لیست به‌روزرسانی شد، دوباره امتحان کن.", show_alert=True)
-        await show_occasion_menu(update, context, content_type)
+        await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
+        await show_category_menu(update, context, content_type)
         return
-    await _show_occasion_list(update, context, content_type, occasion, index_str, page=int(page_str))
+
+    back_callback = f"madahi_type_{content_type}"
+    if "-" in path:
+        cat_idx = int(path.split("-")[0])
+        back_callback = f"madahi_cat_{content_type}_{cat_idx}"
+
+    await _show_occasion_list(update, context, content_type, occasion, path=path, page=int(page_str), back_callback=back_callback)
 
 
-async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str, occasion: str, index_str: str, page: int):
+async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str,
+                               occasion: str, path: str, page: int, back_callback: str = None):
     rows = get_madahi_by_occasion(content_type, occasion)
     query = update.callback_query
     is_admin = update.effective_user.id in ADMIN_IDS
 
     if not rows:
-        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {occasion}\n\nهنوز چیزی برای این مناسبت اضافه نشده."
+        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(occasion)}\n\nهنوز چیزی برای این مناسبت اضافه نشده."
         keyboard = []
         if is_admin:
-            keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{index_str}")])
-        keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")])
+            keyboard.append([InlineKeyboardButton("➕ افزودن مداحی به این مناسبت", callback_data=f"madahi_addstart_{content_type}_{path}")])
+        keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=back_callback or f"madahi_type_{content_type}")])
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {occasion}\n\n{len(rows)} مورد پیدا شد:"
-    await query.edit_message_text(text, reply_markup=_list_keyboard(content_type, index_str, rows, page, is_admin=is_admin))
+    text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(occasion)}\n\n{len(rows)} مورد پیدا شد:"
+    await query.edit_message_text(
+        text,
+        reply_markup=_list_keyboard(content_type, path, rows, page, is_admin=is_admin, back_callback=back_callback),
+    )
 
 
 async def madahi_play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -369,12 +464,12 @@ async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAUL
         await query.answer("فقط ادمین‌ها می‌تونن مداحی اضافه کنن.", show_alert=True)
         return
 
-    # callback_data: madahi_addstart_{content_type}_{index_str}
-    _, _, content_type, index_str = query.data.split("_")
-    occasion = _resolve_occasion(content_type, int(index_str))
+    # callback_data: madahi_addstart_{content_type}_{path}
+    _, _, content_type, path = query.data.split("_")
+    occasion = _resolve_path(content_type, path)
     if occasion is None:
-        await query.answer("⚠️ لیست به‌روزرسانی شد، دوباره امتحان کن.", show_alert=True)
-        await show_occasion_menu(update, context, content_type)
+        await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
+        await show_category_menu(update, context, content_type)
         return
 
     await query.answer()
@@ -382,13 +477,13 @@ async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAUL
         "chat_id": update.effective_chat.id,
         "content_type": content_type,
         "occasion": occasion,
-        "index_str": index_str,
+        "index_str": path,
         "step": "title",
         "updated_at": time.time(),
     }
     await query.edit_message_text(
         f"➕ *افزودن مداحی جدید*\n"
-        f"{TYPE_LABELS.get(content_type, '')} | 📌 {occasion}\n\n"
+        f"{TYPE_LABELS.get(content_type, '')} | 📌 {_flag(occasion)}\n\n"
         "عنوان مداحی رو بفرست (مثلاً «السلام علیک یا اباعبدالله»).\n"
         "برای لغو، در هر مرحله بنویس «لغو».",
         parse_mode="Markdown",
@@ -470,7 +565,7 @@ async def madahi_add_audio_handler(update: Update, context: ContextTypes.DEFAULT
         [InlineKeyboardButton("🏁 پایان و بازگشت به لیست", callback_data=f"madahi_occ_{content_type}_{index_str}")],
     ])
     await message.reply_text(
-        f"✅ اضافه شد (id={item_id})\n🎙 {title}\n📌 مناسبت: {occasion}\n\n"
+        f"✅ اضافه شد (id={item_id})\n🎙 {title}\n📌 مناسبت: {_flag(occasion)}\n\n"
         "می‌خوای همین‌جا یکی دیگه هم برای همین مناسبت اضافه کنی؟",
         reply_markup=keyboard,
     )

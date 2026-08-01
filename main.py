@@ -70,7 +70,8 @@ from handlers.prayer import (
 )
 from handlers.madahi import (
     madahi_command, madahi_type_callback, madahi_back_types_callback,
-    madahi_occasion_callback, madahi_page_callback, madahi_play_callback,
+    madahi_category_callback, madahi_occasion_callback, madahi_page_callback,
+    madahi_play_callback,
     add_madahi_command, delete_madahi_command, madahi_stats_command,
     madahi_add_start_callback, madahi_add_text_handler, madahi_add_audio_handler,
     madahi_pending_text_filter, madahi_pending_audio_filter,
@@ -366,8 +367,9 @@ def main():
     # ==========================================
     app.add_handler(CallbackQueryHandler(madahi_type_callback, pattern="^madahi_type_(madahi|molodi)$"))
     app.add_handler(CallbackQueryHandler(madahi_back_types_callback, pattern="^madahi_back_types$"))
-    app.add_handler(CallbackQueryHandler(madahi_occasion_callback, pattern="^madahi_occ_(madahi|molodi)_\\d+$"))
-    app.add_handler(CallbackQueryHandler(madahi_page_callback, pattern="^madahi_page_(madahi|molodi)_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(madahi_category_callback, pattern="^madahi_cat_(madahi|molodi)_\\d+$"))
+    app.add_handler(CallbackQueryHandler(madahi_occasion_callback, pattern="^madahi_occ_(madahi|molodi)_\\d+(-\\d+)?$"))
+    app.add_handler(CallbackQueryHandler(madahi_page_callback, pattern="^madahi_page_(madahi|molodi)_\\d+(-\\d+)?_\\d+$"))
     app.add_handler(CallbackQueryHandler(madahi_play_callback, pattern="^madahi_play_\\d+$"))
 
     # ==========================================
