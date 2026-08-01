@@ -367,9 +367,9 @@ def main():
     # ==========================================
     app.add_handler(CallbackQueryHandler(madahi_type_callback, pattern="^madahi_type_(madahi|molodi)$"))
     app.add_handler(CallbackQueryHandler(madahi_back_types_callback, pattern="^madahi_back_types$"))
-    app.add_handler(CallbackQueryHandler(madahi_category_callback, pattern="^madahi_cat_(madahi|molodi)_\\d+$"))
-    app.add_handler(CallbackQueryHandler(madahi_occasion_callback, pattern="^madahi_occ_(madahi|molodi)_\\d+(-\\d+)?$"))
-    app.add_handler(CallbackQueryHandler(madahi_page_callback, pattern="^madahi_page_(madahi|molodi)_\\d+(-\\d+)?_\\d+$"))
+    app.add_handler(CallbackQueryHandler(madahi_category_callback, pattern="^madahi_cat_(madahi|molodi)_\\d+(-\\d+)*$"))
+    app.add_handler(CallbackQueryHandler(madahi_occasion_callback, pattern="^madahi_occ_(madahi|molodi)_\\d+(-\\d+)*$"))
+    app.add_handler(CallbackQueryHandler(madahi_page_callback, pattern="^madahi_page_(madahi|molodi)_\\d+(-\\d+)*_\\d+$"))
     app.add_handler(CallbackQueryHandler(madahi_play_callback, pattern="^madahi_play_\\d+$"))
 
     # ==========================================

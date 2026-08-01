@@ -24,109 +24,133 @@ TYPE_LABELS = {
 }
 
 # ==========================================
-# دسته‌بندی ثابتِ مناسبت‌ها
-# این لیست دیگه از دیتابیس خونده نمی‌شه؛ ثابت و از قبل تعریف شده‌ست.
-# اگه مناسبتی توی این لیست زیرشاخه داشته باشه (مثل «ماه‌ محرم و صفر»)، باید
-# توی SUB_CATEGORIES هم براش زیرشاخه تعریف بشه؛ در غیر این صورت با انتخابش
-# مستقیم لیست فایل‌های همون مناسبت نشون داده می‌شه.
-#
-# نکته‌ی مهم برای ادمین: وقتی با /addmadahi یا ویزارد داخل منو مداحی اضافه
-# می‌کنی، «مناسبت» باید دقیقاً همین متن‌ها باشه (بدون 🏴)، چون همین متن برای
-# پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
-# ==========================================
-
-# ==========================================
-# دسته‌بندی ثابتِ مناسبت‌ها (جدا برای مداحی و مولودی)
-# این لیست‌ها دیگه از دیتابیس خونده نمی‌شن؛ ثابت و از قبل تعریف شدن.
-# اگه مناسبتی زیرشاخه داشته باشه (مثل «ماه‌ محرم و صفر» یا «اعیاد شعبانیه»)،
-# باید توی sub همون نوع، زیرشاخه‌ش تعریف بشه؛ در غیر این صورت با انتخابش
-# مستقیم لیست فایل‌های همون مناسبت نشون داده می‌شه.
+# دسته‌بندی ثابتِ مناسبت‌ها (جدا برای مداحی و مولودی، با عمق دلخواه)
+# این ساختار دیگه از دیتابیس خونده نمی‌شه؛ ثابت و از قبل تعریف شده‌ست.
+# هر گره (node) یه دیکشنریه با کلید "label" (متن نمایشی) و به‌صورت اختیاری
+# "children" (لیستی از زیرگره‌ها). اگه "children" نداشته باشه یا خالی باشه،
+# یعنی اون گره خودش یه «مناسبت»ه و با انتخابش مستقیم لیست فایل‌ها نشون داده
+# می‌شه. اگه "children" داشته باشه، با انتخابش یه منوی زیرشاخه باز می‌شه؛
+# این تو در تو شدن محدودیتی نداره (مثلاً محرم -> دهه اول محرم -> حضرت مسلم).
 #
 # نکته‌ی مهم برای ادمین: وقتی با /addmadahi یا ویزارد داخل منو مداحی/مولودی
-# اضافه می‌کنی، «مناسبت» باید دقیقاً همین متن‌ها باشه (بدون 🏴 یا ❇️)، چون
-# همین متن برای پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
+# اضافه می‌کنی، «مناسبت» باید دقیقاً همون "label"ِ برگ (بدون 🏴 یا ❇️) باشه،
+# چون همین متن برای پیدا کردن فایل‌ها توی دیتابیس استفاده می‌شه.
 # ==========================================
 
-MADAHI_MAIN_CATEGORIES = [
-    "ماه‌ محرم و صفر",
-    "حضرت زهرا س",
-    "امیرالمومنین ع",
-    "مناجات با امام زمان عج",
-    "پیامبراکرم ص و امام حسن ع",
-    "امام سجاد ع",
-    "امام باقر ع",
-    "امام صادق ع",
-    "امام کاظم ع",
-    "امام رضا ع",
-    "امام جواد ع",
-    "امام هادی ع",
-    "امام حسن عسکری ع",
+MADAHI_TREE = [
+    {"label": "ماه‌ محرم و صفر", "children": [
+        {"label": "دهه اول محرم", "children": [
+            {"label": "حضرت مسلم"},
+            {"label": "جناب حر"},
+            {"label": "حضرت رقیه س"},
+            {"label": "حضرت عون و عبدالله"},
+            {"label": "حضرت قاسم"},
+            {"label": "حضرت علی اصغر ع"},
+            {"label": "حضرت علی اکبر ع"},
+            {"label": "حضرت ابالفضل ع"},
+        ]},
+        {"label": "امام حسین"},
+        {"label": "حضرت زینب"},
+        {"label": "اربعین حسینی"},
+    ]},
+    {"label": "حضرت زهرا س"},
+    {"label": "امیرالمومنین ع"},
+    {"label": "مناجات با امام زمان عج"},
+    {"label": "پیامبراکرم ص و امام حسن ع"},
+    {"label": "امام سجاد ع"},
+    {"label": "امام باقر ع"},
+    {"label": "امام صادق ع"},
+    {"label": "امام کاظم ع"},
+    {"label": "امام رضا ع"},
+    {"label": "امام جواد ع"},
+    {"label": "امام هادی ع"},
+    {"label": "امام حسن عسکری ع"},
 ]
 
-MADAHI_SUB_CATEGORIES = {
-    "ماه‌ محرم و صفر": [
-        "دهه اول محرم",
-        "امام حسین",
-        "حضرت زینب",
-        "اربعین حسینی",
-    ],
-}
-
-MOLODI_MAIN_CATEGORIES = [
-    "اعیاد شعبانیه",
-    "پیامبر اکرم ص و امام صادق ع",
-    "حضرت زهرا س",
-    "امیرالمومنین ع",
-    "امام حسن ع",
-    "امام زمان عج",
-    "امام باقر ع",
-    "امام کاظم ع",
-    "امام رضا ع",
-    "امام جواد ع",
-    "امام هادی ع",
-    "امام حسن عسکری ع",
+MOLODI_TREE = [
+    {"label": "اعیاد شعبانیه", "children": [
+        {"label": "ولادت امام حسین ع"},
+        {"label": "ولادت امام سجاد ع"},
+        {"label": "ولادت حضرت ابالفضل ع"},
+        {"label": "ولادت حضرت علی اکبر ع"},
+    ]},
+    {"label": "پیامبر اکرم ص و امام صادق ع", "children": [
+        {"label": "ولادت پیامبر اکرم ص"},
+        {"label": "ولادت امام صادق ع"},
+        {"label": "عید مبعث"},
+    ]},
+    {"label": "حضرت زهرا س"},
+    {"label": "امیرالمومنین ع", "children": [
+        {"label": "ولادت"},
+        {"label": "عید غدیر"},
+    ]},
+    {"label": "امام حسن ع"},
+    {"label": "امام زمان عج", "children": [
+        {"label": "ولادت"},
+        {"label": "امامت"},
+    ]},
+    {"label": "امام باقر ع"},
+    {"label": "امام کاظم ع"},
+    {"label": "امام رضا ع"},
+    {"label": "امام جواد ع"},
+    {"label": "امام هادی ع"},
+    {"label": "امام حسن عسکری ع"},
 ]
 
-MOLODI_SUB_CATEGORIES = {
-    "اعیاد شعبانیه": [
-        "ولادت امام حسین ع",
-        "ولادت امام سجاد ع",
-        "ولادت حضرت ابالفضل ع",
-        "ولادت حضرت علی اکبر ع",
-    ],
-    "پیامبر اکرم ص و امام صادق ع": [
-        "ولادت پیامبر اکرم ص",
-        "ولادت امام صادق ع",
-        "عید مبعث",
-    ],
-    "امیرالمومنین ع": [
-        "ولادت",
-        "عید غدیر",
-    ],
-    "امام زمان عج": [
-        "ولادت",
-        "امامت",
-    ],
-}
-
-# نگاشتِ نوع محتوا به دسته‌بندی و ایموجیِ مخصوص خودش
+# نگاشتِ نوع محتوا به درخت و ایموجیِ مخصوص خودش
 _CATEGORY_CONFIG = {
-    "madahi": {"flag": "🏴", "main": MADAHI_MAIN_CATEGORIES, "sub": MADAHI_SUB_CATEGORIES},
-    "molodi": {"flag": "❇️", "main": MOLODI_MAIN_CATEGORIES, "sub": MOLODI_SUB_CATEGORIES},
+    "madahi": {"flag": "🏴", "tree": MADAHI_TREE},
+    "molodi": {"flag": "❇️", "tree": MOLODI_TREE},
 }
 
 
-def _main_categories(content_type: str):
-    return _CATEGORY_CONFIG.get(content_type, {}).get("main", [])
-
-
-def _sub_categories(content_type: str):
-    return _CATEGORY_CONFIG.get(content_type, {}).get("sub", {})
+def _tree(content_type: str):
+    return _CATEGORY_CONFIG.get(content_type, {}).get("tree", [])
 
 
 def _flag(content_type: str, text: str) -> str:
     emoji = _CATEGORY_CONFIG.get(content_type, {}).get("flag", "")
     return f"{emoji}{text}"
+
+
+def _resolve_node(content_type: str, path: str):
+    """path یه رشته‌ی اندیس‌های جدا شده با "-"ه که از ریشه‌ی درخت شروع می‌شه
+    (مثلاً "0-0-3" یعنی: گره ۰ام -> زیرگره ۰ام -> زیرِ زیرگره‌ی ۳ام).
+    خروجی: دیکشنریِ همون گره، یا None اگه مسیر نامعتبر بود."""
+    if not path:
+        return None
+    nodes = _tree(content_type)
+    node = None
+    try:
+        for idx_str in path.split("-"):
+            idx = int(idx_str)
+            if not (0 <= idx < len(nodes)):
+                return None
+            node = nodes[idx]
+            nodes = node.get("children") or []
+    except (ValueError, TypeError):
+        return None
+    return node
+
+
+def _parent_path(path: str):
+    """مسیرِ گره‌ی والد رو برمی‌گردونه؛ اگه گره توی ریشه باشه، None."""
+    parts = path.split("-")
+    if len(parts) <= 1:
+        return None
+    return "-".join(parts[:-1])
+
+
+def _child_button(content_type: str, path_prefix: str, idx: int, node: dict) -> InlineKeyboardButton:
+    """یه دکمه برای یه زیرگره می‌سازه. اگه اون زیرگره خودش زیرشاخه داشته باشه
+    (یعنی یه دسته‌ست)، callback از نوع "madahi_cat_"ه؛ وگرنه (یعنی خودش یه
+    مناسبتِ نهاییه) از نوع "madahi_occ_"ه."""
+    full_path = f"{path_prefix}-{idx}" if path_prefix else str(idx)
+    if node.get("children"):
+        callback = f"madahi_cat_{content_type}_{full_path}"
+    else:
+        callback = f"madahi_occ_{content_type}_{full_path}"
+    return InlineKeyboardButton(_flag(content_type, node["label"]), callback_data=callback)
 
 
 def _type_keyboard():
@@ -170,10 +194,8 @@ async def madahi_type_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def show_category_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str):
-    """نمایش لیست ثابتِ دسته‌های اصلی (مخصوص هر نوع محتوا: مداحی یا مولودی)"""
-    keyboard = []
-    for idx, cat in enumerate(_main_categories(content_type)):
-        keyboard.append([InlineKeyboardButton(_flag(content_type, cat), callback_data=f"madahi_cat_{content_type}_{idx}")])
+    """نمایش لیست ثابتِ دسته‌های ریشه (مخصوص هر نوع محتوا: مداحی یا مولودی)"""
+    keyboard = [[_child_button(content_type, "", idx, node)] for idx, node in enumerate(_tree(content_type))]
     keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="madahi_back_types")])
 
     text = f"{TYPE_LABELS[content_type]}\n\nمناسبت مورد نظرت رو انتخاب کن:"
@@ -220,80 +242,46 @@ def _list_keyboard(content_type: str, path: str, rows, page: int, is_admin: bool
     return InlineKeyboardMarkup(keyboard)
 
 
-def _resolve_category(content_type: str, idx: int):
-    categories = _main_categories(content_type)
-    if 0 <= idx < len(categories):
-        return categories[idx]
-    return None
-
-
-def _resolve_path(content_type: str, path: str):
-    """path می‌تونه یکی از این دو شکل باشه:
-    - "5"    -> مستقیم دسته‌ی اصلیِ شماره ۵ (اگه زیرشاخه نداشته باشه)
-    - "0-2"  -> زیرشاخه‌ی شماره ۲ از دسته‌ی اصلیِ شماره ۰
-    خروجی: متن مناسبت، یا None اگه نامعتبر بود."""
-    try:
-        if "-" in path:
-            cat_idx_str, sub_idx_str = path.split("-")
-            cat_idx, sub_idx = int(cat_idx_str), int(sub_idx_str)
-            category = _resolve_category(content_type, cat_idx)
-            if category is None:
-                return None
-            subs = _sub_categories(content_type).get(category)
-            if not subs or not (0 <= sub_idx < len(subs)):
-                return None
-            return subs[sub_idx]
-        else:
-            return _resolve_category(content_type, int(path))
-    except (ValueError, IndexError):
-        return None
-
-
 async def madahi_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """کاربر یه دسته‌ی اصلی رو انتخاب کرده. اگه زیرشاخه داشته باشه، منوی
-    زیرشاخه‌ها رو نشون بده؛ وگرنه مستقیم لیست فایل‌های همون مناسبت رو بده."""
+    """کاربر یه دسته (در هر عمقی از درخت) رو انتخاب کرده که خودش زیرشاخه
+    داره؛ منوی زیرشاخه‌هاش رو نشون بده."""
     query = update.callback_query
     await query.answer()
 
-    # callback_data: madahi_cat_{content_type}_{idx}
-    _, _, content_type, idx_str = query.data.split("_")
-    cat_idx = int(idx_str)
-    category = _resolve_category(content_type, cat_idx)
-    if category is None:
+    # callback_data: madahi_cat_{content_type}_{path}
+    _, _, content_type, path = query.data.split("_")
+    node = _resolve_node(content_type, path)
+    if node is None or not node.get("children"):
         await query.answer("⚠️ این دسته پیدا نشد.", show_alert=True)
         await show_category_menu(update, context, content_type)
         return
 
-    subs = _sub_categories(content_type).get(category)
-    if subs:
-        keyboard = []
-        for sub_idx, sub in enumerate(subs):
-            keyboard.append([InlineKeyboardButton(_flag(content_type, sub), callback_data=f"madahi_occ_{content_type}_{cat_idx}-{sub_idx}")])
-        keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=f"madahi_type_{content_type}")])
-        text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(content_type, category)}\n\nزیرمجموعه مورد نظرت رو انتخاب کن:"
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+    parent = _parent_path(path)
+    back_callback = f"madahi_cat_{content_type}_{parent}" if parent else f"madahi_type_{content_type}"
 
-    await _show_occasion_list(update, context, content_type, category, path=str(cat_idx), page=0,
-                               back_callback=f"madahi_type_{content_type}")
+    keyboard = [[_child_button(content_type, path, idx, child)] for idx, child in enumerate(node["children"])]
+    keyboard.append([InlineKeyboardButton("⬅️ بازگشت", callback_data=back_callback)])
+    text = f"{TYPE_LABELS.get(content_type, '')}\n📌 {_flag(content_type, node['label'])}\n\nزیرمجموعه مورد نظرت رو انتخاب کن:"
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def madahi_occasion_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """کاربر یه زیرشاخه رو انتخاب کرده؛ لیست فایل‌های همون مناسبت رو نشون بده"""
+    """کاربر یه مناسبتِ نهایی (برگِ درخت، در هر عمقی) رو انتخاب کرده؛ لیست
+    فایل‌های همون مناسبت رو نشون بده"""
     query = update.callback_query
     await query.answer()
 
-    # callback_data: madahi_occ_{content_type}_{path}   (path مثلاً "0-2")
+    # callback_data: madahi_occ_{content_type}_{path}   (path مثلاً "0-0-3")
     _, _, content_type, path = query.data.split("_")
-    occasion = _resolve_path(content_type, path)
-    if occasion is None:
+    node = _resolve_node(content_type, path)
+    if node is None:
         await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
         await show_category_menu(update, context, content_type)
         return
 
-    cat_idx = int(path.split("-")[0])
-    back_callback = f"madahi_cat_{content_type}_{cat_idx}"
-    await _show_occasion_list(update, context, content_type, occasion, path=path, page=0, back_callback=back_callback)
+    parent = _parent_path(path)
+    back_callback = f"madahi_cat_{content_type}_{parent}" if parent else f"madahi_type_{content_type}"
+    await _show_occasion_list(update, context, content_type, node["label"], path=path, page=0, back_callback=back_callback)
 
 
 async def madahi_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -302,18 +290,15 @@ async def madahi_page_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # callback_data: madahi_page_{content_type}_{path}_{page}
     _, _, content_type, path, page_str = query.data.split("_")
-    occasion = _resolve_path(content_type, path)
-    if occasion is None:
+    node = _resolve_node(content_type, path)
+    if node is None:
         await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
         await show_category_menu(update, context, content_type)
         return
 
-    back_callback = f"madahi_type_{content_type}"
-    if "-" in path:
-        cat_idx = int(path.split("-")[0])
-        back_callback = f"madahi_cat_{content_type}_{cat_idx}"
-
-    await _show_occasion_list(update, context, content_type, occasion, path=path, page=int(page_str), back_callback=back_callback)
+    parent = _parent_path(path)
+    back_callback = f"madahi_cat_{content_type}_{parent}" if parent else f"madahi_type_{content_type}"
+    await _show_occasion_list(update, context, content_type, node["label"], path=path, page=int(page_str), back_callback=back_callback)
 
 
 async def _show_occasion_list(update: Update, context: ContextTypes.DEFAULT_TYPE, content_type: str,
@@ -531,11 +516,12 @@ async def madahi_add_start_callback(update: Update, context: ContextTypes.DEFAUL
 
     # callback_data: madahi_addstart_{content_type}_{path}
     _, _, content_type, path = query.data.split("_")
-    occasion = _resolve_path(content_type, path)
-    if occasion is None:
+    node = _resolve_node(content_type, path)
+    if node is None:
         await query.answer("⚠️ این مناسبت پیدا نشد.", show_alert=True)
         await show_category_menu(update, context, content_type)
         return
+    occasion = node["label"]
 
     await query.answer()
     _PENDING_MADAHI_ADD[user_id] = {
