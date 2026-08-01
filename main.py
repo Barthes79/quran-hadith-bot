@@ -25,6 +25,7 @@ from handlers.hadith import (
     add_hadith_command, text_search_handler, add_tafsir_command,
     find_hadith_command, edit_hadith_command, del_hadith_command,
     hadith_view_callback,
+    search_exit_callback, search_back_callback,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
@@ -322,6 +323,8 @@ def main():
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))
     app.add_handler(CallbackQueryHandler(fav_hadith_callback, pattern="^fav_hadith_"))
     app.add_handler(CallbackQueryHandler(hadith_view_callback, pattern="^hadithview_"))
+    app.add_handler(CallbackQueryHandler(search_exit_callback, pattern="^search_exit$"))
+    app.add_handler(CallbackQueryHandler(search_back_callback, pattern="^search_back$"))
 
     # ==========================================
     # کالبک‌های نهج‌البلاغه

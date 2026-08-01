@@ -73,7 +73,7 @@ def format_hadith(row):
     return text
 
 
-def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None):
+def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_search_back=False):
     buttons = []
     if topic_name is not None and total and total > 1:
         h = topic_hash(topic_name)
@@ -86,6 +86,8 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None):
         buttons.append(nav_row)
 
     buttons.append([InlineKeyboardButton("⭐ افزودن به علاقه‌مندی‌ها", callback_data=f"fav_hadith_{hadith_id}")])
+    if show_search_back:
+        buttons.append([InlineKeyboardButton("⬅️ بازگشت به نتایج جستجو", callback_data="search_back")])
     buttons.append([InlineKeyboardButton("⬅️ موضوعات", callback_data="menu_hadith")])
     return InlineKeyboardMarkup(buttons)
 
@@ -168,7 +170,11 @@ async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if not row:
         await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
         return
-    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+    show_back = bool(context.user_data.get("last_search_query"))
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], show_search_back=show_back),
+    )
 
 
 async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -206,30 +212,9 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    """
-    جستجوی متن آزاد در چت خصوصی. قبلاً این تابع فقط جدول hadiths را با
-    search_hadiths() جستجو می‌کرد و همیشه پیام «حدیثی با این عبارت یافت نشد»
-    را نشان می‌داد، حتی وقتی عبارت مربوط به مفاتیح یا نهج‌البلاغه بود.
-    حالا از همان موتور جستجوی یکپارچه‌ای استفاده می‌کند که سرچ Inline
-    (@نام_ربات عبارت) هم استفاده می‌کند (search_all در database.py):
-    هم‌زمان روی حدیث + نهج‌البلاغه + مفاتیح جستجو می‌کند و در برابر غلط
-    تایپی و تفاوت حروف عربی/فارسی مقاوم است.
-    """
-    from database import search_all
-
-    results = search_all(text, limit=15)
-
-    if not results:
-        await update.message.reply_text("چیزی با این عبارت پیدا نشد.")
-        return
-
-    # اگر فقط یک حدیث پیدا شد، مثل قبل مستقیم متن کامل را نشان بده
-    if len(results) == 1 and results[0]["type"] == "hadith":
-        row = results[0]["row"]
-        await update.message.reply_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
-        return
-
+def _build_search_message(text: str, results: list):
+    """پیام و کیبورد نتایج سرچ رو می‌سازه. هم توسط ارسال اولیه‌ی نتایج و هم
+    توسط دکمه‌ی «بازگشت به نتایج جستجو» استفاده می‌شه تا منطق تکرار نشه."""
     from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
     from handlers.mafatih import MAFATIH_ITEM_LOCATION
 
@@ -266,20 +251,62 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
 
     if len(results) > MAX_BUTTONS:
+        # یه فاصله‌ی اضافه در انتهای متن پیش‌پرشده می‌ذاریم؛ بدونش بعضی وقتا
+        # کلاینت تلگرام کوئری اینلاین رو خودکار اجرا نمی‌کنه مگه با یه تغییر
+        # واقعی (تایپ/پاک‌کردن) در باکس، که تجربه‌ی کاربری بدی می‌سازه.
         buttons.append([
             InlineKeyboardButton(
                 "🔎 دیدن همه‌ی نتایج (حالت اینلاین)",
-                switch_inline_query_current_chat=text,
+                switch_inline_query_current_chat=text + " ",
             )
         ])
 
+    buttons.append([InlineKeyboardButton("🚪 خروج از حالت جستجو", callback_data="search_exit")])
+
     message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:"
+    return message_text, InlineKeyboardMarkup(buttons)
+
+
+async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """
+    جستجوی متن آزاد در چت خصوصی. قبلاً این تابع فقط جدول hadiths را با
+    search_hadiths() جستجو می‌کرد و همیشه پیام «حدیثی با این عبارت یافت نشد»
+    را نشان می‌داد، حتی وقتی عبارت مربوط به مفاتیح یا نهج‌البلاغه بود.
+    حالا از همان موتور جستجوی یکپارچه‌ای استفاده می‌کند که سرچ Inline
+    (@Laheghbot عبارت) هم استفاده می‌کند (search_all در database.py):
+    هم‌زمان روی حدیث + نهج‌البلاغه + مفاتیح جستجو می‌کند و در برابر غلط
+    تایپی و تفاوت حروف عربی/فارسی مقاوم است.
+    """
+    from database import search_all
+
+    results = search_all(text, limit=15)
+
+    if not results:
+        await update.message.reply_text(
+            "چیزی با این عبارت پیدا نشد.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🚪 خروج از حالت جستجو", callback_data="search_exit")]]
+            ),
+        )
+        return
+
+    # آخرین عبارت سرچ رو نگه می‌داریم تا دکمه‌ی «بازگشت به نتایج جستجو» (روی
+    # نمایش تک‌آیتم‌ها) بتونه دوباره همین لیست رو بسازه.
+    context.user_data["last_search_query"] = text
+
+    # اگر فقط یک حدیث پیدا شد، مثل قبل مستقیم متن کامل را نشان بده
+    if len(results) == 1 and results[0]["type"] == "hadith":
+        row = results[0]["row"]
+        await update.message.reply_text(
+            format_hadith(row),
+            reply_markup=hadith_keyboard(row["id"], show_search_back=False),
+        )
+        return
+
+    message_text, reply_markup = _build_search_message(text, results)
 
     try:
-        await update.message.reply_text(
-            message_text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
+        await update.message.reply_text(message_text, reply_markup=reply_markup)
     except BadRequest as e:
         # اگر بازهم (مثلاً به دلیل کاراکترهای خاص) از حد تلگرام رد شدیم، حداقل
         # یک پیام متنی بدون دکمه بفرست تا کاربر بی‌پاسخ نماند.
@@ -287,8 +314,50 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔎 دیدن نتایج (حالت اینلاین)", switch_inline_query_current_chat=text)]]
+                [
+                    [InlineKeyboardButton("🔎 دیدن نتایج (حالت اینلاین)", switch_inline_query_current_chat=text + " ")],
+                    [InlineKeyboardButton("🚪 خروج از حالت جستجو", callback_data="search_exit")],
+                ]
             ),
+        )
+
+
+async def search_exit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «🚪 خروج از حالت جستجو»: هم پرچم search_mode رو خاموش می‌کنه، هم
+    منوی اصلی رو نشون می‌ده."""
+    from handlers.start import main_menu_keyboard
+
+    query = update.callback_query
+    await query.answer()
+    context.user_data["search_mode"] = False
+    await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
+
+
+async def search_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «⬅️ بازگشت به نتایج جستجو» که زیر نمایش تک‌آیتم‌ها (حدیث/نهج/
+    مفاتیح) نشون داده می‌شه. آخرین عبارت سرچِ کاربر رو دوباره اجرا می‌کنه."""
+    from database import search_all
+
+    query = update.callback_query
+    await query.answer()
+
+    last_query = context.user_data.get("last_search_query")
+    if not last_query:
+        await query.answer("جستجوی قبلی‌ای پیدا نشد.", show_alert=True)
+        return
+
+    results = search_all(last_query, limit=15)
+    if not results:
+        await query.edit_message_text("چیزی با این عبارت پیدا نشد.")
+        return
+
+    message_text, reply_markup = _build_search_message(last_query, results)
+    try:
+        await query.edit_message_text(message_text, reply_markup=reply_markup)
+    except BadRequest as e:
+        logger.warning(f"reply_markup بازگشت به سرچ رد شد ({e}).")
+        await query.edit_message_text(
+            f"🔍 {len(results)} نتیجه برای «{last_query}» پیدا شد، اما نمایش دکمه‌ها با خطا مواجه شد."
         )
 
 
