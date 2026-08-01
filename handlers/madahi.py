@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 PAGE_SIZE = 8
 
 TYPE_LABELS = {
-    "madahi": "🎙 مداحی",
-    "molodi": "🎉 مولودی‌خوانی",
+    "madahi": "مداحی",
+    "molodi": "مولودی",
 }
 
 
