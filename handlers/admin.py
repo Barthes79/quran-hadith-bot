@@ -489,13 +489,51 @@ def _in_quiet_hours(hour: int, start, end) -> bool:
     return hour >= start or hour < end
 
 
+def _ensure_daily_post_log_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_post_log (
+            chat_id INTEGER PRIMARY KEY,
+            last_sent_key TEXT
+        )
+        """
+    )
+
+
+def _get_last_sent_key(conn, chat_id):
+    row = conn.execute(
+        "SELECT last_sent_key FROM daily_post_log WHERE chat_id = ?",
+        (chat_id,),
+    ).fetchone()
+    return row["last_sent_key"] if row else None
+
+
+def _set_last_sent_key(conn, chat_id, key):
+    conn.execute(
+        """
+        INSERT INTO daily_post_log (chat_id, last_sent_key) VALUES (?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET last_sent_key = excluded.last_sent_key
+        """,
+        (chat_id, key),
+    )
+    conn.commit()
+
+
 async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
     """
     این تابع هر ساعت توسط JobQueue اجرا می‌شود و بررسی می‌کند کدام گروه‌ها
     باید در این ساعت پست دریافت کنند (با توجه به ساعت شروع + فاصله‌ی زمانی،
     بازه‌ی سکوت شبانه، و نوع محتوای انتخابی هر گروه).
+
+    برای جلوگیری از ارسال تکراری بعد از هر ری‌استارت ربات (مثلاً موقع دیپلوی
+    فایل جدید)، کلید «تاریخ-ساعت» آخرین ارسالِ هر گروه در دیتابیس ذخیره
+    می‌شود و اگر همین ساعت قبلاً برای آن گروه پست فرستاده شده باشد، دوباره
+    فرستاده نمی‌شود.
     """
     now = datetime.datetime.now()
+
+    conn = get_connection()
+    _ensure_daily_post_log_table(conn)
 
     groups = get_all_active_daily_groups()
     for g in groups:
@@ -507,6 +545,10 @@ async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
         if _in_quiet_hours(now.hour, g["quiet_start_hour"], g["quiet_end_hour"]):
             continue
 
+        send_key = now.strftime("%Y-%m-%d-%H")
+        if _get_last_sent_key(conn, g["chat_id"]) == send_key:
+            continue  # این ساعت قبلاً برای این گروه پست فرستاده شده
+
         enabled_types = [t for t in CONTENT_TYPES if g[f"content_{t}"]]
         if not enabled_types:
             continue
@@ -517,9 +559,12 @@ async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
 
         try:
             await context.bot.send_message(g["chat_id"], text, reply_markup=markup)
+            _set_last_sent_key(conn, g["chat_id"], send_key)
         except Exception:
             # ربات ممکن است از گروه حذف شده باشد؛ می‌توان اینجا لاگ گرفت
             pass
+
+    conn.close()
 
 
 # =====================================================================
