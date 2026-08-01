@@ -12,8 +12,7 @@ def main_menu_keyboard():
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
         [InlineKeyboardButton("🕋 اوقات شرعی", callback_data="menu_prayer"),
          InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
-        [InlineKeyboardButton("🔍 جستجو", callback_data="menu_search"),
-         InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
+        [InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
         [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
         [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
     ]
@@ -51,11 +50,14 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # با انتخاب هر دکمه‌ای بجز «جستجو»، از حالت جستجوی آزاد خارج می‌شویم؛
-    # این‌طوری متن‌های بعدی کاربر دوباره به بقیه‌ی بخش‌های ربات (مثل حدیث
-    # موضوعی، نهج‌البلاغه و ...) به‌جای جستجوی آزاد فرستاده می‌شوند.
-    if query.data != "menu_search":
-        context.user_data["search_mode"] = False
+    # با انتخاب هر بخشی از منوی اصلی، از حالت جستجوی آزادِ بخش قبلی (اگر
+    # فعال بود) خارج می‌شویم؛ این‌طوری متن‌های بعدی کاربر دوباره به همون
+    # بخش جدید (مثل حدیث موضوعی، نهج‌البلاغه و ...) به‌جای جستجوی بخش قبلی
+    # فرستاده می‌شوند. جستجو دیگه یک دکمه‌ی سراسری در منوی اصلی نیست؛ هر
+    # بخش (احادیث/نهج‌البلاغه/مفاتیح‌الجنان) دکمه‌ی «🔍 جستجو» مخصوص خودش رو
+    # داخل منوی همون بخش داره (search_start_callback در handlers/hadith.py).
+    context.user_data["search_mode"] = False
+    context.user_data["search_scope"] = None
 
     if query.data == "menu_quran":
         from handlers.quran import show_surah_list
@@ -64,22 +66,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_hadith":
         from handlers.hadith import show_topics
         await show_topics(update, context)
-
-    elif query.data == "menu_search":
-        context.user_data["search_mode"] = True
-        await query.edit_message_text(
-            "🔍 حالا هر عبارتی که برام بفرستید، جستجو می‌کنم "
-            "(هم‌زمان بین حدیث، نهج‌البلاغه و مفاتیح‌الجنان).\n\n"
-            "📖 برای آیه‌ی خاصی از قرآن هم می‌توانید به یکی از این شکل‌ها بنویسید:\n"
-            "«2:255» یا «بقره 25» یا «سوره بقره آیه 25»\n\n"
-            "همچنین در هر گروه یا چت می‌توانید بنویسید:\n"
-            "`@Laheghbot صبر`\nتا نتایج بدون خروج از چت نمایش داده شود.\n\n"
-            "برای خروج از حالت جستجو، کافیست از منوی اصلی بخش دیگری را انتخاب کنید.",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")]]
-            ),
-        )
 
     elif query.data == "menu_favorites":
         from handlers.favorites import favorites_command

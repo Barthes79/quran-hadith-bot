@@ -18,6 +18,7 @@ from handlers.quran import (
     surah_page_callback, surah_selected_callback, ayah_nav_callback,
     fav_ayah_callback, tafsir_callback, ayah_direct_lookup, add_quran_tafsir_command,
     audio_callback, ayah_list_page_callback, surah_name_ayah_lookup,
+    quran_search_info_callback,
 )
 from handlers.hadith import (
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
@@ -25,7 +26,7 @@ from handlers.hadith import (
     add_hadith_command, text_search_handler, add_tafsir_command,
     find_hadith_command, edit_hadith_command, del_hadith_command,
     hadith_view_callback,
-    search_exit_callback, search_back_callback,
+    search_exit_callback, search_back_callback, search_start_callback,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
@@ -314,6 +315,7 @@ def main():
     app.add_handler(CallbackQueryHandler(ayah_nav_callback, pattern="^ayah_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(fav_ayah_callback, pattern="^fav_ayah_"))
     app.add_handler(CallbackQueryHandler(audio_callback, pattern="^audio_"))
+    app.add_handler(CallbackQueryHandler(quran_search_info_callback, pattern="^quran_search_info$"))
 
     # ==========================================
     # کالبک‌های احادیث
@@ -326,6 +328,8 @@ def main():
     app.add_handler(CallbackQueryHandler(hadith_view_callback, pattern="^hadithview_"))
     app.add_handler(CallbackQueryHandler(search_exit_callback, pattern="^search_exit$"))
     app.add_handler(CallbackQueryHandler(search_back_callback, pattern="^search_back$"))
+    # دکمه‌ی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih)
+    app.add_handler(CallbackQueryHandler(search_start_callback, pattern="^search_start_"))
 
     # ==========================================
     # کالبک‌های نهج‌البلاغه

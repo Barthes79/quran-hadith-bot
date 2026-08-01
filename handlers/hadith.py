@@ -41,6 +41,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append(row)
 
     buttons.append([InlineKeyboardButton("🎲 حدیث تصادفی", callback_data="hadith_random")])
+    buttons.append([InlineKeyboardButton("🔍 جستجو در احادیث", callback_data="search_start_hadith")])
     buttons.append([InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")])
 
     text = "📿 یک موضوع را انتخاب کنید:" if topics else (
@@ -212,7 +213,63 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def _build_search_message(text: str, results: list):
+# ==========================================================================
+# جستجوی محدود به هر بخش (احادیث / نهج‌البلاغه / مفاتیح‌الجنان)
+# ==========================================================================
+# قبلاً یک دکمه‌ی «🔍 جستجو» در منوی اصلی بود که هم‌زمان بین هر سه بخش
+# جستجو می‌کرد. حالا هر بخش دکمه‌ی جستجوی مخصوص خودش را دارد و فقط داخل
+# همان بخش جستجو انجام می‌شود (types در search_all محدود می‌شود).
+SEARCH_SCOPES = {
+    "hadith": {
+        "types": ["hadith"],
+        "title": "📿 احادیث",
+        "prompt": (
+            "🔍 حالا هر عبارتی بفرستید تا فقط بین *احادیث* جستجو شود.\n\n"
+            "برای خروج از حالت جستجو، دکمه‌ی زیر را بزنید."
+        ),
+    },
+    "nahj": {
+        "types": ["nahj"],
+        "title": "🕌 نهج‌البلاغه",
+        "prompt": (
+            "🔍 حالا هر عبارتی بفرستید تا فقط بین *نهج‌البلاغه* جستجو شود.\n\n"
+            "برای خروج از حالت جستجو، دکمه‌ی زیر را بزنید."
+        ),
+    },
+    "mafatih": {
+        "types": ["mafatih"],
+        "title": "📗 مفاتیح‌الجنان",
+        "prompt": (
+            "🔍 حالا هر عبارتی بفرستید تا فقط بین *مفاتیح‌الجنان* جستجو شود.\n\n"
+            "برای خروج از حالت جستجو، دکمه‌ی زیر را بزنید."
+        ),
+    },
+}
+
+
+async def search_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «🔍 جستجو در ...» داخل منوی هر بخش. callback_data به شکل
+    search_start_hadith / search_start_nahj / search_start_mafatih است."""
+    query = update.callback_query
+    await query.answer()
+    scope = query.data.replace("search_start_", "")
+    scope_info = SEARCH_SCOPES.get(scope)
+    if not scope_info:
+        return
+
+    context.user_data["search_mode"] = True
+    context.user_data["search_scope"] = scope
+
+    await query.edit_message_text(
+        scope_info["prompt"],
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🚪 خروج از حالت جستجو", callback_data="search_exit")]]
+        ),
+    )
+
+
+def _build_search_message(text: str, results: list, scope_info: dict = None):
     """پیام و کیبورد نتایج سرچ رو می‌سازه. هم توسط ارسال اولیه‌ی نتایج و هم
     توسط دکمه‌ی «بازگشت به نتایج جستجو» استفاده می‌شه تا منطق تکرار نشه."""
     from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
@@ -263,23 +320,31 @@ def _build_search_message(text: str, results: list):
 
     buttons.append([InlineKeyboardButton("🚪 خروج از حالت جستجو", callback_data="search_exit")])
 
-    message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:"
+    if scope_info:
+        message_text = (
+            f"🔍 {len(results)} نتیجه برای «{text}» در {scope_info['title']} پیدا شد؛ یکی را انتخاب کنید:"
+        )
+    else:
+        message_text = f"🔍 {len(results)} نتیجه برای «{text}» پیدا شد؛ یکی را انتخاب کنید:"
     return message_text, InlineKeyboardMarkup(buttons)
 
 
 async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """
-    جستجوی متن آزاد در چت خصوصی. قبلاً این تابع فقط جدول hadiths را با
-    search_hadiths() جستجو می‌کرد و همیشه پیام «حدیثی با این عبارت یافت نشد»
-    را نشان می‌داد، حتی وقتی عبارت مربوط به مفاتیح یا نهج‌البلاغه بود.
-    حالا از همان موتور جستجوی یکپارچه‌ای استفاده می‌کند که سرچ Inline
-    (@Laheghbot عبارت) هم استفاده می‌کند (search_all در database.py):
-    هم‌زمان روی حدیث + نهج‌البلاغه + مفاتیح جستجو می‌کند و در برابر غلط
-    تایپی و تفاوت حروف عربی/فارسی مقاوم است.
+    جستجوی متن آزاد در چت خصوصی، محدود به همان بخشی که کاربر دکمه‌ی «🔍
+    جستجو در ...» آن را زده (احادیث / نهج‌البلاغه / مفاتیح‌الجنان)؛ پرچم
+    context.user_data["search_scope"] مشخص می‌کند کدام بخش است. از همان
+    موتور جستجوی یکپارچه‌ای استفاده می‌کند که سرچ Inline (@Laheghbot عبارت)
+    هم استفاده می‌کند (search_all در database.py) و در برابر غلط تایپی و
+    تفاوت حروف عربی/فارسی مقاوم است.
     """
     from database import search_all
 
-    results = search_all(text, limit=15)
+    scope = context.user_data.get("search_scope")
+    scope_info = SEARCH_SCOPES.get(scope)
+    types = scope_info["types"] if scope_info else None
+
+    results = search_all(text, limit=15, types=types)
 
     if not results:
         await update.message.reply_text(
@@ -303,7 +368,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    message_text, reply_markup = _build_search_message(text, results)
+    message_text, reply_markup = _build_search_message(text, results, scope_info)
 
     try:
         await update.message.reply_text(message_text, reply_markup=reply_markup)
@@ -324,13 +389,28 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def search_exit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """دکمه‌ی «🚪 خروج از حالت جستجو»: هم پرچم search_mode رو خاموش می‌کنه، هم
-    منوی اصلی رو نشون می‌ده."""
-    from handlers.start import main_menu_keyboard
-
+    کاربر رو به منوی همون بخشی که توش جستجو می‌کرد برمی‌گردونه (نه لزوماً
+    منوی اصلی)."""
     query = update.callback_query
-    await query.answer()
+    scope = context.user_data.get("search_scope")
     context.user_data["search_mode"] = False
-    await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
+    context.user_data["search_scope"] = None
+
+    if scope == "hadith":
+        await query.answer()
+        await show_topics(update, context)
+    elif scope == "nahj":
+        await query.answer()
+        from handlers.nahj import show_nahj_menu
+        await show_nahj_menu(update, context)
+    elif scope == "mafatih":
+        # mafatih_menu_callback خودش query.answer() رو صدا می‌زنه
+        from handlers.mafatih import mafatih_menu_callback
+        await mafatih_menu_callback(update, context)
+    else:
+        from handlers.start import main_menu_keyboard
+        await query.answer()
+        await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
 
 
 async def search_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -346,12 +426,16 @@ async def search_back_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer("جستجوی قبلی‌ای پیدا نشد.", show_alert=True)
         return
 
-    results = search_all(last_query, limit=15)
+    scope = context.user_data.get("search_scope")
+    scope_info = SEARCH_SCOPES.get(scope)
+    types = scope_info["types"] if scope_info else None
+
+    results = search_all(last_query, limit=15, types=types)
     if not results:
         await query.edit_message_text("چیزی با این عبارت پیدا نشد.")
         return
 
-    message_text, reply_markup = _build_search_message(last_query, results)
+    message_text, reply_markup = _build_search_message(last_query, results, scope_info)
     try:
         await query.edit_message_text(message_text, reply_markup=reply_markup)
     except BadRequest as e:

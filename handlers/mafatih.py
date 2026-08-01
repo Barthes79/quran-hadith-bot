@@ -15,6 +15,7 @@ def get_main_menu_keyboard():
         [InlineKeyboardButton("🌙 اعمال ماه‌های سال", callback_data="mafcat_lunar_months")],
         [InlineKeyboardButton("🕌 زیارات و عتبات", callback_data="mafcat_ziyarats")],
         [InlineKeyboardButton("📚 باقیات صالحات و ملحقات", callback_data="mafcat_appendices_baqiyat")],
+        [InlineKeyboardButton("🔍 جستجو در مفاتیح‌الجنان", callback_data="search_start_mafatih")],
         [InlineKeyboardButton("🏠 بازگشت به منوی اصلی ربات", callback_data="menu_main")]
     ])
 

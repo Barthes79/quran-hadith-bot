@@ -190,6 +190,7 @@ async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
     if nav_row:
         buttons.append(nav_row)
 
+    buttons.append([InlineKeyboardButton("🔍 جستجو در قرآن", callback_data="quran_search_info")])
     buttons.append([InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")])
 
     text = "📖 یک سوره را انتخاب کنید:"
@@ -206,6 +207,30 @@ async def surah_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     page = int(query.data.replace("surah_page_", ""))
     await show_surah_list(update, context, page=page)
+
+
+async def quran_search_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «🔍 جستجو در قرآن». برخلاف احادیث/نهج‌البلاغه/مفاتیح، متن آیات
+    از یک API خارجی خونده می‌شه (نه از دیتابیس محلی)، پس جستجوی متنی در
+    محتوای آیات فعلاً امکان‌پذیر نیست؛ به‌جاش راهنمای رفتن مستقیم به یک آیه
+    (که قبلاً هم در هر بخشی از ربات کار می‌کند) نشون داده می‌شه."""
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "🔍 جستجو در قرآن کریم\n\n"
+        "برای رفتن مستقیم به یک آیه، کافی است همین الان (بدون فشردن دکمه‌ی دیگری) "
+        "یکی از این شکل‌ها را برایم بنویسید:\n\n"
+        "• 2:255  ← سوره ۲، آیه ۲۵۵\n"
+        "• بقره 255  ← سوره بقره، آیه ۲۵۵\n"
+        "• سوره بقره آیه 255\n\n"
+        "فعلاً جستجوی متنی در محتوای آیات پشتیبانی نمی‌شود؛ فقط جست‌وجو بر اساس نام سوره و شماره‌ی آیه امکان‌پذیر است."
+    )
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ بازگشت", callback_data="menu_quran")]]
+        ),
+    )
 
 
 async def show_ayah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, page: int = 0):

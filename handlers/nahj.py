@@ -41,6 +41,7 @@ async def show_nahj_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(NAHJ_MENU_LABELS["khutbah"], callback_data="nahjcat_khutbah")],
         [InlineKeyboardButton(NAHJ_MENU_LABELS["letter"], callback_data="nahjcat_letter")],
         [InlineKeyboardButton(NAHJ_MENU_LABELS["hekmat"], callback_data="nahjcat_hekmat")],
+        [InlineKeyboardButton("🔍 جستجو در نهج‌البلاغه", callback_data="search_start_nahj")],
         [InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")],
     ]
     text = "🕌 نهج‌البلاغه\n\nیک بخش را انتخاب کنید:"
