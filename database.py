@@ -18,7 +18,7 @@ def _ensure_column(cur, table: str, column: str, definition: str):
 
 
 def _migrate_legacy_salavat_goals_table(cur):
-    """اگه جدول salavat_goals از یه نسخه‌ی خیلی قدیمی‌تر (تک‌ختمی، از
+    """اگه جدول salavat_goals از  یه نسخه‌ی خیلی قدیمی‌تر (تک‌ختمی، از
     قبل از اضافه‌شدن پشتیبانی چند-ختمی) روی دیتابیس مونده باشه، ستون
     id (کلید اصلیِ ساختار جدید) رو نداره -- چون توی اون نسخه احتمالاً
     خودِ chat_id کلید اصلی بوده (هر گروه فقط یه ختم).
