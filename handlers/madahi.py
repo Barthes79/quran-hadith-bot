@@ -100,7 +100,7 @@ MOLODI_TREE = [
 # نگاشتِ نوع محتوا به درخت و ایموجیِ مخصوص خودش
 _CATEGORY_CONFIG = {
     "madahi": {"flag": "🏴", "tree": MADAHI_TREE},
-    "molodi": {"flag": "❇️", "tree": MOLODI_TREE},
+    "molodi": {"flag": "💐", "tree": MOLODI_TREE},
 }
 
 
