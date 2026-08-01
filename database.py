@@ -1378,6 +1378,7 @@ def add_madahi(content_type: str, occasion: str, title: str, audio_file_id: str,
     item_id = cur.lastrowid
     conn.commit()
     conn.close()
+    _reindex_madahi(item_id)
     return item_id
 
 
@@ -1423,6 +1424,7 @@ def delete_madahi(item_id: int):
     conn.execute("DELETE FROM madahi WHERE id = ?", (item_id,))
     conn.commit()
     conn.close()
+    _remove_from_index("madahi", item_id)
 
 
 def count_madahi(content_type: str = None):
@@ -1591,6 +1593,18 @@ def _reindex_mafatih(item_id: int):
     )
 
 
+def _reindex_madahi(item_id: int):
+    row = get_madahi_by_id(item_id)
+    if not row:
+        _remove_from_index("madahi", item_id)
+        return
+    _index_item(
+        "madahi",
+        item_id,
+        [row["title"], row["reciter"], row["occasion"]],
+    )
+
+
 def rebuild_search_index():
     conn = get_connection()
     conn.execute("DELETE FROM search_fts")
@@ -1601,6 +1615,7 @@ def rebuild_search_index():
     hadiths = conn.execute("SELECT * FROM hadiths").fetchall()
     nahj_rows = conn.execute("SELECT * FROM nahj_balagha").fetchall()
     maf_rows = conn.execute("SELECT * FROM mafatih").fetchall()
+    madahi_rows = conn.execute("SELECT * FROM madahi").fetchall()
     conn.close()
 
     for h in hadiths:
@@ -1614,8 +1629,13 @@ def rebuild_search_index():
         _index_item("nahj", n["id"], [n["title"], n["arabic_text"], n["translation_text"], n["tafsir_text"]])
     for m in maf_rows:
         _index_item("mafatih", m["id"], [m["title"], m["arabic_text"], m["translation_text"], m["tafsir_text"]])
+    for md in madahi_rows:
+        _index_item("madahi", md["id"], [md["title"], md["reciter"], md["occasion"]])
 
-    print(f"✅ ایندکس جستجو بازسازی شد: {len(hadiths)} حدیث، {len(nahj_rows)} نهج‌البلاغه، {len(maf_rows)} مفاتیح.")
+    print(
+        f"✅ ایندکس جستجو بازسازی شد: {len(hadiths)} حدیث، {len(nahj_rows)} نهج‌البلاغه، "
+        f"{len(maf_rows)} مفاتیح، {len(madahi_rows)} مداحی/مولودی."
+    )
 
 
 def ensure_search_index():
@@ -1673,14 +1693,14 @@ def _fuzzy_fallback(norm_query: str, types=None, limit: int = 100):
     return results
 
 
-_TYPE_TABLE = {"hadith": "hadiths", "nahj": "nahj_balagha", "mafatih": "mafatih"}
+_TYPE_TABLE = {"hadith": "hadiths", "nahj": "nahj_balagha", "mafatih": "mafatih", "madahi": "madahi"}
 
 
 def hydrate_results(raw_results):
     if not raw_results:
         return []
 
-    ids_by_type = {"hadith": [], "nahj": [], "mafatih": []}
+    ids_by_type = {"hadith": [], "nahj": [], "mafatih": [], "madahi": []}
     order = []
     seen = set()
     for r in raw_results:
@@ -1730,6 +1750,13 @@ def hydrate_results(raw_results):
                 "title": row["title"] or "",
                 "arabic": row["arabic_text"], "translation": row["translation_text"] or "",
                 "extra": row["category"] or "",
+            })
+        elif stype == "madahi":
+            hydrated.append({
+                "type": "madahi", "id": sid, "row": row,
+                "title": row["title"] or "",
+                "arabic": "", "translation": "",
+                "extra": {"content_type": row["content_type"], "occasion": row["occasion"], "reciter": row["reciter"]},
             })
     return hydrated
 

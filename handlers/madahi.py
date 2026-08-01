@@ -157,6 +157,7 @@ def _type_keyboard():
     keyboard = [
         [InlineKeyboardButton("(مداحی)", callback_data="madahi_type_madahi")],
         [InlineKeyboardButton("(مولودی)", callback_data="madahi_type_molodi")],
+        [InlineKeyboardButton("🔍 جستجو در مداحی و مولودی", callback_data="search_start_madahi")],
         [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
     ]
     return InlineKeyboardMarkup(keyboard)

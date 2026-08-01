@@ -244,6 +244,14 @@ SEARCH_SCOPES = {
             "برای خروج از حالت جستجو، دکمه‌ی زیر را بزنید."
         ),
     },
+    "madahi": {
+        "types": ["madahi"],
+        "title": "🎙 مداحی و مولودی",
+        "prompt": (
+            "🔍 حالا هر عبارتی بفرستید تا فقط بین *عنوان، نام مداح و مناسبتِ فایل‌های مداحی/مولودی* جستجو شود.\n\n"
+            "برای خروج از حالت جستجو، دکمه‌ی زیر را بزنید."
+        ),
+    },
 }
 
 
@@ -296,7 +304,7 @@ def _build_search_message(text: str, results: list, scope_info: dict = None):
             title_part = f" — {row['title']}" if row["title"] else ""
             label = f"{cat_label} {item_label} {row['number']}{title_part}"
             callback_data = f"nahjitem_{row['category']}_{row['number']}"
-        else:  # mafatih
+        elif item["type"] == "mafatih":
             identifier = row["slug"] if row["slug"] else row["id"]
             # به‌جای ستون category در دیتابیس (که فقط چند مقدار کلی دارد و
             # لزوماً با ساختار واقعی منو یکی نیست)، از مسیر واقعی‌اش در منو
@@ -305,6 +313,13 @@ def _build_search_message(text: str, results: list, scope_info: dict = None):
             sub_label = location[1] if location else "📗 مفاتیح‌الجنان"
             label = f"{sub_label} — {row['title']}"
             callback_data = f"mafitem_{identifier}"
+        else:  # madahi
+            flag = "🏴" if row["content_type"] == "madahi" else "💐"
+            preview = row["title"] or ""
+            if row["reciter"]:
+                preview += f" - {row['reciter']}"
+            label = f"{flag} {preview}"
+            callback_data = f"madahi_play_{row['id']}"
         buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
 
     if len(results) > MAX_BUTTONS:
@@ -407,6 +422,10 @@ async def search_exit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         # mafatih_menu_callback خودش query.answer() رو صدا می‌زنه
         from handlers.mafatih import mafatih_menu_callback
         await mafatih_menu_callback(update, context)
+    elif scope == "madahi":
+        await query.answer()
+        from handlers.madahi import madahi_menu_callback
+        await madahi_menu_callback(update, context)
     else:
         from handlers.start import main_menu_keyboard
         await query.answer()
