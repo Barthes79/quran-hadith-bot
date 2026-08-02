@@ -28,6 +28,7 @@ from handlers.hadith import (
     find_hadith_command, edit_hadith_command, del_hadith_command,
     hadith_view_callback,
     search_exit_callback, search_back_callback, search_start_callback,
+    id_search_callback, id_search_handler, clear_favorites_callback,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
@@ -335,7 +336,7 @@ def main():
     app.add_handler(CallbackQueryHandler(quran_search_info_callback, pattern="^quran_search_info$"))
 
     # ==========================================
-    # کالبک‌های احادیث
+    # کالبکهای احادیث
     # ==========================================
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_"))
     app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
@@ -345,8 +346,12 @@ def main():
     app.add_handler(CallbackQueryHandler(hadith_view_callback, pattern="^hadithview_"))
     app.add_handler(CallbackQueryHandler(search_exit_callback, pattern="^search_exit$"))
     app.add_handler(CallbackQueryHandler(search_back_callback, pattern="^search_back$"))
-    # دکمه‌ی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih/madahi)
+    # دکمهی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih/madahi)
     app.add_handler(CallbackQueryHandler(search_start_callback, pattern="^search_start_"))
+    # جستجو با شناسه حدیث و مدیریت علاقهمندیها
+    app.add_handler(CallbackQueryHandler(id_search_callback, pattern="^id_search_hadith$"))
+    app.add_handler(CallbackQueryHandler(clear_favorites_callback, pattern="^clear_favorites$"))
+    app.add_handler(CallbackQueryHandler(show_favorites, pattern="^show_favorites$"))
 
     # ==========================================
     # کالبک‌های نهج‌البلاغه
@@ -446,14 +451,16 @@ def main():
     app.add_handler(MessageHandler(filters.LOCATION, prayer_location_handler))
 
     # ==========================================
-    # هندلر پیام‌های متنی
+    # هندلر پیامهای متنی
     # ==========================================
-    # باید قبل از general_text_handler ثبت بشه؛ فیلترش فقط وقتی True می‌شه که
-    # فرستنده وسط ویزارد افزودن مداحی باشه (مرحله‌ی عنوان یا اسم مداح)، پس
-    # برای بقیه‌ی کاربران هیچ تغییری توی رفتار general_text_handler ایجاد نمی‌شه.
+    # باید قبل از general_text_handler ثبت بشه؛ فیلترش فقط وقتی True میشه که
+    # فرستنده وسط ویزارد افزودن مداحی باشه (مرحلهی عنوان یا اسم مداح)، پس
+    # برای بقیهی کاربران هیچ تغییری توی رفتار general_text_handler ایجاد نمیشه.
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & madahi_pending_text_filter, madahi_add_text_handler))
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
+    # هندلر جستجو با شناسه حدیث
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, id_search_handler))
 
     # ==========================================
     # جاب پست روزانه

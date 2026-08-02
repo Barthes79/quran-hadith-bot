@@ -790,6 +790,16 @@ def remove_favorite(user_id: int, item_type: str, item_ref: str):
     conn.close()
 
 
+def clear_user_favorites(user_id: int):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM favorites WHERE user_id = ?",
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
+
+
 def add_hadith(arabic_text, translation_text, narrator, source_book, chapter,
                hadith_number, tafsir_text=None, topics=None):
     conn = get_connection()
