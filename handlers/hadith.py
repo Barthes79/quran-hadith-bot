@@ -27,13 +27,17 @@ def topic_hash(topic_name: str) -> str:
 
 
 async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database import get_connection
+    
     query = update.callback_query
     topics = get_all_topics()
     
-    # Sort topics alphabetically for better organization
+    conn = get_connection()
+    total_hadiths = conn.execute("SELECT COUNT(*) FROM hadiths").fetchone()[0]
+    conn.close()
+    
     sorted_topics = sorted(topics)
-
-    # Categorize topics by first letter for better organization
+    
     categorized = {}
     for t in sorted_topics:
         if t and len(t) > 0:
@@ -42,52 +46,35 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 categorized[first_letter] = []
             categorized[first_letter].append(t)
     
-    # Create keyboard with organized topics
     buttons = []
     
-    # Add topic buttons in groups of 3 for better layout
     for letter, topic_list in sorted(categorized.items()):
-        # Add section separator if multiple letters
         if len(categorized) > 1:
-            buttons.append([InlineKeyboardButton(f"────────── {letter} ──────────", callback_data="noop")])
+            buttons.append([InlineKeyboardButton(f"─── {letter} ───", callback_data="noop")])
         
-        # Add topics in rows of 3
-        for i in range(0, len(topic_list), 3):
+        for i in range(0, len(topic_list), 2):
             row = []
-            for topic in topic_list[i:i+3]:
+            for topic in topic_list[i:i+2]:
                 row.append(InlineKeyboardButton(
-                    f"• {topic[:15]}{'...' if len(topic) > 15 else ''}", 
+                    topic[:18] + ('…' if len(topic) > 18 else ''), 
                     callback_data=f"topic_{topic_hash(topic)}"
                 ))
             buttons.append(row)
     
-    # Add feature buttons with emoji
     buttons.append([InlineKeyboardButton("🎲 حدیث تصادفی", callback_data="hadith_random")])
-    buttons.append([InlineKeyboardButton("🔍 جستجو پیشرفته در احادیث", callback_data="search_start_hadith")])
-    buttons.append([InlineKeyboardButton("📖 جستجو با شناسه حدیث", callback_data="id_search_hadith")])
-    buttons.append([InlineKeyboardButton("⭐ علاقهمندیهای من", callback_data="show_favorites")])
+    buttons.append([InlineKeyboardButton("🔍 جستجو", callback_data="search_start_hadith")])
+    buttons.append([InlineKeyboardButton("🆔 جستجو با شناسه", callback_data="id_search_hadith")])
+    buttons.append([InlineKeyboardButton("⭐ علاقهمندیها", callback_data="show_favorites")])
     buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
 
     if topics:
-        text = "📚 *گنجینه احادیث معصومین* 📚\n\n"
-        text += f"🌿 تعداد احادیث: *{len(topics)} موضوع*\n"
-        text += "────────────\n"
-        text += "📌 *موضوعات:*\n"
-        text += "برای مشاهده احادیث هر موضوع، یکی از موارد زیر را انتخاب کنید:\n\n"
-        
-        # Add topic list in bullet points
-        for i, t in enumerate(sorted_topics, 1):
-            text += f"{i}. {t}\n"
-            
-        text += "\n────────────\n"
-        text += "🎯 *ویژگیهای جدید:*\n"
-        text += "• جستجوی پیشرفته\n"
-        text += "• جستجو با شناسه حدیث\n"
-        text += "• مشاهده علاقهمندیها\n"
+        text = f"📚 *احادیث معصومین*\n\n"
+        text += f"📊 {total_hadiths} حدیث در {len(topics)} موضوع\n\n"
+        text += "یک موضوع انتخاب کنید:"
     else:
-        text = "📿 *گنجینه احادیث* 📿\n\n"
-        text += "هنوز موضوعی ثبت نشده است.\n"
-        text += "برای افزودن حدیث جدید از دستور /addhadith استفاده کنید."
+        text = "📚 *احادیث معصومین*\n\n"
+        text += "هنوز حدیثی ثبت نشده.\n"
+        text += "برای افزودن: /addhadith"
 
     if query:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
@@ -96,86 +83,65 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def format_hadith(row):
-    # Header with emoji
-    header = "📿 *حدیثی از معصومین* 📿\n"
+    text = "📿 *حدیثی از معصومین*\n\n"
     
-    # Narration chain if available
-    text = ""
     if row['narrator']:
-        text += f"👤 *ناقل*: {row['narrator']}\n\n"
+        text += f"👤 ناقل: {row['narrator']}\n\n"
     
-    # Arabic text with beautiful formatting
-    text += f"*📜 متن عربی:*\n{row['arabic_text']}\n\n"
+    text += f"«{row['arabic_text']}»\n\n"
     
-    # Translation with separator
-    text += f"────────────\n"
-    text += f"*🔸 ترجمه فارسی:*\n{row['translation_text']}\n\n"
+    text += f"🔹 ترجمه:\n{row['translation_text']}\n"
     
-    # Commentary if exists
     if row["tafsir_text"]:
-        text += f"────────────\n"
-        text += f"*📖 تفسیر و توضیح:*\n{row['tafsir_text']}\n\n"
+        text += f"\n📖 توضیح:\n{row['tafsir_text']}\n"
     
-    # Source information box
     source = row["source_book"] or ""
     chapter = row["chapter"] or ""
     number = row["hadith_number"] or ""
     
     if source:
-        text += f"────────────\n"
-        text += f"*📚 مشخصات منبع:*\n"
-        text += f"• کتاب: {source}\n"
+        text += f"\n📚 منبع: {source}"
         if chapter:
-            text += f"• باب/فصل: {chapter}\n"
+            text += f" • {chapter}"
         if number:
-            text += f"• شماره حدیث: {number}\n"
+            text += f" (#{number})"
     
-    # Footer with ID
-    text += f"────────────\n"
-    text += f"🆔 *شناسه حدیث*: `{row['id']}`"
+    text += f"\n\n🆔 شناسه: `{row['id']}`"
     
-    return header + text
+    return text
 
 
-def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_search_back=False):
+def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_search_back=False, source_book=None):
     buttons = []
     
-    # Enhanced navigation row with better UX
     if topic_name is not None and total and total > 1:
         h = topic_hash(topic_name)
         nav_row = []
         
-        # Previous button with emoji
         if index > 0:
-            nav_row.append(InlineKeyboardButton("⏪ حدیث قبلی", callback_data=f"topicnav_{index-1}_{h}"))
+            nav_row.append(InlineKeyboardButton("⏪ قبلی", callback_data=f"topicnav_{index-1}_{h}"))
         
-        # Current position indicator with context
-        nav_row.append(InlineKeyboardButton(f"📍 {index+1} از {total}", callback_data="noop"))
+        nav_row.append(InlineKeyboardButton(f"📍 {index+1}/{total}", callback_data="noop"))
         
-        # Next button with emoji
         if index < total - 1:
-            nav_row.append(InlineKeyboardButton("حدیث بعدی ⏩", callback_data=f"topicnav_{index+1}_{h}"))
+            nav_row.append(InlineKeyboardButton("بعدی ⏩", callback_data=f"topicnav_{index+1}_{h}"))
         
         buttons.append(nav_row)
     
-    # Action buttons row - user interactions
     action_buttons = []
-    action_buttons.append(InlineKeyboardButton("⭐ افزودن به علاقهمندیها", callback_data=f"fav_hadith_{hadith_id}"))
-    action_buttons.append(InlineKeyboardButton("📤 اشتراکگذاری", callback_data=f"share_hadith_{hadith_id}"))
+    action_buttons.append(InlineKeyboardButton("⭐ علاقهمندی", callback_data=f"fav_hadith_{hadith_id}"))
+    action_buttons.append(InlineKeyboardButton("📋 کپی", callback_data=f"copy_hadith_{hadith_id}"))
+    action_buttons.append(InlineKeyboardButton("📤 اشتراک", switch_inline_query=f"hadith_{hadith_id}"))
     buttons.append(action_buttons)
     
-    # Shortcuts row - quick actions
-    shortcuts = []
-    shortcuts.append(InlineKeyboardButton("🔍 جستجو در همین موضوع", callback_data=f"search_in_topic_{hadith_id}"))
-    shortcuts.append(InlineKeyboardButton("📝 یادداشت بنویس", callback_data=f"add_note_{hadith_id}"))
-    buttons.append(shortcuts)
+    if source_book:
+        buttons.append([InlineKeyboardButton(f"📖 {source_book[:25]}", callback_data=f"filter_source_{hadith_id}")])
     
-    # Navigation row - back buttons
     navigation = []
     if show_search_back:
-        navigation.append(InlineKeyboardButton("↩️ بازگشت به نتایج جستجو", callback_data="search_back"))
-    navigation.append(InlineKeyboardButton("📚 بازگشت به موضوعات", callback_data="menu_hadith"))
-    navigation.append(InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back"))
+        navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
+    navigation.append(InlineKeyboardButton("📚 موضوعات", callback_data="menu_hadith"))
+    navigation.append(InlineKeyboardButton("🏠 منو", callback_data="menu_back"))
     buttons.append(navigation)
     
     return InlineKeyboardMarkup(buttons)
@@ -203,7 +169,7 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
     row = rows[0]
     await query.edit_message_text(
         format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows)),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows), source_book=row.get("source_book")),
     )
 
 
@@ -227,7 +193,7 @@ async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     row = rows[index]
     await query.edit_message_text(
         format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows)),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows), source_book=row.get("source_book")),
     )
 
 
@@ -238,7 +204,7 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
     if not row:
         await query.edit_message_text("هنوز حدیثی در دیتابیس ثبت نشده است.")
         return
-    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"]))
+    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"], source_book=row.get("source_book")))
 
 
 async def fav_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -976,5 +942,102 @@ async def clear_favorites_callback(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("📚 مشاهده احادیث", callback_data="menu_hadith")],
             [InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")]
         ]),
+        parse_mode="Markdown"
+    )
+
+
+async def copy_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمهی کپی متن حدیث در قالب زیبا"""
+    query = update.callback_query
+    await query.answer()
+    
+    hadith_id = query.data.replace("copy_hadith_", "")
+    row = get_hadith_by_id(int(hadith_id))
+    
+    if not row:
+        await query.answer("این حدیث دیگر در دسترس نیست.", show_alert=True)
+        return
+    
+    text = f"📿 {row['narrator'] or 'حدیث'}\n\n"
+    text += f"{row['arabic_text']}\n\n"
+    text += f"🔹 ترجمه:\n{row['translation_text']}\n"
+    
+    if row["tafsir_text"]:
+        text += f"\n📝 تفسیر:\n{row['tafsir_text']}\n"
+    
+    source = row["source_book"] or ""
+    if source:
+        text += f"\n📚 منبع: {source}"
+        if row["chapter"]:
+            text += f" - {row['chapter']}"
+        if row["hadith_number"]:
+            text += f" (حدیث {row['hadith_number']})"
+    
+    await query.answer("متن حدیث کپی شد! ✅", show_alert=False)
+    
+    try:
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text=f"📋 متن حدیث برای کپی:\n\n{text}",
+            parse_mode=None
+        )
+    except Exception:
+        pass
+
+
+async def filter_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش احادیث همان منبع"""
+    query = update.callback_query
+    await query.answer()
+    
+    hadith_id = query.data.replace("filter_source_", "")
+    current_hadith = get_hadith_by_id(int(hadith_id))
+    
+    if not current_hadith:
+        await query.answer("این حدیث دیگر در دسترس نیست.", show_alert=True)
+        return
+    
+    source_book = current_hadith.get("source_book")
+    if not source_book:
+        await query.answer("منبع این حدیث مشخص نیست.", show_alert=True)
+        return
+    
+    from database import list_hadiths
+    rows = list_hadiths(source_book=source_book, limit=50)
+    
+    if not rows:
+        await query.answer("حدیث دیگری از این منبع یافت نشد.", show_alert=True)
+        return
+    
+    if len(rows) == 1:
+        await query.answer("فقط همین حدیث از این منبع موجود است.", show_alert=True)
+        return
+    
+    text = f"📖 *احادیث از منبع: {source_book}*\n\n"
+    text += f"تعداد: {len(rows)} حدیث\n"
+    text += "────────────\n\n"
+    
+    for i, row in enumerate(rows[:15], 1):
+        preview = (row["translation_text"] or "")[:50].replace("\n", " ")
+        text += f"{i}. {preview}...\n"
+    
+    if len(rows) > 15:
+        text += f"\n... و {len(rows) - 15} حدیث دیگر"
+    
+    buttons = []
+    for i, row in enumerate(rows[:10]):
+        preview = (row["translation_text"] or row["arabic_text"] or "")[:30]
+        buttons.append([
+            InlineKeyboardButton(
+                f"#{row['id']} {preview}",
+                callback_data=f"hadithview_{row['id']}"
+            )
+        ])
+    
+    buttons.append([InlineKeyboardButton("📚 بازگشت به موضوعات", callback_data="menu_hadith")])
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
         parse_mode="Markdown"
     )

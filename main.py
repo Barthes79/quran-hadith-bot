@@ -29,7 +29,7 @@ from handlers.hadith import (
     hadith_view_callback,
     search_exit_callback, search_back_callback, search_start_callback,
     id_search_callback, id_search_handler, clear_favorites_callback,
-    show_favorites,
+    show_favorites, copy_hadith_callback, filter_source_callback,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
@@ -353,6 +353,8 @@ def main():
     app.add_handler(CallbackQueryHandler(id_search_callback, pattern="^id_search_hadith$"))
     app.add_handler(CallbackQueryHandler(clear_favorites_callback, pattern="^clear_favorites$"))
     app.add_handler(CallbackQueryHandler(show_favorites, pattern="^show_favorites$"))
+    app.add_handler(CallbackQueryHandler(copy_hadith_callback, pattern="^copy_hadith_"))
+    app.add_handler(CallbackQueryHandler(filter_source_callback, pattern="^filter_source_"))
 
     # ==========================================
     # کالبک‌های نهج‌البلاغه
