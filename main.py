@@ -74,6 +74,7 @@ from handlers.prayer import (
 from handlers.azan_announce import (
     azan_setup_router, set_azan_audio_command, azan_audio_upload_handler,
     azan_audio_pending_filter, schedule_daily_azan_announcements,
+    handle_incoming_azan_panel_message,
 )
 from handlers.madahi import (
     madahi_command, madahi_type_callback, madahi_back_types_callback,
@@ -121,6 +122,13 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # پیام‌های ویرایش‌شده (edited_message) و بعضی آپدیت‌های خاص، update.message
     # ندارن (None هست)؛ بدون این گارد، خط بعدی با AttributeError کرش می‌کنه.
     if not update.message or not update.message.text:
+        return
+
+    # پیام inline «اعلام اذان» که تازه وارد یه گروه شده: باید پاک و با یه
+    # پیام واقعیِ ربات جایگزین بشه، وگرنه دکمه‌هاش کار نمی‌کنن (پیام‌های
+    # inline از دید تلگرام chat_id مشخصی روی callback نمی‌ذارن). این چک
+    # باید همین اول (قبل از هر پردازش دیگه) انجام بشه.
+    if await handle_incoming_azan_panel_message(update, context):
         return
 
     text = update.message.text.strip()

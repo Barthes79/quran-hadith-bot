@@ -46,6 +46,10 @@ IRAN_TZ = ZoneInfo("Asia/Tehran")
 # توی handlers/inline.py گرفته می‌شه. اگه این رو عوض کردی، همون‌جا هم عوض کن.
 AZAN_SETUP_TOKEN = "azan_setup"
 
+# سطر اول متن پنل (هم توی placeholder و هم توی پنل واقعی)، برای شناسایی
+# پیامِ inline که وارد گروه شده استفاده می‌شود.
+AZAN_PANEL_MARKER = "🔔 تنظیمات اعلام اذان این گروه"
+
 CITY_CODE_TO_NAME = {code: name for name, code in CITY_CODES.items()}
 
 _DEFAULT_AZAN_SETTINGS = {
@@ -81,7 +85,7 @@ def _city_name(code) -> str:
 
 def _azan_panel_text(settings) -> str:
     return (
-        "🔔 *تنظیمات اعلام اذان این گروه*\n\n"
+        f"*{AZAN_PANEL_MARKER}*\n\n"
         f"🏙 شهر: *{_city_name(settings['city_code'])}*\n"
         f"🔊 پخش صوت اذان: {_mark(settings['audio_on'])}\n"
         f"🌅 اذان صبح: {_mark(settings['azan_fajr'])}\n"
@@ -110,16 +114,71 @@ def _azan_panel_keyboard(settings) -> InlineKeyboardMarkup:
 # ==========================================
 
 def build_azan_setup_inline_result() -> InlineQueryResultArticle:
-    """پنلی که با مقادیر پیش‌فرض ساخته می‌شه و مستقیم توی گروهِ انتخاب‌شده فرستاده می‌شه."""
-    text = _azan_panel_text(_DEFAULT_AZAN_SETTINGS)
-    keyboard = _azan_panel_keyboard(_DEFAULT_AZAN_SETTINGS)
+    """
+    این پیام صرفاً یک placeholder موقته که با انتخاب گروه توی همون گروه فرستاده
+    می‌شه. نکته‌ی مهم: پیامی که از طریق inline mode فرستاده می‌شه، از دید تلگرام
+    «پیامِ ارسالی توسط ربات» حساب نمی‌شه (بلکه با inline_message_id شناخته
+    می‌شه، نه chat_id/message_id عادی)، پس دکمه‌های callback روش هیچ‌وقت
+    نمی‌تونن بفهمن توی کدوم گروهن. برای همین این پیام هیچ دکمه‌ای نداره؛
+    handle_incoming_azan_panel_message به‌محض دیدنش (به‌عنوان یک پیام معمولی
+    داخل گروه) اون رو پاک می‌کنه و یک پیام *واقعی* از طرف ربات با پنل کامل
+    و دکمه‌های کاربردی جایگزینش می‌کنه.
+    """
+    text = (
+        f"{AZAN_PANEL_MARKER}\n\n"
+        "⏳ در حال آماده‌سازی پنل تنظیمات...\n"
+        "(اگه چند ثانیه بعد چیزی عوض نشد، یعنی ربات هنوز عضو این گروه نیست؛ "
+        "اول ربات رو به گروه اضافه کن، بعد دوباره امتحان کن.)"
+    )
     return InlineQueryResultArticle(
         id=str(uuid.uuid4()),
         title="🔔 راه‌اندازی اعلام اذان در این گروه",
         description="با انتخاب این گزینه، پنل تنظیمات اعلام اذان توی همین گروه فرستاده می‌شه.",
-        input_message_content=InputTextMessageContent(text, parse_mode="Markdown"),
-        reply_markup=keyboard,
+        input_message_content=InputTextMessageContent(text),
     )
+
+
+async def handle_incoming_azan_panel_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    وقتی همون پیامِ inline (placeholder بالا) واقعاً توی یه گروه فرود بیاد،
+    این تابع به‌عنوان یک پیام معمولی گروهی می‌بیندش (چون ربات عضو گروهه)،
+    پاکش می‌کنه و یک پیام *واقعی* با پنل کامل جایگزینش می‌کند تا دکمه‌ها
+    درست کار کنن.
+
+    باید از general_text_handler (توی main.py) صدا زده بشه، قبل از هر
+    پردازش دیگه‌ای. خروجی True یعنی «این پیام مصرف شد»، False یعنی «ربطی
+    نداشت، بذار بقیه‌ی هندلرها پردازشش کنن».
+    """
+    message = update.message
+    if not message or not message.via_bot or message.via_bot.id != context.bot.id:
+        return False
+    if not message.text or not message.text.startswith(AZAN_PANEL_MARKER):
+        return False
+
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        return False
+
+    chat_id = chat.id
+    settings = get_azan_group_settings(chat_id)  # اگه ردیفی نبود، همین‌جا با مقادیر پیش‌فرض ساخته می‌شه
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=_azan_panel_text(settings),
+            parse_mode="Markdown",
+            reply_markup=_azan_panel_keyboard(settings),
+        )
+    except Exception as e:
+        logger.error(f"خطا در ارسال پنل واقعیِ اعلام اذان برای گروه {chat_id}: {e}")
+        return True
+
+    try:
+        await message.delete()
+    except Exception:
+        pass  # اگه ربات دسترسی حذف نداشت مهم نیست؛ فقط placeholder قدیمی می‌مونه (بی‌ضرر)
+
+    return True
 
 
 # ==========================================
