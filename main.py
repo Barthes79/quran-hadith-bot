@@ -29,6 +29,7 @@ from handlers.hadith import (
     hadith_view_callback,
     search_exit_callback, search_back_callback, search_start_callback,
     id_search_callback, id_search_handler, clear_favorites_callback,
+    show_favorites,
 )
 from handlers.inline import inline_query_handler
 from handlers.profile import profile_command
