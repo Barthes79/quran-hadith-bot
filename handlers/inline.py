@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from database import search_raw, hydrate_results
 from services.quran_api import get_ayah
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
+from handlers.azan_announce import AZAN_SETUP_TOKEN, build_azan_setup_inline_result
 
 MAFATIH_CATEGORY_FA = {
     "daily": "🕋 اعمال روزانه",
@@ -103,6 +104,17 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     MAX_RESULTS) خودکار لود می‌شود.
     """
     query_text = update.inline_query.query.strip()
+
+    # کوئری خاصِ راه‌اندازی «اعلام اذان در گروه» (از دکمه‌ی
+    # switch_inline_query_chosen_chat توی منوی اوقات شرعی می‌آید)
+    if query_text == AZAN_SETUP_TOKEN:
+        try:
+            await update.inline_query.answer(
+                [build_azan_setup_inline_result()], cache_time=1, is_personal=True
+            )
+        except Exception:
+            pass
+        return
 
     if not query_text:
         try:

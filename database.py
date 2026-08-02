@@ -292,6 +292,27 @@ def init_db():
     _ensure_column(cur, "prayer_reminders", "group_chat_id", "INTEGER")
     _ensure_column(cur, "prayer_reminders", "user_name", "TEXT")
 
+    # اعلام اذان در گروه‌ها (پیام + صوت سرِ وقتِ اذان، به تفکیک هر گروه)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS azan_announce_settings (
+            chat_id INTEGER PRIMARY KEY,
+            city_code INTEGER DEFAULT 1,
+            azan_fajr INTEGER DEFAULT 0,
+            azan_noon INTEGER DEFAULT 0,
+            azan_maghrib INTEGER DEFAULT 0,
+            audio_on INTEGER DEFAULT 1
+        )
+    """)
+
+    # فایل صوتیِ سراسریِ اذان (یک صدای مشترک برای همه‌ی گروه‌ها، توسط ادمین ربات تنظیم می‌شه)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS azan_audio_asset (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            file_id TEXT,
+            file_type TEXT
+        )
+    """)
+
     # صلوات‌شمار: تعداد صلواتِ هر کاربر در هر گروه
     cur.execute("""
         CREATE TABLE IF NOT EXISTS salavat_stats (
@@ -1609,6 +1630,64 @@ def get_all_enabled_prayer_reminders():
     ).fetchall()
     conn.close()
     return rows
+
+
+# ---------------- توابع مربوط به اعلام اذان در گروه‌ها ----------------
+
+def get_azan_group_settings(chat_id: int):
+    """تنظیمات اعلام اذان یک گروه را برمی‌گرداند؛ اگر وجود نداشت، با مقادیر
+    پیش‌فرض می‌سازد (شبیه get_group_settings)."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM azan_announce_settings WHERE chat_id = ?", (chat_id,)
+    ).fetchone()
+    if not row:
+        conn.execute("INSERT INTO azan_announce_settings (chat_id) VALUES (?)", (chat_id,))
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM azan_announce_settings WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+    conn.close()
+    return row
+
+
+def update_azan_group_settings(chat_id: int, **kwargs):
+    if not kwargs:
+        return
+    conn = get_connection()
+    get_azan_group_settings(chat_id)  # مطمئن می‌شویم ردیف وجود دارد
+    for key, value in kwargs.items():
+        conn.execute(f"UPDATE azan_announce_settings SET {key} = ? WHERE chat_id = ?", (value, chat_id))
+    conn.commit()
+    conn.close()
+
+
+def get_all_azan_enabled_groups():
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT * FROM azan_announce_settings
+           WHERE azan_fajr = 1 OR azan_noon = 1 OR azan_maghrib = 1"""
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_azan_audio_asset():
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM azan_audio_asset WHERE id = 1").fetchone()
+    conn.close()
+    return row
+
+
+def set_azan_audio_asset(file_id: str, file_type: str):
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO azan_audio_asset (id, file_id, file_type) VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET file_id = excluded.file_id, file_type = excluded.file_type""",
+        (file_id, file_type),
+    )
+    conn.commit()
+    conn.close()
 
 
 # =====================================================================

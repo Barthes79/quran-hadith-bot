@@ -71,6 +71,10 @@ from handlers.prayer import (
     prayer_reminder_setmin_callback, prayer_reminder_minutes_text_handler,
     schedule_daily_prayer_reminders, prayer_test_reminder_command,
 )
+from handlers.azan_announce import (
+    azan_setup_router, set_azan_audio_command, azan_audio_upload_handler,
+    azan_audio_pending_filter, schedule_daily_azan_announcements,
+)
 from handlers.madahi import (
     madahi_command, madahi_type_callback, madahi_back_types_callback,
     madahi_category_callback, madahi_occasion_callback, madahi_page_callback,
@@ -238,6 +242,7 @@ def main():
     # و منتظر فایل صوتیه، این یکی جلوی mafatih_audio_upload_handler رو
     # می‌گیره؛ در غیر این صورت (فیلترش False باشه) هندلر بعدی طبق روال قبل کار می‌کنه.
     app.add_handler(MessageHandler((filters.AUDIO | filters.VOICE) & madahi_pending_audio_filter, madahi_add_audio_handler))
+    app.add_handler(MessageHandler((filters.AUDIO | filters.VOICE) & azan_audio_pending_filter, azan_audio_upload_handler))
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
 
     # ثبت توی یه group جدا (group=1) تا با هندلر بالا (که برای آپلود صوت
@@ -253,6 +258,7 @@ def main():
     # ==========================================
     app.add_handler(CommandHandler("prayer", prayer_command))
     app.add_handler(CommandHandler("prayer_test_reminder", prayer_test_reminder_command))
+    app.add_handler(CommandHandler("setazanaudio", set_azan_audio_command))
 
     # ==========================================
     # دستورات مداحی و مولودی
@@ -370,6 +376,11 @@ def main():
     app.add_handler(CallbackQueryHandler(prayer_reminder_setmin_callback, pattern="^prayer_remind_setmin_\\d+$"))
 
     # ==========================================
+    # کالبک‌های اعلام اذان در گروه
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(azan_setup_router, pattern="^azangrp_"))
+
+    # ==========================================
     # کالبک‌های مداحی و مولودی
     # ==========================================
     app.add_handler(CallbackQueryHandler(madahi_type_callback, pattern="^madahi_type_(madahi|molodi)$"))
@@ -454,6 +465,15 @@ def main():
         # برای همین همین لحظه‌ی استارت‌آپ هم یه بار زمان‌بندیِ باقی‌مونده‌ی
         # امروز رو از نو می‌سازیم تا این وسط چیزی از دست نره.
         app.job_queue.run_once(schedule_daily_prayer_reminders, when=5)
+
+        # اعلام اذان گروهی: هر روز ساعت ۰۰:۱۰ به وقت تهران، زمان‌بندی امروز رو
+        # برای همه‌ی گروه‌هایی که این قابلیت را فعال کرده‌اند می‌سازد؛ و یک بار
+        # هم موقع استارت‌آپ (برای جبران ری‌استارت وسط روز)، شبیه یادآور اذان.
+        app.job_queue.run_daily(
+            schedule_daily_azan_announcements,
+            time=dtime(hour=0, minute=10, tzinfo=ZoneInfo("Asia/Tehran")),
+        )
+        app.job_queue.run_once(schedule_daily_azan_announcements, when=8)
     else:
         logger.error(
             "⚠️ app.job_queue خالیه! پست روزانه و یادآور اذان هرگز اجرا نمی‌شن. "

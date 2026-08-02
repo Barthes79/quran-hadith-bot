@@ -7,7 +7,10 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup,
+    SwitchInlineQueryChosenChat,
+)
 from telegram.ext import ContextTypes
 
 from database import (
@@ -392,6 +395,19 @@ def prayer_keyboard(city_code: int = None, user_id: int = None, is_group: bool =
     action_buttons = [
         [InlineKeyboardButton("⏰ تنظیم یادآور", callback_data=f"prayer_reminder_{user_id}")],
         [InlineKeyboardButton("📋 دریافت همه شهرها", callback_data=f"prayer_all_cities_{user_id}")],
+        # این مقدار query باید دقیقاً با AZAN_SETUP_TOKEN در
+        # handlers/azan_announce.py یکی باشد (وارد نشده تا از import
+        # چرخه‌ای بین prayer.py و azan_announce.py جلوگیری شود).
+        [InlineKeyboardButton(
+            "📢 افزودن اعلام اذان به گروه",
+            switch_inline_query_chosen_chat=SwitchInlineQueryChosenChat(
+                query="azan_setup",
+                allow_group_chats=True,
+                allow_channel_chats=False,
+                allow_user_chats=False,
+                allow_bot_chats=False,
+            ),
+        )],
     ]
     if not is_group:
         action_buttons.append(
