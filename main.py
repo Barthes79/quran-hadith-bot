@@ -339,7 +339,7 @@ def main():
     # ==========================================
     # کالبکهای احادیث
     # ==========================================
-    app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_"))
+    app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_[a-f0-9]{12}$"))
     app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
     app.add_handler(CallbackQueryHandler(random_hadith_callback, pattern="^hadith_random$"))

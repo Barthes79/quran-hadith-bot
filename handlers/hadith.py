@@ -128,12 +128,20 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
     topics = get_all_topics()
     topic_name = next((t for t in topics if topic_hash(t) == topic_h), None)
     if topic_name is None:
-        await query.edit_message_text("این موضوع دیگر معتبر نیست. لطفاً دوباره از منو انتخاب کنید.")
+        await query.edit_message_text(
+            "این موضوع دیگر معتبر نیست.\n\n"
+            "برای انتخاب مجدد، از منوی «📚 احادیث» استفاده کنید.",
+            reply_markup=hadith_keyboard(-1)
+        )
         return
     rows = get_hadiths_by_topic(topic_name)
 
     if not rows:
-        await query.edit_message_text("حدیثی برای این موضوع یافت نشد.")
+        await query.edit_message_text(
+            f"حدیثی برای موضوع '{topic_name}' یافت نشد.\n\n"
+            "شاید موضوع خالی از حدیث باشد. برای انتخاب مجدد، به «📚 احادیث» بازگردید.",
+            reply_markup=hadith_keyboard(-1)
+        )
         return
 
     row = rows[0]
