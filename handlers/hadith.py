@@ -139,12 +139,9 @@ def _boxed_arabic(text: str) -> list:
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
-    divider_deco = ""
 
     lines = [
-        divider_deco,
         f"📿 {header} 📿",
-        divider_deco,
         "",
     ]
 
@@ -703,8 +700,6 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     body = normalize_input_text(full_text[1])
-    logger.info("DEBUG addhadith raw=%r", full_text[1])
-    logger.info("DEBUG addhadith normalized=%r", body)
 
     field_labels = ["عربی", "ترجمه", "شرح", "راوی", "منبع", "باب", "شماره", "موضوعات"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
@@ -722,7 +717,6 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
-    logger.info("DEBUG addhadith fields_keys=%r arabic_len=%d translation_len=%d", list(fields.keys()), len(arabic), len(translation))
     tafsir = fields.get("شرح", "") or None
     narrator = fields.get("راوی", "")
     source = fields.get("منبع", "")

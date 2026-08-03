@@ -751,8 +751,11 @@ async def link_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # چون مال بات دیگری بوده و تلگرام آن را رد می‌کند: «Wrong file identifier»)
 # ==========================================
 
-# user_id ادمین -> شناسه‌ی (slug یا id) دعایی که منتظر آپلود صدای جدیدش هستیم
-_PENDING_MAFATIH_AUDIO: dict[int, str] = {}
+# (user_id, chat_id) ادمین -> شناسه‌ی (slug یا id) دعایی که منتظر آپلود صدای
+# جدیدش هستیم. chat_id هم عمداً توی کلید هست تا اگه همون ادمین توی یه چت
+# دیگه (نامرتبط با این عملیات) یه صوت/ویس بفرسته، اشتباهی به‌عنوان صدای این
+# دعا ذخیره نشه؛ فقط صوتی که *در همون مکالمه‌ی /setmafaudio* می‌رسه گرفته می‌شه.
+_PENDING_MAFATIH_AUDIO: dict[tuple[int, int], str] = {}
 
 
 async def set_mafatih_audio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -785,9 +788,9 @@ async def set_mafatih_audio_command(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(f"چیزی با شناسه‌ی «{identifier}» پیدا نشد.")
         return
 
-    _PENDING_MAFATIH_AUDIO[update.effective_user.id] = identifier
+    _PENDING_MAFATIH_AUDIO[(update.effective_user.id, update.effective_chat.id)] = identifier
     await update.message.reply_text(
-        f"✅ الان فایل صوتیِ «{item['title']}» رو به‌عنوان یک فایل صوتی (audio) بفرستید "
+        f"✅ الان فایل صوتیِ «{item['title']}» رو همین‌جا به‌عنوان یک فایل صوتی (audio) بفرستید "
         f"(نه ویس/voice، ترجیحاً audio که عنوان و خواننده هم نگه می‌دارد)."
     )
 
@@ -797,10 +800,10 @@ async def mafatih_audio_upload_handler(update: Update, context: ContextTypes.DEF
     وقتی ادمینی که قبلاً /setmafaudio زده، یک فایل صوتی یا ویس بفرستد، این
     هندلر آن را می‌گیرد و audio_file_id را در دیتابیس به‌روزرسانی می‌کند.
     """
-    user_id = update.effective_user.id
-    identifier = _PENDING_MAFATIH_AUDIO.get(user_id)
+    key = (update.effective_user.id, update.effective_chat.id)
+    identifier = _PENDING_MAFATIH_AUDIO.get(key)
     if not identifier:
-        return  # این ادمین منتظر آپلود صدایی نیست؛ به هندلرهای دیگر بسپار
+        return  # این ادمین توی این چت منتظر آپلود صدایی نیست؛ به هندلرهای دیگر بسپار
 
     message = update.message
     file_id = None
@@ -814,10 +817,10 @@ async def mafatih_audio_upload_handler(update: Update, context: ContextTypes.DEF
 
     item = get_mafatih_item_flexible(identifier)
     if not item:
-        _PENDING_MAFATIH_AUDIO.pop(user_id, None)
+        _PENDING_MAFATIH_AUDIO.pop(key, None)
         await message.reply_text("❌ این دعا دیگر پیدا نشد (شاید حذف شده). عملیات لغو شد.")
         return
 
     update_mafatih_audio(item["id"], file_id)
-    _PENDING_MAFATIH_AUDIO.pop(user_id, None)
+    _PENDING_MAFATIH_AUDIO.pop(key, None)
     await message.reply_text(f"✅ فایل صوتی «{item['title']}» با موفقیت به‌روزرسانی شد.")

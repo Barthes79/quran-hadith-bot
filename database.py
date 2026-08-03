@@ -987,7 +987,26 @@ def get_group_settings(chat_id: int):
     return row
 
 
+# لیست سفید ستون‌های قابل‌آپدیتِ group_settings، دقیقاً منطبق با CREATE TABLE
+# بالا (بدون chat_id که کلید اصلی است). چون نام ستون توی این تابع مستقیماً با
+# f-string داخل کوئری SQL قرار می‌گیره (و پارامتر ? فقط برای value کار می‌کنه،
+# نه برای نام ستون)، هر کلیدی که این‌جا نباشه رد می‌شه؛ این جلوی SQL injection
+# احتمالی از طریق مسیرهایی مثل callback-data را می‌گیرد، حتی اگر چک سطح
+# دسترسیِ بالادستی در آینده تغییر کند یا از قلم بیفتد.
+_GROUP_SETTINGS_COLUMNS = {
+    "daily_post_enabled", "daily_post_hour", "post_interval_hours",
+    "preferred_translation", "content_hadith", "content_ayah",
+    "content_nahj", "content_mafatih", "quiet_start_hour", "quiet_end_hour",
+    "welcome_enabled", "welcome_text", "delete_service_messages",
+    "block_links", "multi_goal_enabled",
+}
+
+
 def update_group_settings(chat_id: int, **kwargs):
+    invalid = set(kwargs) - _GROUP_SETTINGS_COLUMNS
+    if invalid:
+        raise ValueError(f"ستون(های) نامعتبر برای group_settings: {invalid}")
+
     conn = get_connection()
     get_group_settings(chat_id)
     for key, value in kwargs.items():
@@ -1591,9 +1610,24 @@ def get_prayer_reminder(user_id: int):
     return row
 
 
+# لیست سفید ستون‌های قابل‌آپدیتِ prayer_reminders (بدون user_id که کلید اصلی
+# است). این تابع هم از همون الگوی خطرناکِ ساختن نام ستون با f-string استفاده
+# می‌کنه؛ توجه کن که toggle_prayer_reminder_azan ستون رو به‌شکل
+# f"remind_{azan_key}" می‌سازه و azan_key از بیرون (مثلاً از callback_data)
+# می‌آید، پس همینجا هم باید چک بشه.
+_PRAYER_REMINDER_COLUMNS = {
+    "city_code", "minutes_before", "remind_fajr", "remind_noon",
+    "remind_maghrib", "enabled", "group_chat_id", "user_name",
+}
+
+
 def upsert_prayer_reminder(user_id: int, **fields):
     if not fields:
         return
+
+    invalid = set(fields) - _PRAYER_REMINDER_COLUMNS
+    if invalid:
+        raise ValueError(f"ستون(های) نامعتبر برای prayer_reminders: {invalid}")
 
     conn = get_connection()
     existing = conn.execute(
@@ -1661,9 +1695,22 @@ def get_azan_group_settings(chat_id: int):
     return row
 
 
+# لیست سفید ستون‌های قابل‌آپدیتِ azan_announce_settings، منطبق با CREATE TABLE
+# (بدون chat_id که کلید اصلی است). دلیل و منطق دقیقاً مثل
+# _GROUP_SETTINGS_COLUMNS بالاست.
+_AZAN_ANNOUNCE_COLUMNS = {
+    "city_code", "azan_fajr", "azan_noon", "azan_maghrib", "audio_on",
+}
+
+
 def update_azan_group_settings(chat_id: int, **kwargs):
     if not kwargs:
         return
+
+    invalid = set(kwargs) - _AZAN_ANNOUNCE_COLUMNS
+    if invalid:
+        raise ValueError(f"ستون(های) نامعتبر برای azan_announce_settings: {invalid}")
+
     conn = get_connection()
     get_azan_group_settings(chat_id)  # مطمئن می‌شویم ردیف وجود دارد
     for key, value in kwargs.items():

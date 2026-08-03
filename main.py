@@ -136,6 +136,14 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
 
+    # «جستجو با شناسه حدیث»: وقتی کاربر در حالت id_search_mode باشه، پیام بعدیش
+    # باید اینجا گرفته بشه. این چک باید قبل از صلوات/آیه/سرچ باشه، چون هندلر
+    # ثبت‌شده‌ی id_search_handler (هم‌فیلتر با general_text_handler) هرگز
+    # اجرا نمی‌شه — PTB بعد از اولین هندلرِ match شده متوقف می‌شه.
+    if is_private and context.user_data.get("id_search_mode"):
+        await id_search_handler(update, context)
+        return
+
     # صلوات‌شمار گروهی: مستقل از بقیه‌ی جریان‌ها، چون با آیه/سرچ تداخلی نداره.
     # توی try/except چون اگه اینجا یه خطای پیش‌بینی‌نشده بیفته (مثلاً توی
     # فرستادن پیام تبریک رکورد)، نباید جلوی رسیدن به بخش یادآور/سرچ رو بگیره.
@@ -199,7 +207,9 @@ def main():
     builder = builder.request(default_request).get_updates_request(get_updates_request)
 
     if PROXY_URL:
-        logger.info("در حال استفاده از پروکسی: %s", PROXY_URL)
+        # آدرس کامل پروکسی لاگ نمی‌شود چون ممکن است شامل user:pass باشد؛
+        # روی سرور مشترک این می‌تواند در فایل لاگ لو برود.
+        logger.info("پروکسی برای اتصال به تلگرام فعال است.")
 
     app = builder.build()
 

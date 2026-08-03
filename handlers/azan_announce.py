@@ -402,35 +402,46 @@ async def send_azan_announcement(context: ContextTypes.DEFAULT_TYPE):
 # آپلود صوت سراسری اذان (فقط ادمین‌های ربات - ADMIN_IDS)
 # ==========================================
 
+# کلید: (user_id, chat_id) — عمداً chat_id هم توی کلید هست، با اینکه صوتِ
+# ذخیره‌شده در نهایت سراسری و برای همه‌ی گروه‌هاست. دلیلش اینه که اگه فقط
+# user_id کلید باشه، اولین ویس/صوتی که همون ادمین توی *هر چت دیگه‌ای* (مثلاً
+# پیوی با یه دوست، یا یه گروه نامرتبط) بفرسته هم اشتباهی به‌عنوان صدای اذان
+# بلعیده و سراسری پخش می‌شه. با scope کردن به همون چتی که /setazanaudio توش
+# زده شده، فقط صوتی که ادمین *در همون مکالمه* می‌فرسته گرفته می‌شه.
 _PENDING_AZAN_AUDIO: set = set()
 
 
 class _AzanAudioPendingFilter(filters.MessageFilter):
     def filter(self, message):
-        return bool(message.from_user) and message.from_user.id in _PENDING_AZAN_AUDIO
+        return (
+            bool(message.from_user)
+            and (message.from_user.id, message.chat_id) in _PENDING_AZAN_AUDIO
+        )
 
 
 azan_audio_pending_filter = _AzanAudioPendingFilter()
 
 
 async def set_azan_audio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور /setazanaudio - فقط ادمین‌های ربات. فایل صوتی بعدی که بفرستن،
-    به‌عنوان صدای مشترکِ اعلام اذان توی همه‌ی گروه‌ها ذخیره می‌شه."""
+    """دستور /setazanaudio - فقط ادمین‌های ربات. فایل صوتی بعدی که *در همین چت*
+    بفرستن، به‌عنوان صدای مشترکِ اعلام اذان توی همه‌ی گروه‌ها ذخیره می‌شه."""
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
         return
 
-    _PENDING_AZAN_AUDIO.add(update.effective_user.id)
+    _PENDING_AZAN_AUDIO.add((update.effective_user.id, update.effective_chat.id))
     await update.message.reply_text(
-        "🔊 الان فایل صوتیِ اذان رو (audio یا voice) برام بفرست تا به‌عنوان صدای پخش‌شده "
+        "🔊 الان فایل صوتیِ اذان رو (audio یا voice) همین‌جا برام بفرست تا به‌عنوان صدای پخش‌شده "
         "توی اعلام اذان همه‌ی گروه‌ها ذخیره بشه."
     )
 
 
 async def azan_audio_upload_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in _PENDING_AZAN_AUDIO:
-        return  # این ادمین منتظر آپلود صدای اذان نیست؛ به هندلرهای دیگر بسپار
+    chat_id = update.effective_chat.id
+    key = (user_id, chat_id)
+    if key not in _PENDING_AZAN_AUDIO:
+        return  # این ادمین توی این چت منتظر آپلود صدای اذان نیست؛ به هندلرهای دیگر بسپار
 
     message = update.message
     file_id, file_type = None, None
@@ -443,5 +454,5 @@ async def azan_audio_upload_handler(update: Update, context: ContextTypes.DEFAUL
         return
 
     set_azan_audio_asset(file_id, file_type)
-    _PENDING_AZAN_AUDIO.discard(user_id)
+    _PENDING_AZAN_AUDIO.discard(key)
     await message.reply_text("✅ صدای اذان با موفقیت ذخیره شد و از این به بعد توی اعلام اذانِ گروه‌ها پخش می‌شه.")
