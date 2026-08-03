@@ -109,25 +109,52 @@ HADITH_HEADERS = [
 ]
 
 
+# جمله‌ی پایانی متغیر، هم‌راستا با HADITH_HEADERS: بر اساس شناسه‌ی حدیث
+# انتخاب می‌شه تا هر حدیث همیشه همون جمله‌ی پایانی رو داشته باشه، ولی همه‌ی
+# حدیث‌ها هم با یه جمله‌ی تکراری تموم نشن.
+HADITH_CLOSINGS = [
+    "🕯 کلام اهل‌بیت، چراغ راه زندگی است.",
+    "🕯 هر سخن نور، چراغی‌ست برای دل.",
+    "🕯 یاد اهل‌بیت، مایه‌ی آرامش دل‌هاست.",
+    "🕯 این کلام، توشه‌ای برای مسیر زندگی.",
+    "🕯 پرتوی از نور اهل‌بیت بر جان‌مان بتابد.",
+    "🕯 کلامشان، چراغی در تاریکی‌های دل.",
+]
+
+
+def _boxed_arabic(text: str) -> list:
+    # کادر تزئینی دور متن عربی؛ عرض کادر بر اساس طول متن تنظیم می‌شه (با
+    # سقف مشخص) تا هم متن‌های کوتاه و هم بلند قابل‌قبول نمایش داده بشن.
+    inner_width = min(max(len(text) + 2, 20), 40)
+    top = "╭" + "─" * inner_width + "╮"
+    bottom = "╰" + "─" * inner_width + "╯"
+    if len(text) + 2 <= inner_width:
+        middle = "│" + f" {text} ".center(inner_width) + "│"
+        return [top, middle, bottom]
+    # متن طولانی‌تر از سقف کادره: کادر رو فقط بالا و پایین می‌ذاریم و
+    # خود متن رو بین دو خط تزئینی جدا قرار می‌دیم تا نشکنه.
+    return [top, text, bottom]
+
+
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
+    closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
+    divider_deco = "📿 ──┈┈┈┈┈┈┈┈── 📿"
 
     lines = [
-        f"📿 ˚ ༘ {header} ˚ ༘",
-        "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄",
+        divider_deco,
+        f"📿 {header} 📿",
+        divider_deco,
         "",
     ]
 
-    if row["narrator"]:
-        lines.append(f"🗣  {row['narrator']} می‌فرماید:")
-        lines.append("")
-
-    lines.append("𓆩 ·˖⁺‧₊˚ 𓆪")
-    lines.append(f"{row['arabic_text']}")
-    lines.append("𓆩 ·˖⁺‧₊˚ 𓆪")
+    narrator_line = f"🕊 {row['narrator']} می‌فرماید:" if row["narrator"] else "🕊 معصوم (ع) می‌فرماید:"
+    lines.append(narrator_line)
     lines.append("")
-    lines.append("💬 ترجمه")
-    lines.append(f"‏{row['translation_text']}")
+
+    lines.extend(_boxed_arabic(row["arabic_text"]))
+    lines.append("")
+    lines.append(f"❝ {row['translation_text']} ❞")
 
     if row["tafsir_text"]:
         lines.append("")
@@ -135,16 +162,21 @@ def format_hadith(row):
         lines.append(row["tafsir_text"])
 
     source = row["source_book"] or ""
-    if source:
-        src_line = f"📚 {source}"
-        if row["chapter"]:
-            src_line += f"  ·  {row['chapter']}"
-        if row["hadith_number"]:
-            src_line += f"  ·  حدیث {row['hadith_number']}"
+    chapter = row["chapter"] or ""
+    number = row["hadith_number"] or ""
+    if source or chapter or number:
         lines.append("")
-        lines.append("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
-        lines.append(src_line)
+        lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
+        if source:
+            lines.append(f"📚 منبع: {source}")
+        if chapter:
+            lines.append(f"▫️ باب: {chapter}")
+        if number:
+            lines.append(f"▫️ حدیث: {number}")
+        lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
 
+    lines.append("")
+    lines.append(closing)
     lines.append("")
     lines.append(f"🔖 شناسه: {row['id']}")
 
