@@ -170,7 +170,6 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_sea
     
     action_row = [
         InlineKeyboardButton("⭐", callback_data=f"fav_hadith_{hadith_id}"),
-        InlineKeyboardButton("📋 کپی", callback_data=f"copy_hadith_{hadith_id}"),
         InlineKeyboardButton("📤 اشتراک", switch_inline_query=f"h{hadith_id}"),
     ]
     buttons.append(action_row)
