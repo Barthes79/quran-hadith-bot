@@ -1,3 +1,4 @@
+import re
 import uuid
 from telegram import (
     Update, InlineQueryResultArticle, InputTextMessageContent,
@@ -35,6 +36,11 @@ HADITH_CONTENT_LIMIT = 3800
 PREVIEW_LENGTH = 500
 
 
+# کوئری خاصِ اشتراک مستقیم یک حدیث (دکمه‌ی «📤 اشتراک» زیر هر حدیث، که
+# switch_inline_query=f"h{hadith_id}" می‌فرستد)
+HADITH_SHARE_RE = re.compile(r"^h(\d+)$")
+
+
 def _snippet(text: str, length: int = 100) -> str:
     if not text:
         return ""
@@ -48,11 +54,10 @@ def _build_result(item: dict):
 
     if item["type"] == "hadith":
         row = item["row"]
+        from handlers.hadith import format_hadith
         title = f"📿 حدیث — {row['narrator'] or 'معصومین'}"
         description = _snippet(row["translation_text"])
-        content = f"{row['arabic_text']}\n\n🔹 ترجمه:\n{row['translation_text']}"
-        if row["source_book"]:
-            content += f"\n\n📚 منبع: {row['source_book']}"
+        content = format_hadith(row)
         if len(content) > HADITH_CONTENT_LIMIT:
             content = content[:HADITH_CONTENT_LIMIT].rstrip() + "…"
             reply_markup = InlineKeyboardMarkup(
@@ -119,6 +124,26 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not query_text:
         try:
             await update.inline_query.answer([], cache_time=1, is_personal=False)
+        except Exception:
+            pass
+        return
+
+    # اشتراک مستقیم یک حدیث خاص (دکمه‌ی «📤 اشتراک»): کوئری اینلاین به‌شکل
+    # "h<شناسه>" می‌رسد، نه یک عبارت جستجوی معمولی. قبلاً این حالت اصلاً
+    # تشخیص داده نمی‌شد و به‌عنوان یک عبارت جستجو («h42») به موتور جستجو
+    # می‌رفت که نتیجه‌ای نداشت — برای همین کاربر فقط لودینگ خالی می‌دید.
+    share_match = HADITH_SHARE_RE.match(query_text)
+    if share_match:
+        from database import get_hadith_by_id
+        row = get_hadith_by_id(int(share_match.group(1)))
+        results = []
+        if row:
+            try:
+                results.append(_build_result({"type": "hadith", "row": row}))
+            except Exception:
+                pass
+        try:
+            await update.inline_query.answer(results, cache_time=1, is_personal=False)
         except Exception:
             pass
         return

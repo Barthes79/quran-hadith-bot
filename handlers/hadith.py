@@ -96,9 +96,24 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
+# چند عنوان مختلف برای اینکه همه‌ی احادیث با یه سرتیتر تکراری شروع نشن؛
+# انتخاب بر اساس شناسه‌ی حدیث انجام می‌شه (نه تصادفی)، پس هر بار که همون
+# حدیث باز بشه، همون عنوان رو می‌بینه، نه یه عنوان جدید.
+HADITH_HEADERS = [
+    "پرتوی از کلام معصومین (ع)",
+    "گوهری از دریای حکمت اهل‌بیت (ع)",
+    "درسی از مکتب نور",
+    "سخنی نورانی از خاندان وحی",
+    "چراغی برای مسیر زندگی",
+    "یادگاری از زبان معصوم (ع)",
+]
+
+
 def format_hadith(row):
+    header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
+
     lines = [
-        "",
+        f"📿 ˚ ༘ {header} ˚ ༘",
         "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄",
         "",
     ]
@@ -107,14 +122,16 @@ def format_hadith(row):
         lines.append(f"🗣  {row['narrator']} می‌فرماید:")
         lines.append("")
 
-    lines.append(f"❝ {row['arabic_text']} ❞")
+    lines.append("𓆩 ·˖⁺‧₊˚ 𓆪")
+    lines.append(f"{row['arabic_text']}")
+    lines.append("𓆩 ·˖⁺‧₊˚ 𓆪")
     lines.append("")
-    lines.append("💬 ترجمه:")
-    lines.append(row["translation_text"])
+    lines.append("💬 ترجمه")
+    lines.append(f"‏{row['translation_text']}")
 
     if row["tafsir_text"]:
         lines.append("")
-        lines.append("📖 شرح:")
+        lines.append("📖 شرح")
         lines.append(row["tafsir_text"])
 
     source = row["source_book"] or ""
@@ -157,15 +174,14 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_sea
         InlineKeyboardButton("📤 اشتراک", switch_inline_query=f"h{hadith_id}"),
     ]
     buttons.append(action_row)
-    
-    if source_book:
-        display = source_book[:20] + ('…' if len(source_book) > 20 else '')
-        buttons.append([InlineKeyboardButton(f"📖 {display}", callback_data=f"filter_source_{hadith_id}")])
-    
+
+    # دکمه‌ی «موضوعات» و دکمه‌ی منبع (که رو به پایین بود) طبق درخواست حذف
+    # شدن؛ فقط دکمه‌ی برگشت به منوی اصلی می‌مونه. پارامتر source_book رو
+    # عمداً توی امضای تابع نگه داشتیم تا جای دیگه‌ی کد نشکنه، حتی اگه دیگه
+    # استفاده نشه.
     navigation = []
     if show_search_back:
         navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
-    navigation.append(InlineKeyboardButton("📚 موضوعات", callback_data="menu_hadith"))
     navigation.append(InlineKeyboardButton("🏠 منو", callback_data="menu_back"))
     buttons.append(navigation)
     
@@ -251,13 +267,26 @@ async def copy_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     hadith_id = query.data.replace("copy_hadith_", "")
     row = get_hadith_by_id(int(hadith_id))
-    
+
     if not row:
         await query.answer("حدیث یافت نشد.", show_alert=True)
         return
 
-    await query.answer("متن کپی شد ✅")
-    await context.bot.send_message(chat_id=query.from_user.id, text=format_hadith(row))
+    # نکته: دکمه‌ی «کپی» بومی تلگرام (copy_text) محدودیت ۲۵۶ کاراکتری داره
+    # و برای متن کامل حدیث (عربی+ترجمه+منبع) کافی نیست؛ برای همین متن رو
+    # به‌صورت یک پیام جدا می‌فرستیم تا کاربر خودش نگه‌داره و کپی کنه.
+    # قبلاً await query.answer("متن کپی شد") *قبل* از send_message صدا زده
+    # می‌شد، یعنی اگه ارسال پیام fail می‌کرد (مثلاً به هر دلیلی؛ رِیت‌لیمیت،
+    # پیام خیلی بلند و...)، کاربر توست موفقیت رو می‌دید ولی هیچ پیامی
+    # نمی‌رسید. حالا اول ارسال می‌کنیم و فقط اگه واقعاً موفق بود پیام
+    # موفقیت نشون داده می‌شه؛ در غیر این صورت خطا لاگ و به کاربر اطلاع
+    # داده می‌شه.
+    try:
+        await context.bot.send_message(chat_id=query.from_user.id, text=format_hadith(row))
+        await query.answer("📋 متن حدیث به همین چت فرستاده شد")
+    except Exception as e:
+        logger.warning(f"copy_hadith_callback: ارسال پیام کپی شکست خورد: {e}")
+        await query.answer("مشکلی توی فرستادن متن پیش اومد. دوباره امتحان کن.", show_alert=True)
 
 
 async def filter_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
