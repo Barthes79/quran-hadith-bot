@@ -108,32 +108,15 @@ HADITH_HEADERS = [
     "یادگاری از زبان معصوم (ع)",
 ]
 
-
-# جمله‌ی پایانی متغیر، هم‌راستا با HADITH_HEADERS: بر اساس شناسه‌ی حدیث
-# انتخاب می‌شه تا هر حدیث همیشه همون جمله‌ی پایانی رو داشته باشه، ولی همه‌ی
-# حدیث‌ها هم با یه جمله‌ی تکراری تموم نشن.
+# همین‌طور یک جمله‌ی پایانی متفاوت برای هر حدیث (بازم بر اساس شناسه، نه تصادفی)
 HADITH_CLOSINGS = [
     "🕯 کلام اهل‌بیت، چراغ راه زندگی است.",
-    "🕯 هر سخن نور، چراغی‌ست برای دل.",
-    "🕯 یاد اهل‌بیت، مایه‌ی آرامش دل‌هاست.",
-    "🕯 این کلام، توشه‌ای برای مسیر زندگی.",
-    "🕯 پرتوی از نور اهل‌بیت بر جان‌مان بتابد.",
-    "🕯 کلامشان، چراغی در تاریکی‌های دل.",
+    "🕯 هر حدیث، چراغی برای دل‌های تشنه‌ی حقیقت است.",
+    "🕯 در سخن معصومین (ع)، درمان همه‌ی دردهاست.",
+    "🕯 این سخن را در زندگی خود جاری کنیم.",
+    "🕯 یک جمله، یک دنیا معرفت.",
+    "🕯 نور کلام اهل‌بیت، تاریکی دل را می‌زداید.",
 ]
-
-
-def _boxed_arabic(text: str) -> list:
-    # کادر تزئینی دور متن عربی؛ عرض کادر بر اساس طول متن تنظیم می‌شه (با
-    # سقف مشخص) تا هم متن‌های کوتاه و هم بلند قابل‌قبول نمایش داده بشن.
-    inner_width = min(max(len(text) + 2, 20), 40)
-    top = "╭" + "─" * inner_width + "╮"
-    bottom = "╰" + "─" * inner_width + "╯"
-    if len(text) + 2 <= inner_width:
-        middle = "│" + f" {text} ".center(inner_width) + "│"
-        return [top, middle, bottom]
-    # متن طولانی‌تر از سقف کادره: کادر رو فقط بالا و پایین می‌ذاریم و
-    # خود متن رو بین دو خط تزئینی جدا قرار می‌دیم تا نشکنه.
-    return [top, text, bottom]
 
 
 def format_hadith(row):
@@ -141,40 +124,37 @@ def format_hadith(row):
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
 
     lines = [
-        f"📿 {header} 📿",
-        "",
+        "📿 ──┈┈┈┈┈┈┈┈── 📿",
+        header,
+        "📿 ──┈┈┈┈┈┈┈┈── 📿",
     ]
 
-    narrator_line = f"🕊 {row['narrator']} می‌فرماید:" if row["narrator"] else "🕊 معصوم (ع) می‌فرماید:"
-    lines.append(narrator_line)
-    lines.append("")
+    if row["narrator"]:
+        lines.append(f"🕊 {row['narrator']} می‌فرماید:")
 
-    lines.extend(_boxed_arabic(row["arabic_text"]))
+    lines.append("")
+    lines.append(f"﴿ {row['arabic_text']} ﴾")
     lines.append("")
     lines.append(f"❝ {row['translation_text']} ❞")
 
     if row["tafsir_text"]:
         lines.append("")
-        lines.append("📖 شرح")
+        lines.append("📖 شرح:")
         lines.append(row["tafsir_text"])
 
     source = row["source_book"] or ""
-    chapter = row["chapter"] or ""
-    number = row["hadith_number"] or ""
-    if source or chapter or number:
-        lines.append("")
+    if source or row["chapter"] or row["hadith_number"]:
         lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
         if source:
             lines.append(f"📚 منبع: {source}")
-        if chapter:
-            lines.append(f"▫️ باب: {chapter}")
-        if number:
-            lines.append(f"▫️ حدیث: {number}")
+        if row["chapter"]:
+            lines.append(f"▫️ باب: {row['chapter']}")
+        if row["hadith_number"]:
+            lines.append(f"▫️ حدیث: {row['hadith_number']}")
         lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
 
-    lines.append("")
     lines.append(closing)
-    lines.append("")
+    # شناسه رو نگه داشتیم چون قابلیت «جستجو با شناسه» (دکمه‌ی 🆔) بهش وابسته‌ست
     lines.append(f"🔖 شناسه: {row['id']}")
 
     return "\n".join(lines)
@@ -700,6 +680,8 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     body = normalize_input_text(full_text[1])
+    logger.info("DEBUG addhadith raw=%r", full_text[1])
+    logger.info("DEBUG addhadith normalized=%r", body)
 
     field_labels = ["عربی", "ترجمه", "شرح", "راوی", "منبع", "باب", "شماره", "موضوعات"]
     pattern = r"(?=(?:" + "|".join(field_labels) + r")\s*:)"
@@ -717,6 +699,7 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
+    logger.info("DEBUG addhadith fields_keys=%r arabic_len=%d translation_len=%d", list(fields.keys()), len(arabic), len(translation))
     tafsir = fields.get("شرح", "") or None
     narrator = fields.get("راوی", "")
     source = fields.get("منبع", "")
