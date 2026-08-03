@@ -1,5 +1,7 @@
 import re
+import time
 import uuid
+from collections import defaultdict, deque
 from telegram import (
     Update, InlineQueryResultArticle, InputTextMessageContent,
     InlineKeyboardButton, InlineKeyboardMarkup,
@@ -39,6 +41,46 @@ PREVIEW_LENGTH = 500
 # کوئری خاصِ اشتراک مستقیم یک حدیث (دکمه‌ی «📤 اشتراک» زیر هر حدیث، که
 # switch_inline_query=f"h{hadith_id}" می‌فرستد)
 HADITH_SHARE_RE = re.compile(r"^h(\d+)$")
+
+
+# ==========================================
+# Rate limit سمت کاربر برای جستجوی سنگین inline
+# ==========================================
+# چون تلگرام برای *هر کاراکترِ تایپ‌شده* یک inline query جدید می‌فرستد (نه فقط
+# وقتی کاربر Enter بزند)، و هر کوئری یک جستجوی کامل FTS با سقف MAX_RESULTS
+# اجرا می‌کند (و اگر نتیجه خالی برگردد، fuzzy matching روی کل ایندکس)، بدون
+# محدودیت نرخ، یک کاربر (با تایپ سریع یا اسپم/اسکریپت) می‌تواند CPU سرور را
+# قفل کند. این throttle ساده، جستجوهای سنگینِ هر کاربر را به حداکثر
+# _RATE_LIMIT_MAX کوئری در هر _RATE_LIMIT_WINDOW ثانیه محدود می‌کند؛ کوئری‌های
+# مازاد بدون اجرای جستجو، با نتیجه‌ی خالی پاسخ داده می‌شوند (کاربر همچنان
+# پاسخ می‌گیرد، فقط بدون نتیجه، تا وقتی کندتر تایپ کند).
+_RATE_LIMIT_WINDOW = 3.0  # ثانیه
+_RATE_LIMIT_MAX = 6       # حداکثر جستجوی سنگین مجاز در این بازه، به ازای هر کاربر
+_user_query_times: dict = defaultdict(deque)
+_rate_limit_calls = 0
+
+
+def _is_rate_limited(user_id: int) -> bool:
+    global _rate_limit_calls
+    now = time.monotonic()
+    times = _user_query_times[user_id]
+    while times and now - times[0] > _RATE_LIMIT_WINDOW:
+        times.popleft()
+
+    limited = len(times) >= _RATE_LIMIT_MAX
+    if not limited:
+        times.append(now)
+
+    # جاروب دوره‌ای سبک برای جلوگیری از رشد بی‌پایان دیکشنری با کاربرهایی
+    # که فقط یک‌بار کوئری زده‌اند و صف‌شان خالی شده است؛ نیازی به دقت لحظه‌ای
+    # نیست، فقط برای پاک‌سازی حافظه در طول زمان.
+    _rate_limit_calls += 1
+    if _rate_limit_calls % 500 == 0:
+        stale = [uid for uid, q in _user_query_times.items() if not q]
+        for uid in stale:
+            _user_query_times.pop(uid, None)
+
+    return limited
 
 
 def _snippet(text: str, length: int = 100) -> str:
@@ -150,6 +192,18 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     offset_raw = update.inline_query.offset
     offset = int(offset_raw) if offset_raw.isdigit() else 0
+
+    # فقط صفحه‌ی اول (offset == 0) واقعاً جستجوی سنگین جدید اجرا می‌کند؛
+    # صفحه‌های بعدی از all_raw ای که همان کوئری قبلاً محاسبه کرده استفاده
+    # می‌کنند... با این حال چون این‌جا هر offset دوباره از صفر search_raw را
+    # صدا می‌زند، محدودیت را روی همه‌ی درخواست‌ها اعمال می‌کنیم.
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is not None and _is_rate_limited(user_id):
+        try:
+            await update.inline_query.answer([], cache_time=1, is_personal=True)
+        except Exception:
+            pass
+        return
 
     results = []
 
