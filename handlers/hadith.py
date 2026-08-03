@@ -139,7 +139,7 @@ def _boxed_arabic(text: str) -> list:
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
-    divider_deco = "📿 ──┈┈┈┈┈┈┈┈── 📿"
+    divider_deco = ""
 
     lines = [
         divider_deco,
