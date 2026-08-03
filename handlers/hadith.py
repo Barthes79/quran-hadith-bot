@@ -98,7 +98,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def format_hadith(row):
     lines = [
-        "📿 ˚ ༘ حدیثی از معصومین (ع) ˚ ༘",
+        "",
         "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄",
         "",
     ]
