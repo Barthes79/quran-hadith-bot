@@ -369,33 +369,39 @@ async def schedule_daily_azan_announcements(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def send_azan_announcement(context: ContextTypes.DEFAULT_TYPE):
-    """جاب یک‌بارمصرف: سرِ وقتِ اذان، پیام (و در صورت فعال بودن، صوت) رو به گروه می‌فرسته."""
+    """جاب یک‌بارمصرف: سرِ وقتِ اذان، پیام (و در صورت فعال بودن، صوت) رو به گروه می‌فرسته.
+
+    قبلاً متن و صوت دو پیام جدا بودن (اول send_message، بعد send_voice/send_audio
+    بدون caption). حالا اگه صوت فعال باشه و فایلی ثبت شده باشه، متن به‌عنوان
+    caption همون پیام صوتی فرستاده می‌شه تا یک پیام یکپارچه باشه. فقط اگه صوت
+    غیرفعال بود یا فایلی ثبت نشده بود (یا ارسال صوت هر دلیلی fail کرد)، متن
+    به‌تنهایی فرستاده می‌شه تا کاربران بی‌خبر نمونن.
+    """
     data = context.job.data
     chat_id = data["chat_id"]
+    text = f"🕌 وقت {data['label']} به افق {data['city_name']} فرا رسید."
+
+    asset = None
+    if data.get("audio_on"):
+        candidate = get_azan_audio_asset()
+        if candidate and candidate["file_id"]:
+            asset = candidate
+
+    if asset:
+        try:
+            if asset["file_type"] == "voice":
+                await context.bot.send_voice(chat_id=chat_id, voice=asset["file_id"], caption=text)
+            else:
+                await context.bot.send_audio(chat_id=chat_id, audio=asset["file_id"], caption=text)
+            return
+        except Exception as e:
+            logger.error(f"خطا در ارسال صوت اذان (با کپشن) به گروه {chat_id}: {e}")
+            # اگه ارسال صوت fail شد، حداقل متن رو جدا بفرست تا گروه بی‌خبر نمونه
 
     try:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"🕌 وقت {data['label']} به افق {data['city_name']} فرا رسید.",
-        )
+        await context.bot.send_message(chat_id=chat_id, text=text)
     except Exception as e:
         logger.error(f"خطا در ارسال اعلام اذان به گروه {chat_id}: {e}")
-        return
-
-    if not data.get("audio_on"):
-        return
-
-    asset = get_azan_audio_asset()
-    if not asset or not asset["file_id"]:
-        return
-
-    try:
-        if asset["file_type"] == "voice":
-            await context.bot.send_voice(chat_id=chat_id, voice=asset["file_id"])
-        else:
-            await context.bot.send_audio(chat_id=chat_id, audio=asset["file_id"])
-    except Exception as e:
-        logger.error(f"خطا در ارسال صوت اذان به گروه {chat_id}: {e}")
 
 
 # ==========================================
