@@ -123,16 +123,12 @@ def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
 
-    lines = [
-        "📿 ──┈┈┈┈┈┈┈┈── 📿",
-        header,
-        "📿 ──┈┈┈┈┈┈┈┈── 📿",
-    ]
+    lines = [f"📿 {header} 📿", ""]
 
     if row["narrator"]:
         lines.append(f"🕊 {row['narrator']} می‌فرماید:")
+        lines.append("")
 
-    lines.append("")
     lines.append(f"﴿ {row['arabic_text']} ﴾")
     lines.append("")
     lines.append(f"❝ {row['translation_text']} ❞")
@@ -144,15 +140,15 @@ def format_hadith(row):
 
     source = row["source_book"] or ""
     if source or row["chapter"] or row["hadith_number"]:
-        lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
+        lines.append("")
         if source:
             lines.append(f"📚 منبع: {source}")
         if row["chapter"]:
             lines.append(f"▫️ باب: {row['chapter']}")
         if row["hadith_number"]:
             lines.append(f"▫️ حدیث: {row['hadith_number']}")
-        lines.append("┈┈┈┈┈┈┈┈┈┈┈┈┈┈")
 
+    lines.append("")
     lines.append(closing)
     # شناسه رو نگه داشتیم چون قابلیت «جستجو با شناسه» (دکمه‌ی 🆔) بهش وابسته‌ست
     lines.append(f"🔖 شناسه: {row['id']}")
