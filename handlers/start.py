@@ -5,18 +5,61 @@ from database import get_user_translation, set_user_translation
 
 
 def main_menu_keyboard():
+    """صفحه‌ی خانه: به‌جای ۸ دکمه‌ی هم‌وزن، ویژگی‌ها زیر ۳ محور اصلیِ نیت
+    کاربر گروه‌بندی شده‌اند (قرائت و معارف / صدا و معنویت روزانه / مشارکت
+    و شخصی‌سازی). هیچ callback_data قدیمی (menu_quran, menu_hadith, ...)
+    حذف یا تغییر نام نداده؛ فقط پشت یک لایه‌ی زیرمنو قرار گرفته‌اند، پس
+    همه‌ی هندلرهای قبلی دست‌نخورده کار می‌کنند."""
+    keyboard = [
+        [InlineKeyboardButton("📖 قرائت و معارف", callback_data="menu_pillar_reading")],
+        [InlineKeyboardButton("🎧 صدا و معنویت روزانه", callback_data="menu_pillar_daily")],
+        [InlineKeyboardButton("🧠 مشارکت و شخصی‌سازی", callback_data="menu_pillar_personal")],
+        [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites"),
+         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def pillar_reading_keyboard():
+    """زیرمنوی «قرائت و معارف»: قرآن، حدیث، نهج‌البلاغه، مفاتیح‌الجنان."""
     keyboard = [
         [InlineKeyboardButton("📖 قرآن کریم", callback_data="menu_quran"),
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
-        [InlineKeyboardButton("🕋 اوقات شرعی", callback_data="menu_prayer"),
-         InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
-        [InlineKeyboardButton("⭐ علاقه‌مندی‌های من", callback_data="menu_favorites")],
-        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def pillar_daily_keyboard():
+    """زیرمنوی «صدا و معنویت روزانه»: مداحی/مولودی و اوقات شرعی/اذان."""
+    keyboard = [
+        [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
+        [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
+        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def pillar_personal_keyboard():
+    """زیرمنوی «مشارکت و شخصی‌سازی»: آزمون و ذخیره‌ها.
+    دکمه‌ی آزمون مستقیماً callback_data="quizmenu" را صدا می‌زند که از قبل
+    در main.py به‌صورت مستقل ثبت شده (quiz_menu_callback)، پس نیازی به
+    تغییر main.py یا quiz.py نیست."""
+    keyboard = [
+        [InlineKeyboardButton("🧠 آزمون", callback_data="quizmenu")],
+        [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites")],
+        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+HOME_TEXT = (
+    "🌙 به ربات قرآن و احادیث معصومین خوش آمدید\n\n"
+    "برای شروع، یکی از بخش‌های زیر را انتخاب کنید:"
+)
 
 
 async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,15 +76,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    text = (
-        "🌙 به ربات قرآن و احادیث معصومین خوش آمدید.\n\n"
-        "می‌توانید آیات قرآن را همراه با ترجمه و تفسیر مطالعه کنید، "
-        "یا احادیث موضوعی از معصومین (ع) را جستجو کنید.\n\n"
-        "همچنین می‌توانید این ربات را به گروه خود اضافه کنید تا از قابلیت‌های "
-        "پست روزانه و جستجوی درون‌گروهی بهره‌مند شوید.\n\n"
-        "🕋 برای دریافت اوقات شرعی از دستور /prayer یا /اذان استفاده کنید."
-    )
-    await update.message.reply_text(text, reply_markup=main_menu_keyboard())
+    await update.message.reply_text(HOME_TEXT, reply_markup=main_menu_keyboard())
 
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,17 +124,35 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from handlers.madahi import madahi_menu_callback
         await madahi_menu_callback(update, context)
 
-    elif query.data == "menu_main":
+    # سه محور اصلیِ صفحه‌ی خانه؛ هرکدام یک زیرمنو نشان می‌دهند که به همان
+    # callback_dataهای قدیمی (menu_quran, menu_hadith, ...) وصل است.
+    elif query.data == "menu_pillar_reading":
         await query.edit_message_text(
-            "🌙 منوی اصلی ربات:",
-            reply_markup=main_menu_keyboard()
+            "📖 قرائت و معارف\n\nبخش مورد نظر را انتخاب کنید:",
+            reply_markup=pillar_reading_keyboard(),
         )
+
+    elif query.data == "menu_pillar_daily":
+        await query.edit_message_text(
+            "🎧 صدا و معنویت روزانه\n\nبخش مورد نظر را انتخاب کنید:",
+            reply_markup=pillar_daily_keyboard(),
+        )
+
+    elif query.data == "menu_pillar_personal":
+        await query.edit_message_text(
+            "🧠 مشارکت و شخصی‌سازی\n\nبخش مورد نظر را انتخاب کنید:",
+            reply_markup=pillar_personal_keyboard(),
+        )
+
+    # menu_main و menu_back هر دو از فایل‌های مختلف (mafatih.py، hadith.py،
+    # nahj.py، quran.py، prayer.py، madahi.py، help.py، favorites.py)
+    # صدا زده می‌شوند؛ هر دو دقیقاً به همین صفحه‌ی خانه‌ی یکسان برمی‌گردند
+    # تا کاربر با دو برچسبِ متفاوت برای یک مقصد گیج نشود.
+    elif query.data in ("menu_main", "menu_back"):
+        await query.edit_message_text(HOME_TEXT, reply_markup=main_menu_keyboard())
 
     elif query.data == "menu_settings":
         await show_settings(update, context)
-
-    elif query.data == "menu_back":
-        await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
 
     elif query.data == "menu_help":
         from handlers.help import help_command
