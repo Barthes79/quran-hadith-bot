@@ -3,20 +3,30 @@ from telegram.ext import ContextTypes
 from config import DEFAULT_TRANSLATIONS
 from database import get_user_translation, set_user_translation
 
+# ─────────────────────────────────────────────────────────────
+#  Design system یکپارچه‌ی این فایل:
+#   • جداکننده‌ی ظریف «━━━━━━━━━━━━━━» زیر هر Header
+#   • تیتر هر صفحه Bold + یک Emoji نقش‌دار
+#   • یک خط توضیح کوتاه زیر تیتر (نه بیشتر)
+#   • دکمه‌ی بازگشت همیشه در پایین‌ترین ردیف
+#   • parse_mode="Markdown" روی تمام reply/edit این فایل تا Bold رندر شود
+#  هیچ callback_data ای نسبت به نسخه‌ی قبلی حذف/تغییرنام نشده است.
+# ─────────────────────────────────────────────────────────────
+
+DIVIDER = "━━━━━━━━━━━━━━"
+
 
 def main_menu_keyboard():
-    """صفحه‌ی خانه: به‌جای ۸ دکمه‌ی هم‌وزن، ویژگی‌ها زیر ۳ محور اصلیِ نیت
-    کاربر گروه‌بندی شده‌اند (قرائت و معارف / صدا و معنویت روزانه / مشارکت
-    و شخصی‌سازی). هیچ callback_data قدیمی (menu_quran, menu_hadith, ...)
-    حذف یا تغییر نام نداده؛ فقط پشت یک لایه‌ی زیرمنو قرار گرفته‌اند، پس
-    همه‌ی هندلرهای قبلی دست‌نخورده کار می‌کنند."""
+    """صفحه‌ی خانه: ۳ محور اصلیِ نیت کاربر + راهنما.
+    ⭐ ذخیره‌های من و ⚙️ تنظیمات برای کاهش cognitive load به زیرمنوی
+    «🧠 تجربه شخصی من» منتقل شدند؛ callback_data هر دو (menu_favorites,
+    menu_settings) دست‌نخورده باقی مانده و صرفاً از یک لایه پایین‌تر
+    صدا زده می‌شوند، پس هیچ handler ای نیاز به تغییر ندارد."""
     keyboard = [
         [InlineKeyboardButton("📖 قرائت و معارف", callback_data="menu_pillar_reading")],
-        [InlineKeyboardButton("🎧 صدا و معنویت روزانه", callback_data="menu_pillar_daily")],
-        [InlineKeyboardButton("🧠 مشارکت و شخصی‌سازی", callback_data="menu_pillar_personal")],
-        [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites"),
-         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+        [InlineKeyboardButton("🎧 معنویت روزانه", callback_data="menu_pillar_daily")],
+        [InlineKeyboardButton("🧠 تجربه شخصی من", callback_data="menu_pillar_personal")],
+        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -28,37 +38,68 @@ def pillar_reading_keyboard():
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
-        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
 def pillar_daily_keyboard():
-    """زیرمنوی «صدا و معنویت روزانه»: مداحی/مولودی و اوقات شرعی/اذان."""
+    """زیرمنوی «معنویت روزانه»: مداحی/مولودی و اوقات شرعی/اذان."""
     keyboard = [
         [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
         [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
-        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
 def pillar_personal_keyboard():
-    """زیرمنوی «مشارکت و شخصی‌سازی»: آزمون و ذخیره‌ها.
+    """زیرمنوی «تجربه شخصی من»: آزمون، ذخیره‌ها، تنظیمات.
     دکمه‌ی آزمون مستقیماً callback_data="quizmenu" را صدا می‌زند که از قبل
     در main.py به‌صورت مستقل ثبت شده (quiz_menu_callback)، پس نیازی به
     تغییر main.py یا quiz.py نیست."""
     keyboard = [
         [InlineKeyboardButton("🧠 آزمون", callback_data="quizmenu")],
         [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites")],
-        [InlineKeyboardButton("🏠 خانه", callback_data="menu_main")],
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
 HOME_TEXT = (
-    "🌙 به ربات قرآن و احادیث معصومین خوش آمدید\n\n"
-    "برای شروع، یکی از بخش‌های زیر را انتخاب کنید:"
+    "🌙 *همراه قرآن و اهل‌بیت*\n"
+    "فضایی آرام برای قرآن، حدیث و معارف اهل‌بیت\n"
+    f"{DIVIDER}\n\n"
+    "📖 *قرائت و معارف*\n"
+    "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
+    "🎧 *معنویت روزانه*\n"
+    "مداحی، مولودی و اوقات شرعی\n\n"
+    "🧠 *تجربه شخصی من*\n"
+    "آزمون، ذخیره‌ها و تنظیمات\n"
+    f"{DIVIDER}\n"
+    "یکی از بخش‌ها را انتخاب کنید 👇"
+)
+
+READING_TEXT = (
+    "📖 *قرائت و معارف*\n"
+    "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
+    f"{DIVIDER}\n"
+    "بخش مورد نظر را انتخاب کنید 👇"
+)
+
+DAILY_TEXT = (
+    "🎧 *معنویت روزانه*\n"
+    "آرامشی برای گوش و دل، در طول روز\n"
+    f"{DIVIDER}\n"
+    "بخش مورد نظر را انتخاب کنید 👇"
+)
+
+PERSONAL_TEXT = (
+    "🧠 *تجربه شخصی من*\n"
+    "فضای اختصاصی شما در ربات\n"
+    f"{DIVIDER}\n"
+    "بخش مورد نظر را انتخاب کنید 👇"
 )
 
 
@@ -76,7 +117,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    await update.message.reply_text(HOME_TEXT, reply_markup=main_menu_keyboard())
+    await update.message.reply_text(
+        HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+    )
 
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,20 +171,17 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # callback_dataهای قدیمی (menu_quran, menu_hadith, ...) وصل است.
     elif query.data == "menu_pillar_reading":
         await query.edit_message_text(
-            "📖 قرائت و معارف\n\nبخش مورد نظر را انتخاب کنید:",
-            reply_markup=pillar_reading_keyboard(),
+            READING_TEXT, reply_markup=pillar_reading_keyboard(), parse_mode="Markdown"
         )
 
     elif query.data == "menu_pillar_daily":
         await query.edit_message_text(
-            "🎧 صدا و معنویت روزانه\n\nبخش مورد نظر را انتخاب کنید:",
-            reply_markup=pillar_daily_keyboard(),
+            DAILY_TEXT, reply_markup=pillar_daily_keyboard(), parse_mode="Markdown"
         )
 
     elif query.data == "menu_pillar_personal":
         await query.edit_message_text(
-            "🧠 مشارکت و شخصی‌سازی\n\nبخش مورد نظر را انتخاب کنید:",
-            reply_markup=pillar_personal_keyboard(),
+            PERSONAL_TEXT, reply_markup=pillar_personal_keyboard(), parse_mode="Markdown"
         )
 
     # menu_main و menu_back هر دو از فایل‌های مختلف (mafatih.py، hadith.py،
@@ -149,7 +189,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # صدا زده می‌شوند؛ هر دو دقیقاً به همین صفحه‌ی خانه‌ی یکسان برمی‌گردند
     # تا کاربر با دو برچسبِ متفاوت برای یک مقصد گیج نشود.
     elif query.data in ("menu_main", "menu_back"):
-        await query.edit_message_text(HOME_TEXT, reply_markup=main_menu_keyboard())
+        await query.edit_message_text(
+            HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+        )
 
     elif query.data == "menu_settings":
         await show_settings(update, context)
@@ -167,18 +209,23 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
     for key, code in DEFAULT_TRANSLATIONS.items():
         label = {
-            "makarem": "ترجمه مکارم شیرازی",
-            "ansarian": "ترجمه انصاریان",
-            "fooladvand": "ترجمه فولادوند",
+            "makarem": "مکارم شیرازی",
+            "ansarian": "انصاریان",
+            "fooladvand": "فولادوند",
         }.get(key, key)
-        mark = "✅ " if key == current else ""
+        mark = "✅ " if key == current else "○ "
         buttons.append([InlineKeyboardButton(f"{mark}{label}", callback_data=f"set_translation_{key}")])
 
-    buttons.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("⬅️ بازگشت به خانه", callback_data="menu_back")])
+
+    settings_text = (
+        "⚙️ *تنظیمات ترجمه*\n"
+        "ترجمه‌ی پیش‌فرض برای نمایش آیات را انتخاب کنید:\n"
+        f"{DIVIDER}"
+    )
 
     await query.edit_message_text(
-        "⚙️ تنظیمات ترجمه‌ی پیش‌فرض شما:",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        settings_text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown"
     )
 
 
