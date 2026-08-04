@@ -1,0 +1,6 @@
+Testing topic_hash function:
+  اخلاق: 906652d30729
+  حدیث: 0dce00287b3d
+  patience: 4c8476db197a
+  test: 098f6bcd4621
+  content: 9a0364b9e99b

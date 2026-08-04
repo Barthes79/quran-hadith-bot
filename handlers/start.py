@@ -26,6 +26,7 @@ async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_T
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["search_mode"] = False
+    context.user_data["id_search_mode"] = False
     cleanup_msg = await update.message.reply_text("⏳", reply_markup=ReplyKeyboardRemove())
     try:
         await cleanup_msg.delete()
@@ -58,6 +59,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # داخل منوی همون بخش داره (search_start_callback در handlers/hadith.py).
     context.user_data["search_mode"] = False
     context.user_data["search_scope"] = None
+    context.user_data["id_search_mode"] = False
 
     if query.data == "menu_quran":
         from handlers.quran import show_surah_list
