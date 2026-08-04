@@ -10,6 +10,10 @@ PAGE_SIZE = 10
 AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
 AYAHS_PER_ROW = 8
 
+# هم‌راستا با سیستم طراحی handlers/start.py؛ عمداً این‌جا هم تعریف شده
+# (نه import از start.py) تا هیچ وابستگی بین‌ماژولیِ جدیدی ساخته نشود.
+DIVIDER = "━━━━━━━━━━━━━━"
+
 # ==========================================================================
 # جستجوی آیه با نام فارسی سوره (مثلاً «بقره 25» یا «سوره بقره آیه 25»)
 # ==========================================================================
@@ -191,15 +195,19 @@ async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
         buttons.append(nav_row)
 
     buttons.append([InlineKeyboardButton("🔍 جستجو در قرآن", callback_data="quran_search_info")])
-    buttons.append([InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
 
-    text = "📖 یک سوره را انتخاب کنید:"
+    text = (
+        "📖 *قرآن کریم*\n"
+        "یکی از سوره‌ها را انتخاب کنید\n"
+        f"{DIVIDER}"
+    )
     markup = InlineKeyboardMarkup(buttons)
 
     if query:
-        await query.edit_message_text(text, reply_markup=markup)
+        await query.edit_message_text(text, reply_markup=markup, parse_mode="Markdown")
     else:
-        await update.message.reply_text(text, reply_markup=markup)
+        await update.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
 
 
 async def surah_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,9 +225,9 @@ async def quran_search_info_callback(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     text = (
-        "🔍 جستجو در قرآن کریم\n\n"
-        "برای رفتن مستقیم به یک آیه، کافی است همین الان (بدون فشردن دکمه‌ی دیگری) "
-        "یکی از این شکل‌ها را برایم بنویسید:\n\n"
+        "🔍 *جستجو در قرآن کریم*\n"
+        "برای رفتن مستقیم به یک آیه، همین الان یکی از این شکل‌ها را بنویسید\n"
+        f"{DIVIDER}\n\n"
         "• 2:255  ← سوره ۲، آیه ۲۵۵\n"
         "• بقره 255  ← سوره بقره، آیه ۲۵۵\n"
         "• سوره بقره آیه 255\n\n"
@@ -230,6 +238,7 @@ async def quran_search_info_callback(update: Update, context: ContextTypes.DEFAU
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton("⬅️ بازگشت", callback_data="menu_quran")]]
         ),
+        parse_mode="Markdown",
     )
 
 
@@ -264,7 +273,8 @@ async def show_ayah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, sur
     buttons.append([InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran")])
 
     text = (
-        f"📖 سوره {surah_name} — {total_ayahs} آیه\n\n"
+        f"📖 سوره {surah_name} — {total_ayahs} آیه\n"
+        f"{DIVIDER}\n\n"
         "شماره‌ی آیه‌ای که می‌خواهید را انتخاب کنید:"
     )
     markup = InlineKeyboardMarkup(buttons)
@@ -325,7 +335,8 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
     else:
         surah_name = surah_info["name"] if surah_info else surah
         text = (
-            f"📖 {surah_name} - آیه {ayah}\n\n"
+            f"📖 {surah_name} — آیه {ayah}\n"
+            f"{DIVIDER}\n\n"
             f"{data['arabic']}\n\n"
             f"🔹 ترجمه:\n{data['translation']}"
         )
