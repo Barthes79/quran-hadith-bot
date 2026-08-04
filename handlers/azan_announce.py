@@ -67,6 +67,13 @@ AZAN_FIELD_MAP = {
     "maghrib": ("maghrib", "azan_maghrib", "🌙 اذان مغرب"),
 }
 
+# یک جمله‌ی خاص و دل‌نشین، مخصوص هر اذان (زیر متن اصلی اعلام اذان نوشته می‌شه)
+AZAN_TAGLINES = {
+    "fajr": "🌅 در سکوت سحر، دلی بیدار برای او کافی‌ست.",
+    "noon": "🌤 لحظه‌ای دست از دنیا بکشیم، رو به قبله و رو به آرامش.",
+    "maghrib": "🌙 هوا رو به تاریکی می‌رود و دل رو به نور؛ وقتِ راز و نیاز است.",
+}
+
 TOGGLE_COLUMN_MAP = {
     "audio": "audio_on",
     "fajr": "azan_fajr",
@@ -356,6 +363,7 @@ async def _rebuild_todays_azan_schedule(context: ContextTypes.DEFAULT_TYPE) -> b
                     "label": label,
                     "city_name": city_name,
                     "audio_on": bool(row["audio_on"]),
+                    "key": key,
                 },
                 name=f"azangrp_job_{chat_id}_{key}_{today_str}",
             )
@@ -371,15 +379,17 @@ async def schedule_daily_azan_announcements(context: ContextTypes.DEFAULT_TYPE):
 async def send_azan_announcement(context: ContextTypes.DEFAULT_TYPE):
     """جاب یک‌بارمصرف: سرِ وقتِ اذان، پیام (و در صورت فعال بودن، صوت) رو به گروه می‌فرسته.
 
-    قبلاً متن و صوت دو پیام جدا بودن (اول send_message، بعد send_voice/send_audio
-    بدون caption). حالا اگه صوت فعال باشه و فایلی ثبت شده باشه، متن به‌عنوان
-    caption همون پیام صوتی فرستاده می‌شه تا یک پیام یکپارچه باشه. فقط اگه صوت
-    غیرفعال بود یا فایلی ثبت نشده بود (یا ارسال صوت هر دلیلی fail کرد)، متن
-    به‌تنهایی فرستاده می‌شه تا کاربران بی‌خبر نمونن.
+    نکته‌ی مهم درباره‌ی کپشن در تلگرام: برخلاف عکس/ویدیو (که کپشن پایینشونه)،
+    برای فایل صوتی (send_audio) کپشن *بالای* پلیر نمایش داده می‌شه. برای همین
+    فرستادن متن به‌عنوان caption همون پیام صوتی، دقیقاً همون چیدمانِ «متن بالا،
+    پلیر پایین، همه در یک پیام» رو می‌ده که خواسته شده بود.
     """
     data = context.job.data
     chat_id = data["chat_id"]
+    tagline = AZAN_TAGLINES.get(data.get("key"), "")
     text = f"🕌 وقت {data['label']} به افق {data['city_name']} فرا رسید."
+    if tagline:
+        text += f"\n\n{tagline}"
 
     asset = None
     if data.get("audio_on"):
