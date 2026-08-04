@@ -411,7 +411,7 @@ def prayer_keyboard(city_code: int = None, user_id: int = None, is_group: bool =
     ]
     if not is_group:
         action_buttons.append(
-            [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")]
+            [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")]
         )
     
     buttons.extend(city_buttons)
