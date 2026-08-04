@@ -78,7 +78,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("🆔 با شناسه", callback_data="id_search_hadith"),
     ])
     buttons.append([InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="show_favorites")])
-    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
 
     if topic_rows:
         text = (
@@ -186,7 +186,7 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_sea
     navigation = []
     if show_search_back:
         navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
-    navigation.append(InlineKeyboardButton("🏠 منو", callback_data="menu_back"))
+    navigation.append(InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back"))
     buttons.append(navigation)
     
     return InlineKeyboardMarkup(buttons)
@@ -402,7 +402,7 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "هنوز موردی به علاقهمندیها اضافه نکردهاید.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")]]
+                [[InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")]]
             ),
         )
         return
@@ -430,7 +430,7 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons.append([InlineKeyboardButton(f"📿 #{hadith['id']}", callback_data=f"hadithview_{hadith['id']}")])
     
     buttons.append([InlineKeyboardButton("🗑 پاک کردن همه", callback_data="clear_favorites")])
-    buttons.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -448,7 +448,7 @@ async def clear_favorites_callback(update: Update, context: ContextTypes.DEFAULT
         "✅ همه علاقهمندیها حذف شد.",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📚 احادیث", callback_data="menu_hadith")],
-            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="menu_back")]
+            [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")]
         ])
     )
 
@@ -622,9 +622,9 @@ async def search_exit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         from handlers.madahi import madahi_menu_callback
         await madahi_menu_callback(update, context)
     else:
-        from handlers.start import main_menu_keyboard
+        from handlers.start import main_menu_keyboard, HOME_TEXT
         await query.answer()
-        await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_keyboard())
+        await query.edit_message_text(HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown")
 
 
 async def search_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

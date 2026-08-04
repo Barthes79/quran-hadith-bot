@@ -16,7 +16,7 @@ def get_main_menu_keyboard():
         [InlineKeyboardButton("🕌 زیارات و عتبات", callback_data="mafcat_ziyarats")],
         [InlineKeyboardButton("📚 باقیات صالحات و ملحقات", callback_data="mafcat_appendices_baqiyat")],
         [InlineKeyboardButton("🔍 جستجو در مفاتیح‌الجنان", callback_data="search_start_mafatih")],
-        [InlineKeyboardButton("🏠 بازگشت به منوی اصلی ربات", callback_data="menu_main")]
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")]
     ])
 
 # --- کیبوردهای دسته‌بندی‌ها ---
@@ -341,7 +341,7 @@ async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     if query.message:
         await cleanup_extra_photo(context, query.message.chat.id)
-    text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
+    text = "📖 *بخش مفاتیح الجنان*\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await safe_edit_message(query, text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -654,10 +654,9 @@ async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     item_id = query.data.replace("favmaf_", "")
     user_id = query.from_user.id
-    
+
     try:
-        # اگر در دیتابیس تابعی برای افزودن به علاقه‌مندی‌ها دارید، اینجا فراخوانی کنید
-        # db.add_favorite(user_id, "mafatih", item_id)
+        db.add_favorite(user_id, "mafatih", item_id)
         await query.answer("⭐ به علاقه‌مندی‌های شما اضافه شد!", show_alert=True)
     except Exception as e:
         logger.error(f"Error adding fav mafatih {item_id}: {e}")
@@ -669,5 +668,5 @@ async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def mafatih_menu_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر برای زمانی که کاربر دکمه متنی مفاتیح الجنان را می‌زند"""
-    text = "📖 **بخش مفاتیح الجنان**\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
+    text = "📖 *بخش مفاتیح الجنان*\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await update.message.reply_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
