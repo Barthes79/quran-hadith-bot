@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database import get_favorites, get_hadith_by_id, get_nahj_item, get_mafatih_by_id
+from database import get_favorites, get_hadith_by_id, get_nahj_item, get_mafatih_item_flexible
 from services.quran_api import get_ayah
 
 
@@ -10,7 +10,7 @@ async def favorites_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📖 قرآن", callback_data="favorites_quran")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="favorites_nahj")],
         [InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="favorites_mafatih")],
-        [InlineKeyboardButton("⬅️ منوی اصلی", callback_data="menu_back")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")],
     ]
     text = "⭐ علاقه‌مندی‌ها\n\nدسته مورد نظر را انتخاب کنید:"
     if update.callback_query:
@@ -138,10 +138,7 @@ async def favorites_mafatih_callback(update: Update, context: ContextTypes.DEFAU
 
     text = "📗 علاقه‌مندی‌های مفاتیح‌الجنان شما:\n\n"
     for r in maf_rows[:10]:
-        try:
-            item = get_mafatih_by_id(int(r["item_ref"]))
-        except ValueError:
-            continue
+        item = get_mafatih_item_flexible(r["item_ref"])
         if item:
             text += f"📗 {item['title']}\n\n"
             text += f"{item['arabic_text']}\n\n"

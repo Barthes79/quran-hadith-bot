@@ -77,7 +77,7 @@ async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("🔍 جستجو", callback_data="search_start_hadith"),
         InlineKeyboardButton("🆔 با شناسه", callback_data="id_search_hadith"),
     ])
-    buttons.append([InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="show_favorites")])
+    buttons.append([InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites")])
     buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
 
     if topic_rows:

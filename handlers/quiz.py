@@ -144,6 +144,7 @@ def quiz_menu_keyboard():
     if row:
         buttons.append(row)
     buttons.append([InlineKeyboardButton("🎲 تصادفی از همه‌ی دسته‌ها", callback_data="quizcat_random")])
+    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
     return InlineKeyboardMarkup(buttons)
 
 
