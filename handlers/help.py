@@ -33,7 +33,7 @@ def help_menu_keyboard():
         [InlineKeyboardButton("⭐ راهنمای علاقه‌مندی‌ها", callback_data="help_favorites")],
         [InlineKeyboardButton("🔍 راهنمای جستجو", callback_data="help_search")],
         [InlineKeyboardButton("⚙️ راهنمای دستورات ادمین", callback_data="help_admin")],
-        [InlineKeyboardButton("⬅️ بازگشت به منوی اصلی", callback_data="menu_back")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -284,6 +284,36 @@ SEARCH_HELP = """
 
 
 ADMIN_HELP = """
+⚙️ *راهنمای دستورات ادمین*
+
+🔹 *مدیریت محتوا* (فقط ادمین‌های ربات)
+• `/addhadith` — افزودن حدیث جدید
+• `/edithadith شناسه` — ویرایش حدیث
+• `/delhadith شناسه` — حذف حدیث
+• `/addtafsir شناسه متن` — افزودن شرح به حدیث
+• `/findhadith عبارت` — جستجوی مدیریتی در احادیث
+• `/addnahj` — افزودن خطبه/نامه/حکمت نهج‌البلاغه
+• `/addmadahi` یا ویزارد داخل منوی مداحی — افزودن فایل مداحی/مولودی
+• `/delmadahi شناسه` — حذف فایل مداحی/مولودی
+• `/setmafaudio شناسه` — تنظیم فایل صوتی یک دعای مفاتیح
+• `/addqtafsir` — افزودن تفسیر آیه قرآن
+
+🔹 *آمار ربات* (فقط ادمین‌های ربات)
+• `/botstats` — تعداد کاربران و لیست گروه‌های فعال
+
+🔹 *تنظیمات گروه* (ادمین‌های همان گروه)
+• `/groupsettings` — پنل کامل تنظیمات (پست خودکار، بازه‌ی سکوت، ضداسپم لینک و...)
+• `/setwelcome متن` — تنظیم پیام خوش‌آمدگویی اعضای جدید
+
+🔹 *مدیریت مسابقه در گروه* (ادمین‌های همان گروه)
+• `/quizsettings` — نمایش تنظیمات فعلی مسابقه
+• `/quiztime` ، `/quizbuzzer` ، `/quiznextdelay` — تنظیم زمان پاسخ، حالت زنگ‌اول و فاصله‌ی سوال بعدی
+
+🔹 *مدیریت ختم صلوات* (ادمین‌های همان گروه)
+• `/salavat_goal تعداد عنوان` — تعریف ختم صلوات جدید
+• `/salavat_delete` — حذف یک ختم فعال
+
+توجه: دستورات «مدیریت محتوا» و «آمار ربات» فقط برای شناسه‌های تعریف‌شده در تنظیمات ربات (ADMIN_IDS) کار می‌کنند؛ بقیه‌ی دستورات این بخش مخصوص ادمین‌های همان گروه هستند.
 """
 
 
