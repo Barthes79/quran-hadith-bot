@@ -155,10 +155,10 @@ def _child_button(content_type: str, path_prefix: str, idx: int, node: dict) -> 
 
 def _type_keyboard():
     keyboard = [
-        [InlineKeyboardButton("(مداحی)", callback_data="madahi_type_madahi")],
-        [InlineKeyboardButton("(مولودی)", callback_data="madahi_type_molodi")],
+        [InlineKeyboardButton("🎙 مداحی", callback_data="madahi_type_madahi")],
+        [InlineKeyboardButton("🎉 مولودی", callback_data="madahi_type_molodi")],
         [InlineKeyboardButton("🔍 جستجو در مداحی و مولودی", callback_data="search_start_madahi")],
-        [InlineKeyboardButton("⬅️ بازگشت به منو", callback_data="menu_back")],
+        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
