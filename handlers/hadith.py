@@ -74,10 +74,13 @@ def format_hadith(row):
         if row["hadith_number"]:
             lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
-    # نمایش دسته‌بندی
-    if row.get("category"):
-        emoji = get_category_emoji(row["category"])
-        lines.append(f"📂 {emoji} {row['category']}")
+    # نمایش دسته‌بندی - استفاده از try/except برای جلوگیری از خطا
+    try:
+        if row["category"]:
+            emoji = get_category_emoji(row["category"])
+            lines.append(f"📂 {emoji} {row['category']}")
+    except (KeyError, TypeError):
+        pass
 
     lines.append("")
     lines.append(closing)
