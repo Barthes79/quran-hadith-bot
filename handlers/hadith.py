@@ -723,7 +723,61 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.reply_text(f"✅ حدیث با شناسه {hadith_id} ثبت شد.\n📂 دسته: {category}")
 
+# ============================================================
+# جستجو با شناسه حدیث
+# ============================================================
 
+async def id_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """نمایش صفحه جستجو با شناسه حدیث"""
+    query = update.callback_query
+    await query.answer()
+    
+    text = "🆔 جستجو با شناسه حدیث\n\n"
+    text += "شناسه عددی را که در انتهای هر حدیث نمایش داده میشود وارد کنید.\n"
+    text += "مثال: 123"
+    
+    buttons = [[InlineKeyboardButton("❌ لغو", callback_data="menu_hadith_categories")]]
+    
+    context.user_data["id_search_mode"] = True
+    
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش ورودی شناسه حدیث از کاربر"""
+    if not context.user_data.get("id_search_mode"):
+        return
+        
+    text = update.message.text.strip()
+    context.user_data["id_search_mode"] = False
+    
+    if not text.isdigit():
+        await update.message.reply_text(
+            "❌ شناسه باید عدد باشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")]
+            ])
+        )
+        return
+    
+    hadith_id = int(text)
+    row = get_hadith_by_id(hadith_id)
+    
+    if not row:
+        await update.message.reply_text(
+            f"❌ حدیثی با شناسه {hadith_id} یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")]
+            ])
+        )
+        return
+    
+    category = row.get("category")
+    await update.message.reply_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
+        parse_mode="Markdown"
+    )
 # بقیه دستورات ادمین (add_tafsir, find_hadith, edit_hadith, del_hadith)
 # بدون تغییر می‌مانند
 
