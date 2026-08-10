@@ -144,8 +144,8 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_surah_list(update, context, page=0)
 
     elif query.data == "menu_hadith":
-        from handlers.hadith import show_topics
-        await show_topics(update, context)
+        from handlers.hadith import show_categories  # تغییر: به جای show_topics
+        await show_categories(update, context)
 
     elif query.data == "menu_favorites":
         from handlers.favorites import favorites_command
