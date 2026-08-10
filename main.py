@@ -22,6 +22,10 @@ from handlers.quran import (
     quran_search_info_callback,
 )
 from handlers.hadith import (
+    show_categories,
+    category_selected_callback,
+    category_nav_callback,
+    category_menu_callback,
     topic_selected_callback, random_hadith_callback, fav_hadith_callback,
     topic_nav_callback, noop_callback,
     add_hadith_command, text_search_handler, add_tafsir_command,
@@ -347,7 +351,15 @@ def main():
     app.add_handler(CallbackQueryHandler(quran_search_info_callback, pattern="^quran_search_info$"))
 
     # ==========================================
-    # کالبکهای احادیث
+    # کالبکهای احادیث - سیستم جدید دسته‌بندی
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(show_categories, pattern="^menu_hadith_categories$"))
+    app.add_handler(CallbackQueryHandler(category_selected_callback, pattern="^category_[a-f0-9]{12}$"))
+    app.add_handler(CallbackQueryHandler(category_nav_callback, pattern="^catnav_"))
+    app.add_handler(CallbackQueryHandler(category_menu_callback, pattern="^cat_menu_"))
+
+    # ==========================================
+    # کالبکهای احادیث - سیستم قدیمی (سازگاری)
     # ==========================================
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_[a-f0-9]{12}$"))
     app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
@@ -357,9 +369,7 @@ def main():
     app.add_handler(CallbackQueryHandler(hadith_view_callback, pattern="^hadithview_"))
     app.add_handler(CallbackQueryHandler(search_exit_callback, pattern="^search_exit$"))
     app.add_handler(CallbackQueryHandler(search_back_callback, pattern="^search_back$"))
-    # دکمهی «🔍 جستجو در ...» داخل منوی هر بخش (search_start_hadith/nahj/mafatih/madahi)
     app.add_handler(CallbackQueryHandler(search_start_callback, pattern="^search_start_"))
-    # جستجو با شناسه حدیث و مدیریت علاقهمندیها
     app.add_handler(CallbackQueryHandler(id_search_callback, pattern="^id_search_hadith$"))
     app.add_handler(CallbackQueryHandler(clear_favorites_callback, pattern="^clear_favorites$"))
     app.add_handler(CallbackQueryHandler(show_favorites, pattern="^show_favorites$"))

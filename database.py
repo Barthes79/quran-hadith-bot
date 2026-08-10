@@ -2014,3 +2014,214 @@ def search_raw(query: str, limit: int = 100, types=None):
 
 def search_all(query: str, limit: int = 100, types=None):
     return hydrate_results(search_raw(query, limit=limit, types=types))
+# =====================================================================
+# توابع دسته‌بندی احادیث (سیستم جدید)
+# =====================================================================
+
+HADITH_CATEGORIES = {
+    "🌿 اخلاق و رفتار": {
+        "emoji": "🌿",
+        "keywords": ["صبر", "تواضع", "راستگویی", "غیبت", "حسد", "کینه", "عفو", "سخن", "سکوت", "اخلاق", "رفتار", "خوش‌اخلاقی", "بردباری", "کنترل خشم", "زبان"]
+    },
+    "🧠 علم و حکمت": {
+        "emoji": "🧠",
+        "keywords": ["علم", "عقل", "جهل", "تفکر", "دانش", "حکمت", "آموزش", "تعقل", "خرد", "دانایی"]
+    },
+    "🕌 ایمان و عبادت": {
+        "emoji": "🕌",
+        "keywords": ["ایمان", "نماز", "دعا", "تقوا", "عبادت", "خدا", "توحید", "روزه", "حج", "زکات", "مسجد"]
+    },
+    "❤️ خانواده و محبت": {
+        "emoji": "❤️",
+        "keywords": ["والدین", "همسر", "فرزند", "محبت", "خانواده", "نیکویی", "خویشاوند", "مهربانی"]
+    },
+    "🤝 مردم و جامعه": {
+        "emoji": "🤝",
+        "keywords": ["دوست", "همسایه", "معاشرت", "کمک", "جامعه", "مردم", "برادری", "دوستی", "همکاری"]
+    },
+    "⚖️ عدالت و حقوق": {
+        "emoji": "⚖️",
+        "keywords": ["عدالت", "ظلم", "حق", "امانت", "قضاوت", "انصاف", "دادگری"]
+    },
+    "🌱 دنیا و آخرت": {
+        "emoji": "🌱",
+        "keywords": ["دنیا", "مرگ", "آخرت", "زهد", "معاد", "قبر", "قیامت", "بهشت", "جهنم"]
+    },
+    "💰 مال و زندگی": {
+        "emoji": "💰",
+        "keywords": ["رزق", "فقر", "ثروت", "کسب", "معیشت", "تجارت", "کار", "حلال", "حرام", "انفاق"]
+    },
+    "🕊️ روح و معنویت": {
+        "emoji": "🕊️",
+        "keywords": ["اخلاص", "توکل", "توبه", "ذکر", "رجا", "خوف", "شکر", "قناعت", "زهد"]
+    },
+    "👑 اهل‌بیت و ولایت": {
+        "emoji": "👑",
+        "keywords": ["ولایت", "امامت", "اهل‌بیت", "مهدی", "حسین", "علی", "فاطمه", "حسن", "رضا", "ائمه"]
+    },
+    "💎 موضوعات دیگر": {
+        "emoji": "💎",
+        "keywords": []
+    }
+}
+
+def get_hadith_categories():
+    """بازگرداندن لیست دسته‌بندی‌های ۱۰گانه با ایموجی"""
+    return HADITH_CATEGORIES
+
+def get_category_emoji(category_name: str) -> str:
+    """دریافت ایموجی یک دسته"""
+    cat = HADITH_CATEGORIES.get(category_name, {})
+    return cat.get("emoji", "📿")
+
+def categorize_topics(topics_list) -> str:
+    """
+    یک لیست از موضوعات را گرفته و بهترین دسته را پیدا می‌کند
+    اگر موضوعی با هیچ دسته‌ای مطابقت نداشت، '💎 موضوعات دیگر' برمی‌گرداند
+    """
+    if not topics_list:
+        return "💎 موضوعات دیگر"
+    
+    if isinstance(topics_list, str):
+        topics_list = [t.strip() for t in topics_list.split(',')]
+    
+    # امتیازدهی به هر دسته
+    scores = {}
+    for category, info in HADITH_CATEGORIES.items():
+        if category == "💎 موضوعات دیگر":
+            continue
+        keywords = info.get("keywords", [])
+        score = 0
+        for topic in topics_list:
+            topic = topic.strip()
+            # بررسی تطابق کامل یا جزئی
+            for keyword in keywords:
+                if keyword in topic or topic in keyword:
+                    score += 1
+        if score > 0:
+            scores[category] = score
+    
+    # پیدا کردن دسته با بیشترین امتیاز
+    if scores:
+        return max(scores, key=scores.get)
+    
+    return "💎 موضوعات دیگر"
+
+def add_category_column():
+    """اضافه کردن ستون category به جدول hadiths اگر وجود نداشته باشد"""
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    # بررسی وجود ستون
+    existing = {row[1] for row in cur.execute("PRAGMA table_info(hadiths)").fetchall()}
+    
+    if "category" not in existing:
+        cur.execute("ALTER TABLE hadiths ADD COLUMN category TEXT DEFAULT '💎 موضوعات دیگر'")
+        conn.commit()
+        print("✅ ستون 'category' به جدول hadiths اضافه شد.")
+    
+    conn.close()
+
+def get_hadiths_by_category(category_name: str):
+    """دریافت تمام حدیث‌های یک دسته"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM hadiths WHERE category = ? ORDER BY id",
+        (category_name,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+def get_hadith_categories_with_count():
+    """دریافت لیست دسته‌ها با تعداد حدیث هر کدام"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT category, COUNT(*) AS cnt FROM hadiths GROUP BY category ORDER BY cnt DESC"
+    ).fetchall()
+    conn.close()
+    
+    # اطمینان از وجود همه دسته‌ها حتی با تعداد صفر
+    result = {}
+    for cat in HADITH_CATEGORIES:
+        result[cat] = 0
+    
+    for row in rows:
+        if row["category"] in result:
+            result[row["category"]] = row["cnt"]
+    
+    return result
+
+def update_hadith_category(hadith_id: int, category: str):
+    """به‌روزرسانی دسته یک حدیث"""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE hadiths SET category = ? WHERE id = ?",
+        (category, hadith_id)
+    )
+    conn.commit()
+    conn.close()
+
+def get_subtopics_by_category(category_name: str, limit: int = 10):
+    """
+    دریافت موضوعات فرعی یک دسته (برای نمایش زیرمنو)
+    """
+    conn = get_connection()
+    # پیدا کردن حدیث‌های این دسته
+    rows = conn.execute(
+        "SELECT id FROM hadiths WHERE category = ?",
+        (category_name,)
+    ).fetchall()
+    
+    if not rows:
+        conn.close()
+        return []
+    
+    hadith_ids = [r["id"] for r in rows]
+    placeholders = ",".join("?" for _ in hadith_ids)
+    
+    # دریافت موضوعات مرتبط
+    topic_rows = conn.execute(
+        f"""SELECT topic_name, COUNT(*) as cnt 
+           FROM hadith_topics 
+           WHERE hadith_id IN ({placeholders})
+           GROUP BY topic_name 
+           ORDER BY cnt DESC 
+           LIMIT ?""",
+        (*hadith_ids, limit)
+    ).fetchall()
+    
+    conn.close()
+    return [r["topic_name"] for r in topic_rows]
+
+def recategorize_all_hadiths():
+    """دسته‌بندی مجدد همه حدیث‌های موجود"""
+    conn = get_connection()
+    
+    # ابتدا مطمئن می‌شویم ستون category وجود دارد
+    add_category_column()
+    
+    # دریافت همه حدیث‌ها
+    rows = conn.execute("SELECT id FROM hadiths").fetchall()
+    
+    updated = 0
+    for row in rows:
+        hadith_id = row["id"]
+        
+        # دریافت موضوعات حدیث
+        topics = conn.execute(
+            "SELECT topic_name FROM hadith_topics WHERE hadith_id = ?",
+            (hadith_id,)
+        ).fetchall()
+        
+        topic_list = [t["topic_name"] for t in topics]
+        category = categorize_topics(topic_list)
+        
+        conn.execute(
+            "UPDATE hadiths SET category = ? WHERE id = ?",
+            (category, hadith_id)
+        )
+        updated += 1
+    
+    conn.commit()
+    conn.close()
+    return updated

@@ -9,6 +9,9 @@ from database import (
     search_hadiths, add_favorite, get_favorites, add_hadith,
     get_hadith_by_id, update_hadith_tafsir,
     update_hadith, delete_hadith, set_hadith_topics,
+    get_hadith_categories, get_hadiths_by_category,
+    get_hadith_categories_with_count, get_subtopics_by_category,
+    categorize_topics, get_category_emoji,
 )
 from config import ADMIN_IDS
 from text_utils import normalize_input_text
@@ -20,85 +23,10 @@ def topic_hash(topic_name: str) -> str:
     return hashlib.md5(topic_name.encode("utf-8")).hexdigest()[:12]
 
 
-# نگاشت موضوعات رایج به ایموجی مناسب، برای اینکه منوی موضوعات به‌جای یه
-# ستون خشک از متن، بصری و جذاب باشه. اگه موضوعی توی این لیست نبود، ایموجی
-# پیش‌فرض 🔖 استفاده می‌شه.
-TOPIC_EMOJIS = {
-    "صبر": "🌿", "تقوا": "🕊", "نماز": "🕌", "دعا": "🤲", "علم": "📖",
-    "دانش": "📖", "اخلاق": "💠", "خانواده": "🏡", "دوست": "🤝", "ایمان": "✨",
-    "عدالت": "⚖️", "حکمت": "💡", "مرگ": "🌙", "بهشت": "🌸", "دنیا": "🌍",
-    "غیبت": "🚫", "حسد": "🔥", "ظلم": "⛔", "احسان": "💞", "توبه": "🍃",
-    "صداقت": "🗝", "راستگویی": "🗝", "امانت": "🔒", "زهد": "🍂", "قناعت": "🌾",
-    "شکر": "🙏", "والدین": "👪", "همسایه": "🏠", "عفو": "🕊", "بخشش": "🕊",
-    "کرم": "🎁", "تواضع": "🌱", "غرور": "🎭", "خشم": "🔥", "زبان": "👄",
-    "دوستی": "🤝", "برادری": "🤝", "جهاد": "⚔️", "شهادت": "🩸", "قرآن": "📗",
-    "مسجد": "🕌", "روزه": "🌙", "حج": "🕋", "زکات": "💰", "انفاق": "💰",
-    "عقل": "🧠", "کار": "🛠", "تجارت": "💼", "حلال": "✅", "حرام": "❌",
-}
+# ============================================================
+# توابع نمایش و فرمت‌دهی
+# ============================================================
 
-
-def get_topic_emoji(topic: str) -> str:
-    for key, emoji in TOPIC_EMOJIS.items():
-        if key in topic:
-            return emoji
-    return "🔖"
-
-
-async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from database import get_connection
-
-    query = update.callback_query
-    conn = get_connection()
-    total_hadiths = conn.execute("SELECT COUNT(*) FROM hadiths").fetchone()[0]
-    topic_rows = conn.execute(
-        "SELECT topic_name, COUNT(*) AS cnt FROM hadith_topics "
-        "GROUP BY topic_name ORDER BY topic_name"
-    ).fetchall()
-    conn.close()
-
-    buttons = []
-    pending = None
-    for t in topic_rows:
-        topic, cnt = t["topic_name"], t["cnt"]
-        label = f"{get_topic_emoji(topic)} {topic} ({cnt})"
-        if len(label) > 28:
-            label = label[:26] + "…"
-        btn = InlineKeyboardButton(label, callback_data=f"topic_{topic_hash(topic)}")
-        if pending is None:
-            pending = btn
-        else:
-            buttons.append([pending, btn])
-            pending = None
-    if pending is not None:
-        buttons.append([pending])
-
-    buttons.append([InlineKeyboardButton("🎲 حدیث تصادفی", callback_data="hadith_random")])
-    buttons.append([
-        InlineKeyboardButton("🔍 جستجو", callback_data="search_start_hadith"),
-        InlineKeyboardButton("🆔 با شناسه", callback_data="id_search_hadith"),
-    ])
-    buttons.append([InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites")])
-    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
-
-    if topic_rows:
-        text = (
-            "📿 ✦ گنجینه‌ی احادیث معصومین (ع) ✦\n"
-            "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
-            f"✨ {total_hadiths} حدیث نورانی، در {len(topic_rows)} موضوع\n\n"
-            "یک موضوع را برای مطالعه انتخاب کنید 👇"
-        )
-    else:
-        text = "📿 احادیث معصومین (ع)\n\nهنوز حدیثی ثبت نشده.\nبرای افزودن: /addhadith"
-
-    if query:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-    else:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-
-# چند عنوان مختلف برای اینکه همه‌ی احادیث با یه سرتیتر تکراری شروع نشن؛
-# انتخاب بر اساس شناسه‌ی حدیث انجام می‌شه (نه تصادفی)، پس هر بار که همون
-# حدیث باز بشه، همون عنوان رو می‌بینه، نه یه عنوان جدید.
 HADITH_HEADERS = [
     "پرتوی از کلام معصومین (ع)",
     "گوهری از دریای حکمت اهل‌بیت (ع)",
@@ -108,7 +36,6 @@ HADITH_HEADERS = [
     "یادگاری از زبان معصوم (ع)",
 ]
 
-# همین‌طور یک جمله‌ی پایانی متفاوت برای هر حدیث (بازم بر اساس شناسه، نه تصادفی)
 HADITH_CLOSINGS = [
     "🕯 کلام اهل‌بیت، چراغ راه زندگی است.",
     "🕯 هر حدیث، چراغی برای دل‌های تشنه‌ی حقیقت است.",
@@ -117,7 +44,6 @@ HADITH_CLOSINGS = [
     "🕯 یک جمله، یک دنیا معرفت.",
     "🕯 نور کلام اهل‌بیت، تاریکی دل را می‌زداید.",
 ]
-
 
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
@@ -148,29 +74,44 @@ def format_hadith(row):
         if row["hadith_number"]:
             lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
+    # نمایش دسته‌بندی
+    if row.get("category"):
+        emoji = get_category_emoji(row["category"])
+        lines.append(f"📂 {emoji} {row['category']}")
+
     lines.append("")
     lines.append(closing)
-    # شناسه رو نگه داشتیم چون قابلیت «جستجو با شناسه» (دکمه‌ی 🆔) بهش وابسته‌ست
     lines.append(f"🔖 شناسه: {row['id']}")
 
     return "\n".join(lines)
 
 
-def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_search_back=False, source_book=None):
+def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, 
+                    show_search_back=False, category_name=None, 
+                    sub_topic=None):
     buttons = []
     
+    # ناوبری در موضوع یا دسته
     if topic_name is not None and total and total > 1:
         h = topic_hash(topic_name)
         nav_row = []
-        
         if index > 0:
             nav_row.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"topicnav_{index-1}_{h}"))
-        
         nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
-        
         if index < total - 1:
             nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"topicnav_{index+1}_{h}"))
-        
+        buttons.append(nav_row)
+    
+    # ناوبری در دسته
+    elif category_name is not None and total and total > 1:
+        cat_emoji = get_category_emoji(category_name)
+        h = topic_hash(category_name)
+        nav_row = []
+        if index > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"catnav_{index-1}_{h}"))
+        nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
+        if index < total - 1:
+            nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"catnav_{index+1}_{h}"))
         buttons.append(nav_row)
     
     action_row = [
@@ -179,24 +120,239 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, show_sea
     ]
     buttons.append(action_row)
 
-    # دکمه‌ی «موضوعات» و دکمه‌ی منبع (که رو به پایین بود) طبق درخواست حذف
-    # شدن؛ فقط دکمه‌ی برگشت به منوی اصلی می‌مونه. پارامتر source_book رو
-    # عمداً توی امضای تابع نگه داشتیم تا جای دیگه‌ی کد نشکنه، حتی اگه دیگه
-    # استفاده نشه.
     navigation = []
     if show_search_back:
         navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
-    navigation.append(InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back"))
+    
+    # دکمه‌های ناوبری دسته‌بندی شده
+    if category_name:
+        navigation.append(InlineKeyboardButton(f"📂 {category_name}", callback_data=f"cat_menu_{topic_hash(category_name)}"))
+    else:
+        navigation.append(InlineKeyboardButton("📚 دسته‌بندی", callback_data="menu_hadith_categories"))
+    
+    navigation.append(InlineKeyboardButton("🏠 خانه", callback_data="menu_back"))
     buttons.append(navigation)
     
     return InlineKeyboardMarkup(buttons)
 
 
-async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
+# ============================================================
+# منوی اصلی دسته‌بندی
+# ============================================================
+
+async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    نمایش منوی دسته‌بندی ۱۰گانه احادیث
+    """
+    query = update.callback_query
+    
+    # دریافت تعداد حدیث در هر دسته
+    categories_with_count = get_hadith_categories_with_count()
+    total_hadiths = sum(categories_with_count.values())
+    
+    buttons = []
+    row = []
+    
+    for category, count in categories_with_count.items():
+        emoji = get_category_emoji(category)
+        label = f"{emoji} {category}"
+        if count > 0:
+            label += f" ({count})"
+        
+        btn = InlineKeyboardButton(label, callback_data=f"category_{topic_hash(category)}")
+        
+        if len(row) < 2:
+            row.append(btn)
+        else:
+            buttons.append(row)
+            row = [btn]
+    
+    if row:
+        buttons.append(row)
+    
+    # دکمه‌های اضافی
+    buttons.append([
+        InlineKeyboardButton("🎲 حدیث تصادفی", callback_data="hadith_random"),
+        InlineKeyboardButton("🔍 جستجو", callback_data="search_start_hadith"),
+    ])
+    buttons.append([
+        InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites"),
+        InlineKeyboardButton("🏠 خانه", callback_data="menu_back"),
+    ])
+    
+    text = (
+        "📜 **گنجینه‌ی احادیث اهل‌بیت (ع)**\n"
+        "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+        f"✨ {total_hadiths} حدیث نورانی در {len(categories_with_count)} دسته\n\n"
+        "یک دسته را انتخاب کنید 👇"
+    )
+    
+    if query:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
+
+async def category_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    نمایش حدیث‌های یک دسته (با ناوبری)
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    cat_h = query.data.replace("category_", "")
+    categories = get_hadith_categories()
+    
+    category_name = None
+    for cat in categories:
+        if topic_hash(cat) == cat_h:
+            category_name = cat
+            break
+    
+    if category_name is None:
+        await query.edit_message_text(
+            "این دسته دیگر معتبر نیست.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📚 دسته‌بندی", callback_data="menu_hadith_categories")],
+                [InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]
+            ])
+        )
+        return
+    
+    # دریافت حدیث‌های این دسته
+    rows = get_hadiths_by_category(category_name)
+    
+    if not rows:
+        await query.edit_message_text(
+            f"حدیثی در دسته «{category_name}» یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📚 دسته‌بندی", callback_data="menu_hadith_categories")],
+                [InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]
+            ])
+        )
+        return
+    
+    # نمایش اولین حدیث
+    row = rows[0]
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(
+            row["id"], 
+            category_name=category_name, 
+            index=0, 
+            total=len(rows)
+        ),
+        parse_mode="Markdown"
+    )
+
+
+async def category_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    ناوبری بین حدیث‌های یک دسته
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    _, index, cat_h = query.data.split("_", 2)
+    index = int(index)
+    
+    categories = get_hadith_categories()
+    category_name = None
+    for cat in categories:
+        if topic_hash(cat) == cat_h:
+            category_name = cat
+            break
+    
+    if category_name is None:
+        await query.answer("این دسته دیگر معتبر نیست.", show_alert=True)
+        return
+    
+    rows = get_hadiths_by_category(category_name)
+    if not rows or index < 0 or index >= len(rows):
+        await query.answer("موردی یافت نشد.", show_alert=True)
+        return
+    
+    row = rows[index]
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(
+            row["id"], 
+            category_name=category_name, 
+            index=index, 
+            total=len(rows)
+        ),
+        parse_mode="Markdown"
+    )
+
+
+async def category_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    بازگشت به منوی دسته‌بندی از داخل یک دسته
+    """
+    query = update.callback_query
+    await query.answer()
+    await show_categories(update, context)
+
+
+# ============================================================
+# بقیه توابع (موضوعات قدیمی، تصادفی، علاقه‌مندی‌ها، جستجو و...)
+# ============================================================
+
+async def show_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    نمایش منوی قدیمی موضوعات (برای سازگاری با نسخه‌های قبلی)
+    """
+    from database import get_connection
+
+    query = update.callback_query
+    conn = get_connection()
+    total_hadiths = conn.execute("SELECT COUNT(*) FROM hadiths").fetchone()[0]
+    topic_rows = conn.execute(
+        "SELECT topic_name, COUNT(*) AS cnt FROM hadith_topics "
+        "GROUP BY topic_name ORDER BY topic_name"
+    ).fetchall()
+    conn.close()
+
+    buttons = []
+    pending = None
+    for t in topic_rows:
+        topic, cnt = t["topic_name"], t["cnt"]
+        label = f"🔖 {topic} ({cnt})"
+        if len(label) > 28:
+            label = label[:26] + "…"
+        btn = InlineKeyboardButton(label, callback_data=f"topic_{topic_hash(topic)}")
+        if pending is None:
+            pending = btn
+        else:
+            buttons.append([pending, btn])
+            pending = None
+    if pending is not None:
+        buttons.append([pending])
+
+    buttons.append([InlineKeyboardButton("📂 دسته‌بندی جدید", callback_data="menu_hadith_categories")])
+    buttons.append([InlineKeyboardButton("🎲 حدیث تصادفی", callback_data="hadith_random")])
+    buttons.append([InlineKeyboardButton("🔍 جستجو", callback_data="search_start_hadith")])
+    buttons.append([InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites")])
+    buttons.append([InlineKeyboardButton("🏠 خانه", callback_data="menu_back")])
+
+    if topic_rows:
+        text = (
+            "📿 ✦ موضوعات احادیث ✦\n"
+            "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n"
+            f"✨ {total_hadiths} حدیث نورانی\n\n"
+            "⚠️ این منو قدیمی است. از «دسته‌بندی جدید» استفاده کنید."
+        )
+    else:
+        text = "📿 احادیث معصومین (ع)\n\nهنوز حدیثی ثبت نشده."
+
+    if query:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # کد قدیمی برای سازگاری
     query = update.callback_query
     await query.answer()
     topic_h = query.data.replace("topic_", "")
@@ -205,28 +361,35 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
     if topic_name is None:
         await query.edit_message_text(
             "این موضوع دیگر معتبر نیست.\n\n"
-            "برای انتخاب مجدد، از منوی «📚 احادیث» استفاده کنید.",
-            reply_markup=hadith_keyboard(-1)
+            "از منوی «دسته‌بندی جدید» استفاده کنید.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")],
+                [InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]
+            ])
         )
         return
     rows = get_hadiths_by_topic(topic_name)
 
     if not rows:
         await query.edit_message_text(
-            f"حدیثی برای موضوع '{topic_name}' یافت نشد.\n\n"
-            "شاید موضوع خالی از حدیث باشد. برای انتخاب مجدد، به «📚 احادیث» بازگردید.",
-            reply_markup=hadith_keyboard(-1)
+            f"حدیثی برای موضوع '{topic_name}' یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")],
+                [InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]
+            ])
         )
         return
 
     row = rows[0]
     await query.edit_message_text(
         format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows), source_book=row["source_book"]),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows)),
+        parse_mode="Markdown"
     )
 
 
 async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # کد قدیمی برای سازگاری
     query = update.callback_query
     await query.answer()
     _, index, topic_h = query.data.split("_", 2)
@@ -246,7 +409,8 @@ async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     row = rows[index]
     await query.edit_message_text(
         format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows), source_book=row["source_book"]),
+        reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows)),
+        parse_mode="Markdown"
     )
 
 
@@ -257,7 +421,14 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
     if not row:
         await query.edit_message_text("هنوز حدیثی در دیتابیس ثبت نشده است.")
         return
-    await query.edit_message_text(format_hadith(row), reply_markup=hadith_keyboard(row["id"], source_book=row["source_book"]))
+    
+    # پیدا کردن دسته حدیث
+    category = row.get("category")
+    await query.edit_message_text(
+        format_hadith(row), 
+        reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
+        parse_mode="Markdown"
+    )
 
 
 async def fav_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -267,148 +438,24 @@ async def fav_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer("به علاقهمندیها اضافه شد ⭐")
 
 
-async def copy_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    hadith_id = query.data.replace("copy_hadith_", "")
-    row = get_hadith_by_id(int(hadith_id))
-
-    if not row:
-        await query.answer("حدیث یافت نشد.", show_alert=True)
-        return
-
-    # نکته: دکمه‌ی «کپی» بومی تلگرام (copy_text) محدودیت ۲۵۶ کاراکتری داره
-    # و برای متن کامل حدیث (عربی+ترجمه+منبع) کافی نیست؛ برای همین متن رو
-    # به‌صورت یک پیام جدا می‌فرستیم تا کاربر خودش نگه‌داره و کپی کنه.
-    # قبلاً await query.answer("متن کپی شد") *قبل* از send_message صدا زده
-    # می‌شد، یعنی اگه ارسال پیام fail می‌کرد (مثلاً به هر دلیلی؛ رِیت‌لیمیت،
-    # پیام خیلی بلند و...)، کاربر توست موفقیت رو می‌دید ولی هیچ پیامی
-    # نمی‌رسید. حالا اول ارسال می‌کنیم و فقط اگه واقعاً موفق بود پیام
-    # موفقیت نشون داده می‌شه؛ در غیر این صورت خطا لاگ و به کاربر اطلاع
-    # داده می‌شه.
-    try:
-        await context.bot.send_message(chat_id=query.from_user.id, text=format_hadith(row))
-        await query.answer("📋 متن حدیث به همین چت فرستاده شد")
-    except Exception as e:
-        logger.warning(f"copy_hadith_callback: ارسال پیام کپی شکست خورد: {e}")
-        await query.answer("مشکلی توی فرستادن متن پیش اومد. دوباره امتحان کن.", show_alert=True)
-
-
-async def filter_source_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    hadith_id = query.data.replace("filter_source_", "")
-    current_hadith = get_hadith_by_id(int(hadith_id))
-    
-    if not current_hadith:
-        await query.answer("حدیث یافت نشد.", show_alert=True)
-        return
-    
-    source_book = current_hadith["source_book"]
-    if not source_book:
-        await query.answer("منبع مشخص نیست.", show_alert=True)
-        return
-    
-    from database import list_hadiths
-    rows = list_hadiths(source_book=source_book, limit=50)
-    
-    if not rows or len(rows) == 1:
-        await query.answer("حدیث دیگری از این منبع نیست.", show_alert=True)
-        return
-    
-    text = f"📖 احادیث {source_book}\n\nتعداد: {len(rows)} حدیث\n\n"
-    
-    for i, row in enumerate(rows[:10], 1):
-        preview = (row["translation_text"] or "")[:40].replace("\n", " ")
-        text += f"{i}. {preview}...\n"
-    
-    if len(rows) > 10:
-        text += f"\n... و {len(rows) - 10} حدیث دیگر"
-    
-    buttons = []
-    for row in rows[:8]:
-        preview = (row["translation_text"] or row["arabic_text"] or "")[:25]
-        buttons.append([InlineKeyboardButton(f"#{row['id']} {preview}", callback_data=f"hadithview_{row['id']}")])
-    
-    buttons.append([InlineKeyboardButton("📚 موضوعات", callback_data="menu_hadith")])
-    
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-
-async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    hadith_id = int(query.data.replace("hadithview_", ""))
-    row = get_hadith_by_id(hadith_id)
-    if not row:
-        await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
-        return
-    show_back = bool(context.user_data.get("last_search_query"))
-    await query.edit_message_text(
-        format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], show_search_back=show_back, source_book=row["source_book"]),
-    )
-
-
-async def id_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    text = "🆔 جستجو با شناسه حدیث\n\n"
-    text += "شناسه حدیث مورد نظر را وارد کنید.\n"
-    text += "شناسه عددی است که در انتهای هر حدیث نمایش داده میشود."
-    
-    buttons = [[InlineKeyboardButton("❌ لغو", callback_data="menu_hadith")]]
-    
-    context.user_data["id_search_mode"] = True
-    
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-
-async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("id_search_mode"):
-        return
-        
-    text = update.message.text.strip()
-    context.user_data["id_search_mode"] = False
-    
-    if not text.isdigit():
-        await update.message.reply_text(
-            "❌ شناسه باید عدد باشد.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📚 موضوعات", callback_data="menu_hadith")]])
-        )
-        return
-    
-    hadith_id = int(text)
-    row = get_hadith_by_id(hadith_id)
-    
-    if not row:
-        await update.message.reply_text(
-            f"❌ حدیثی با شناسه {hadith_id} یافت نشد.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📚 موضوعات", callback_data="menu_hadith")]])
-        )
-        return
-    
-    await update.message.reply_text(
-        format_hadith(row),
-        reply_markup=hadith_keyboard(row["id"], source_book=row["source_book"])
-    )
+async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
 
 
 async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # کد قبلی
     query = update.callback_query
     favs = get_favorites(query.from_user.id)
     if not favs:
         await query.edit_message_text(
             "هنوز موردی به علاقهمندیها اضافه نکردهاید.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")]]
+                [[InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]]
             ),
         )
         return
 
     hadith_favs = [f for f in favs if f["item_type"] == "hadith"]
-    quran_favs = [f for f in favs if f["item_type"] != "hadith"]
     
     text = "⭐ علاقهمندیهای شما\n\n"
     
@@ -420,9 +467,6 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 preview = (hadith['translation_text'] or '')[:30]
                 text += f"{i}. {preview}...\n"
     
-    if quran_favs:
-        text += f"\n📖 آیات: {len(quran_favs)} آیه\n"
-    
     buttons = []
     for f in hadith_favs[:5]:
         hadith = get_hadith_by_id(int(f["item_ref"]))
@@ -430,7 +474,7 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons.append([InlineKeyboardButton(f"📿 #{hadith['id']}", callback_data=f"hadithview_{hadith['id']}")])
     
     buttons.append([InlineKeyboardButton("🗑 پاک کردن همه", callback_data="clear_favorites")])
-    buttons.append([InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")])
+    buttons.append([InlineKeyboardButton("🏠 خانه", callback_data="menu_back")])
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -447,11 +491,15 @@ async def clear_favorites_callback(update: Update, context: ContextTypes.DEFAULT
     await query.edit_message_text(
         "✅ همه علاقهمندیها حذف شد.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📚 احادیث", callback_data="menu_hadith")],
-            [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_back")]
+            [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")],
+            [InlineKeyboardButton("🏠 خانه", callback_data="menu_back")]
         ])
     )
 
+
+# ============================================================
+# جستجو
+# ============================================================
 
 SEARCH_SCOPES = {
     "hadith": {
@@ -465,21 +513,6 @@ SEARCH_SCOPES = {
             "• موضوع\n\n"
             "عبارت مورد نظر را بنویسید:"
         ),
-    },
-    "nahj": {
-        "types": ["nahj"],
-        "title": "🕌 نهج‌البلاغه",
-        "prompt": "🔍 جستجو در نهج‌البلاغه\n\nعبارت مورد نظر را بنویسید:",
-    },
-    "mafatih": {
-        "types": ["mafatih"],
-        "title": "📗 مفاتیح‌الجنان",
-        "prompt": "🔍 جستجو در مفاتیح‌الجنان\n\nعبارت مورد نظر را بنویسید:",
-    },
-    "madahi": {
-        "types": ["madahi"],
-        "title": "🎙 مداحی",
-        "prompt": "🔍 جستجو در مداحی\n\nعبارت مورد نظر را بنویسید:",
     },
 }
 
@@ -501,59 +534,6 @@ async def search_start_callback(update: Update, context: ContextTypes.DEFAULT_TY
             [[InlineKeyboardButton("🚪 خروج", callback_data="search_exit")]]
         ),
     )
-
-
-def _build_search_message(text: str, results: list, scope_info: dict = None):
-    from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
-    from handlers.mafatih import MAFATIH_ITEM_LOCATION
-
-    MAX_BUTTONS = 10
-    LABEL_LEN = 35
-    shown_results = results[:MAX_BUTTONS]
-
-    buttons = []
-    for item in shown_results:
-        row = item["row"]
-        if item["type"] == "hadith":
-            preview = (row["translation_text"] or row["arabic_text"] or "")[:LABEL_LEN]
-            label = f"📿 {preview}"
-            callback_data = f"hadithview_{row['id']}"
-        elif item["type"] == "nahj":
-            cat_label = NAHJ_MENU_LABELS.get(row["category"], "🕌")
-            item_label = NAHJ_ITEM_LABELS.get(row["category"], "")
-            title_part = f" — {row['title']}" if row["title"] else ""
-            label = f"{cat_label} {item_label} {row['number']}{title_part}"
-            callback_data = f"nahjitem_{row['category']}_{row['number']}"
-        elif item["type"] == "mafatih":
-            identifier = row["slug"] if row["slug"] else row["id"]
-            location = MAFATIH_ITEM_LOCATION.get(str(identifier))
-            sub_label = location[1] if location else "📗 مفاتیحالجنان"
-            label = f"{sub_label} — {row['title']}"
-            callback_data = f"mafitem_{identifier}"
-        else:
-            flag = "🏴" if row["content_type"] == "madahi" else "💐"
-            preview = row["title"] or ""
-            if row["reciter"]:
-                preview += f" - {row['reciter']}"
-            label = f"{flag} {preview}"
-            callback_data = f"madahi_play_{row['id']}"
-        buttons.append([InlineKeyboardButton(label[:LABEL_LEN], callback_data=callback_data)])
-
-    if len(results) > MAX_BUTTONS:
-        buttons.append([
-            InlineKeyboardButton(
-                "🔎 همه نتایج",
-                switch_inline_query_current_chat=text + " ",
-            )
-        ])
-
-    buttons.append([InlineKeyboardButton("🚪 خروج", callback_data="search_exit")])
-
-    if scope_info:
-        message_text = f"🔍 {len(results)} نتیجه برای «{text}» در {scope_info['title']}"
-    else:
-        message_text = f"🔍 {len(results)} نتیجه برای «{text}»"
-    return message_text, InlineKeyboardMarkup(buttons)
 
 
 async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -578,81 +558,102 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(results) == 1 and results[0]["type"] == "hadith":
         row = results[0]["row"]
+        category = row.get("category")
         await update.message.reply_text(
             format_hadith(row),
-            reply_markup=hadith_keyboard(row["id"], source_book=row["source_book"]),
+            reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
+            parse_mode="Markdown"
         )
         return
 
-    message_text, reply_markup = _build_search_message(text, results, scope_info)
+    # نمایش نتایج
+    buttons = []
+    for item in results[:10]:
+        row = item["row"]
+        if item["type"] == "hadith":
+            preview = (row["translation_text"] or row["arabic_text"] or "")[:30]
+            label = f"📿 {preview}..."
+            callback_data = f"hadithview_{row['id']}"
+        else:
+            continue
+        buttons.append([InlineKeyboardButton(label, callback_data=callback_data)])
 
-    try:
-        await update.message.reply_text(message_text, reply_markup=reply_markup)
-    except BadRequest as e:
-        logger.warning(f"reply_markup error: {e}")
-        await update.message.reply_text(
-            f"🔍 {len(results)} نتیجه پیدا شد.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("🔎 نتایج", switch_inline_query_current_chat=text + " ")],
-                    [InlineKeyboardButton("🚪 خروج", callback_data="search_exit")],
-                ]
-            ),
-        )
+    buttons.append([InlineKeyboardButton("🚪 خروج", callback_data="search_exit")])
+
+    await update.message.reply_text(
+        f"🔍 {len(results)} نتیجه برای «{text}»",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def search_exit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    scope = context.user_data.get("search_scope")
     context.user_data["search_mode"] = False
     context.user_data["search_scope"] = None
-
-    if scope == "hadith":
-        await query.answer()
-        await show_topics(update, context)
-    elif scope == "nahj":
-        await query.answer()
-        from handlers.nahj import show_nahj_menu
-        await show_nahj_menu(update, context)
-    elif scope == "mafatih":
-        from handlers.mafatih import mafatih_menu_callback
-        await mafatih_menu_callback(update, context)
-    elif scope == "madahi":
-        await query.answer()
-        from handlers.madahi import madahi_menu_callback
-        await madahi_menu_callback(update, context)
-    else:
-        from handlers.start import main_menu_keyboard, HOME_TEXT
-        await query.answer()
-        await query.edit_message_text(HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown")
+    await query.answer()
+    await show_categories(update, context)
 
 
 async def search_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from database import search_all
+    await search_exit_callback(update, context)
 
+
+async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    last_query = context.user_data.get("last_search_query")
-    if not last_query:
-        await query.answer("جستجویی پیدا نشد.", show_alert=True)
+    hadith_id = int(query.data.replace("hadithview_", ""))
+    row = get_hadith_by_id(hadith_id)
+    if not row:
+        await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
         return
+    
+    category = row.get("category")
+    await query.edit_message_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
+        parse_mode="Markdown"
+    )
 
-    scope = context.user_data.get("search_scope")
-    scope_info = SEARCH_SCOPES.get(scope)
-    types = scope_info["types"] if scope_info else None
 
-    results = search_all(last_query, limit=15, types=types)
-    if not results:
-        await query.edit_message_text("چیزی پیدا نشد.")
+async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("id_search_mode"):
         return
+        
+    text = update.message.text.strip()
+    context.user_data["id_search_mode"] = False
+    
+    if not text.isdigit():
+        await update.message.reply_text(
+            "❌ شناسه باید عدد باشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")]
+            ])
+        )
+        return
+    
+    hadith_id = int(text)
+    row = get_hadith_by_id(hadith_id)
+    
+    if not row:
+        await update.message.reply_text(
+            f"❌ حدیثی با شناسه {hadith_id} یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📂 دسته‌بندی", callback_data="menu_hadith_categories")]
+            ])
+        )
+        return
+    
+    category = row.get("category")
+    await update.message.reply_text(
+        format_hadith(row),
+        reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
+        parse_mode="Markdown"
+    )
 
-    message_text, reply_markup = _build_search_message(last_query, results, scope_info)
-    try:
-        await query.edit_message_text(message_text, reply_markup=reply_markup)
-    except BadRequest as e:
-        logger.warning(f"search_back error: {e}")
 
+# ============================================================
+# دستورات ادمین
+# ============================================================
 
 async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
@@ -695,7 +696,6 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     arabic = fields.get("عربی", "")
     translation = fields.get("ترجمه", "")
-    logger.info("DEBUG addhadith fields_keys=%r arabic_len=%d translation_len=%d", list(fields.keys()), len(arabic), len(translation))
     tafsir = fields.get("شرح", "") or None
     narrator = fields.get("راوی", "")
     source = fields.get("منبع", "")
@@ -715,7 +715,17 @@ async def add_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         arabic, translation, narrator, source, chapter, number,
         tafsir_text=tafsir, topics=topics,
     )
-    await update.message.reply_text(f"✅ حدیث با شناسه {hadith_id} ثبت شد.")
+    
+    # دسته‌بندی خودکار
+    category = categorize_topics(topics)
+    from database import update_hadith_category
+    update_hadith_category(hadith_id, category)
+    
+    await update.message.reply_text(f"✅ حدیث با شناسه {hadith_id} ثبت شد.\n📂 دسته: {category}")
+
+
+# بقیه دستورات ادمین (add_tafsir, find_hadith, edit_hadith, del_hadith)
+# بدون تغییر می‌مانند
 
 
 async def add_tafsir_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -768,7 +778,8 @@ async def find_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     lines = [f"🔎 {len(rows)} نتیجه:\n"]
     for row in rows:
         preview = (row["translation_text"] or "")[:60].replace("\n", " ")
-        lines.append(f"#{row['id']} | {row['source_book'] or '-'}\n{preview}...\n")
+        cat = row.get("category", "بدون دسته")
+        lines.append(f"#{row['id']} | {cat}\n{preview}...\n")
 
     await update.message.reply_text("\n".join(lines))
 
@@ -838,9 +849,16 @@ async def edit_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         topics = [t.strip() for t in topics_raw.split("،") if t.strip()] or \
                   [t.strip() for t in topics_raw.split(",") if t.strip()]
         set_hadith_topics(hadith_id, topics)
+        # به‌روزرسانی دسته
+        category = categorize_topics(topics)
+        from database import update_hadith_category
+        update_hadith_category(hadith_id, category)
 
     updated_row = get_hadith_by_id(hadith_id)
-    await update.message.reply_text(f"✅ حدیث {hadith_id} بهروزرسانی شد.\n\n" + format_hadith(updated_row))
+    await update.message.reply_text(
+        f"✅ حدیث {hadith_id} به‌روزرسانی شد.\n\n" + format_hadith(updated_row),
+        parse_mode="Markdown"
+    )
 
 
 async def del_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
