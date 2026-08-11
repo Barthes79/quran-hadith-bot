@@ -175,7 +175,19 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
         navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
 
     # دکمه‌ی بازگشت به صفحه‌ی دسته‌بندی احادیث (لیست همه‌ی دسته‌ها)
-    navigation.append(InlineKeyboardButton("↩️ بازگشت به دسته‌بندی", callback_data="menu_hadith_categories"))
+    # نکته: وقتی داخل یک دسته هستیم باید از callback مخصوص "cat_menu_" استفاده کنیم
+    # (همان چیزی که قبلاً هم برای این حالت استفاده می‌شد و به category_menu_callback وصل است)
+    if category_name:
+        navigation.append(InlineKeyboardButton(
+            "↩️ بازگشت به دسته‌بندی",
+            callback_data=f"cat_menu_{topic_hash(category_name)}"
+        ))
+    else:
+        navigation.append(InlineKeyboardButton(
+            "↩️ بازگشت به دسته‌بندی",
+            callback_data="menu_hadith_categories"
+        ))
+
     navigation.append(InlineKeyboardButton("🏠 خانه", callback_data="menu_back"))
     buttons.append(navigation)
     
