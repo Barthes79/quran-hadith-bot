@@ -111,23 +111,34 @@ def _fa_num(n):
 
 def _jump_buttons(index, total, callback_prefix, h):
     """
-    ردیف اول: دکمه‌های پرش رو به جلو (+۱۰، +۲۰، +۴۰، +۵۰) از موقعیت فعلی
-    ردیف دوم: میانبر رفتن به اولین/آخرین حدیث دسته
+    ردیف اول: پرش رو به عقب (-۱۰، -۲۰، -۴۰، -۵۰) از موقعیت فعلی
+    ردیف دوم: پرش رو به جلو (+۱۰، +۲۰، +۴۰، +۵۰) از موقعیت فعلی
+    ردیف سوم: میانبر رفتن به اولین/آخرین حدیث دسته
     """
     if not total or total <= 1:
         return []
 
     rows = []
 
-    offset_row = []
+    backward_row = []
+    for offset in JUMP_OFFSETS:
+        target = index - offset
+        if target < 0:
+            continue
+        label = f"-{_fa_num(offset)}"
+        backward_row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{target}_{h}"))
+    if backward_row:
+        rows.append(backward_row)
+
+    forward_row = []
     for offset in JUMP_OFFSETS:
         target = index + offset
         if target >= total:
             continue
         label = f"+{_fa_num(offset)}"
-        offset_row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{target}_{h}"))
-    if offset_row:
-        rows.append(offset_row)
+        forward_row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{target}_{h}"))
+    if forward_row:
+        rows.append(forward_row)
 
     shortcuts = []
     if index != 0:
