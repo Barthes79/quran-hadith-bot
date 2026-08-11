@@ -82,8 +82,7 @@ def format_hadith(row):
     if has_meta:
         if source:
             lines.append(f"📚 منبع: {source}")
-        if row["hadith_number"]:
-            lines.append(f"▫️ حدیث: {row['hadith_number']}")
+
 
     # نمایش دسته‌بندی — بدون تکرار ایموجی، چون خودِ row['category'] از قبل
     # با ایموجی ذخیره شده (مثلاً "🌿 اخلاق و رفتار")
