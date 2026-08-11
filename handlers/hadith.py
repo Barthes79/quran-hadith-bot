@@ -68,7 +68,7 @@ def format_hadith(row):
         lines.append(row["tafsir_text"])
 
     source = row["source_book"] or ""
-    has_meta = bool(source or row["hadith_number"])
+    has_meta = bool(source)
     has_category = False
     try:
         has_category = bool(row["category"])
@@ -82,8 +82,6 @@ def format_hadith(row):
     if has_meta:
         if source:
             lines.append(f"📚 منبع: {source}")
-        if row["hadith_number"]:
-            lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
     # نمایش دسته‌بندی — بدون تکرار ایموجی، چون خودِ row['category'] از قبل
     # با ایموجی ذخیره شده (مثلاً "🌿 اخلاق و رفتار")
