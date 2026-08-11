@@ -99,6 +99,42 @@ def format_hadith(row):
     return "\n".join(lines)
 
 
+JUMP_STEP = 10  # فاصله‌ی شماره‌های پرش سریع (۱، ۱۱، ۲۱، ...)
+JUMP_BUTTONS_PER_ROW = 5
+
+
+def _jump_buttons(index, total, callback_prefix, h):
+    """
+    ساخت دکمه‌های پرش سریع (هر ۱۰ تا یکی) برای دسته/موضوع‌هایی که
+    تعداد حدیثشان زیاد است، تا کاربر مجبور نباشد پشت سر هم «بعدی» بزند.
+    مثلاً برای ۹۰ حدیث: 1, 11, 21, 31, ..., 81
+    """
+    if not total or total <= JUMP_STEP:
+        return []
+
+    jump_indexes = list(range(0, total, JUMP_STEP))
+    # اطمینان از این‌که آخرین حدیث هم در دسترس باشد
+    if jump_indexes[-1] != total - 1:
+        jump_indexes.append(total - 1)
+
+    rows = []
+    current_row = []
+    for idx in jump_indexes:
+        label = f"{idx + 1}"
+        if idx == index:
+            label = f"· {label} ·"
+        current_row.append(
+            InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{idx}_{h}")
+        )
+        if len(current_row) == JUMP_BUTTONS_PER_ROW:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+
+    return rows
+
+
 def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, 
                     show_search_back=False, category_name=None, 
                     sub_topic=None):
@@ -114,10 +150,10 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
         if index < total - 1:
             nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"topicnav_{index+1}_{h}"))
         buttons.append(nav_row)
+        buttons.extend(_jump_buttons(index, total, "topicnav", h))
     
     # ناوبری در دسته
     elif category_name is not None and total and total > 1:
-        cat_emoji = get_category_emoji(category_name)
         h = topic_hash(category_name)
         nav_row = []
         if index > 0:
@@ -126,26 +162,20 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
         if index < total - 1:
             nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"catnav_{index+1}_{h}"))
         buttons.append(nav_row)
+        buttons.extend(_jump_buttons(index, total, "catnav", h))
     
     action_row = [
         InlineKeyboardButton("⭐", callback_data=f"fav_hadith_{hadith_id}"),
         InlineKeyboardButton("📤 اشتراک", switch_inline_query=f"h{hadith_id}"),
-        InlineKeyboardButton("📋 کپی", callback_data=f"copy_hadith_{hadith_id}"),
     ]
     buttons.append(action_row)
 
     navigation = []
     if show_search_back:
         navigation.append(InlineKeyboardButton("↩️ نتایج جستجو", callback_data="search_back"))
-    
-    # دکمه‌های ناوبری دسته‌بندی شده
-    if category_name:
-        navigation.append(InlineKeyboardButton(f"📂 {category_name}", callback_data=f"cat_menu_{topic_hash(category_name)}"))
-    else:
-        navigation.append(InlineKeyboardButton("📚 دسته‌بندی", callback_data="menu_hadith_categories"))
-    
-    # دکمه فیلتر بر اساس منبع
-    navigation.append(InlineKeyboardButton("📖 منبع", callback_data=f"filter_source_{hadith_id}"))
+
+    # دکمه‌ی بازگشت به صفحه‌ی دسته‌بندی احادیث (لیست همه‌ی دسته‌ها)
+    navigation.append(InlineKeyboardButton("↩️ بازگشت به دسته‌بندی", callback_data="menu_hadith_categories"))
     navigation.append(InlineKeyboardButton("🏠 خانه", callback_data="menu_back"))
     buttons.append(navigation)
     
@@ -170,8 +200,9 @@ async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = []
     
     for category, count in categories_with_count.items():
-        emoji = get_category_emoji(category)
-        label = f"{emoji} {category}"
+        # نکته: category خودش از قبل با ایموجی ذخیره شده (مثلاً "🌿 اخلاق و رفتار")
+        # پس دیگر نیازی به اضافه کردن دوباره‌ی ایموجی نیست
+        label = category
         if count > 0:
             label += f" ({count})"
         
