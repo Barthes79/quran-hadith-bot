@@ -45,14 +45,17 @@ HADITH_CLOSINGS = [
     "🕯 نور کلام اهل‌بیت، تاریکی دل را می‌زداید.",
 ]
 
+DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+
+
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
 
-    lines = [f"📿 {header} 📿", ""]
+    lines = [f"📿 《{header}》", ""]
 
     if row["narrator"]:
-        lines.append(f"🕊 {row['narrator']} می‌فرماید:")
+        lines.append(f"🕊 *{row['narrator']}* می‌فرماید:")
         lines.append("")
 
     lines.append(f"﴿ {row['arabic_text']} ﴾")
@@ -61,12 +64,22 @@ def format_hadith(row):
 
     if row["tafsir_text"]:
         lines.append("")
-        lines.append("📖 شرح:")
+        lines.append("📖 *شرح:*")
         lines.append(row["tafsir_text"])
 
     source = row["source_book"] or ""
-    if source or row["chapter"] or row["hadith_number"]:
+    has_meta = bool(source or row["chapter"] or row["hadith_number"])
+    has_category = False
+    try:
+        has_category = bool(row["category"])
+    except (KeyError, TypeError):
+        has_category = False
+
+    if has_meta or has_category:
         lines.append("")
+        lines.append(DIVIDER)
+
+    if has_meta:
         if source:
             lines.append(f"📚 منبع: {source}")
         if row["chapter"]:
@@ -74,13 +87,10 @@ def format_hadith(row):
         if row["hadith_number"]:
             lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
-    # نمایش دسته‌بندی - استفاده از try/except برای جلوگیری از خطا
-    try:
-        if row["category"]:
-            emoji = get_category_emoji(row["category"])
-            lines.append(f"📂 {emoji} {row['category']}")
-    except (KeyError, TypeError):
-        pass
+    # نمایش دسته‌بندی — بدون تکرار ایموجی، چون خودِ row['category'] از قبل
+    # با ایموجی ذخیره شده (مثلاً "🌿 اخلاق و رفتار")
+    if has_category:
+        lines.append(f"📂 {row['category']}")
 
     lines.append("")
     lines.append(closing)
