@@ -48,6 +48,14 @@ HADITH_CLOSINGS = [
 DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
 
 
+def _safe_category(row):
+    """دریافت امن مقدار category از sqlite3.Row (که متد get ندارد)."""
+    try:
+        return row["category"]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
@@ -479,7 +487,7 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     # پیدا کردن دسته حدیث
-    category = row.get("category")
+    category = _safe_category(row)
     await query.edit_message_text(
         format_hadith(row), 
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -680,7 +688,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(results) == 1 and results[0]["type"] == "hadith":
         row = results[0]["row"]
-        category = row.get("category")
+        category = _safe_category(row)
         await update.message.reply_text(
             format_hadith(row),
             reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -729,7 +737,7 @@ async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
         return
     
-    category = row.get("category")
+    category = _safe_category(row)
     await query.edit_message_text(
         format_hadith(row),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -786,7 +794,7 @@ async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    category = row.get("category")
+    category = _safe_category(row)
     await update.message.reply_text(
         format_hadith(row),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -917,7 +925,7 @@ async def find_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     lines = [f"🔎 {len(rows)} نتیجه:\n"]
     for row in rows:
         preview = (row["translation_text"] or "")[:60].replace("\n", " ")
-        cat = row.get("category", "بدون دسته")
+        cat = _safe_category(row) or "بدون دسته"
         lines.append(f"#{row['id']} | {cat}\n{preview}...\n")
 
     await update.message.reply_text("\n".join(lines))
