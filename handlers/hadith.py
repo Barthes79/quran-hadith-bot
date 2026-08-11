@@ -111,22 +111,33 @@ def _fa_num(n):
 
 def _jump_buttons(index, total, callback_prefix, h):
     """
-    دکمه‌های پرش رو به جلو: +۱۰، +۲۰، +۴۰، +۵۰
-    با زدن هرکدام، به همان تعداد حدیث جلوتر می‌رود.
-    اگر مقصد از تعداد کل بیشتر شود، آن دکمه اصلاً نمایش داده نمی‌شود.
+    ردیف اول: دکمه‌های پرش رو به جلو (+۱۰، +۲۰، +۴۰، +۵۰) از موقعیت فعلی
+    ردیف دوم: میانبر رفتن به اولین/آخرین حدیث دسته
     """
-    if not total or total <= min(JUMP_OFFSETS):
+    if not total or total <= 1:
         return []
 
-    row = []
+    rows = []
+
+    offset_row = []
     for offset in JUMP_OFFSETS:
         target = index + offset
         if target >= total:
             continue
         label = f"+{_fa_num(offset)}"
-        row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{target}_{h}"))
+        offset_row.append(InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{target}_{h}"))
+    if offset_row:
+        rows.append(offset_row)
 
-    return [row] if row else []
+    shortcuts = []
+    if index != 0:
+        shortcuts.append(InlineKeyboardButton("⏮ اولین", callback_data=f"{callback_prefix}_0_{h}"))
+    if index != total - 1:
+        shortcuts.append(InlineKeyboardButton("آخرین ⏭", callback_data=f"{callback_prefix}_{total-1}_{h}"))
+    if shortcuts:
+        rows.append(shortcuts)
+
+    return rows
 
 
 def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None, 
