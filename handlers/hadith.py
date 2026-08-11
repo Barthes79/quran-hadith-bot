@@ -99,21 +99,23 @@ def format_hadith(row):
     return "\n".join(lines)
 
 
-JUMP_STEP = 10  # اندازه‌ی هر بازه (۱۰ تا ۱۰ تا)
-JUMP_BUTTONS_PER_ROW = 4
+JUMP_STEP = 10  # اندازه‌ی هر صفحه (۱۰ تا ۱۰ تا)
+JUMP_BUTTONS_PER_ROW = 5
+
+_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
-def _range_label(start_idx, end_idx):
-    """برچسب یک بازه، مثلاً '۱-۱۰' یا '۸۱-۹۰'"""
-    return f"{start_idx + 1}-{end_idx + 1}"
+def _fa_num(n):
+    """تبدیل عدد به رقم فارسی، مثلاً 12 -> ۱۲"""
+    return str(n).translate(_PERSIAN_DIGITS)
 
 
 def _jump_buttons(index, total, callback_prefix, h):
     """
-    ساخت دکمه‌های پرش بازه‌ای (هر بازه ۱۰ تایی، مثلاً «۱-۱۰»، «۱۱-۲۰»، ...)
+    ساخت دکمه‌های پرش صفحه‌ای (هر صفحه ۱۰ حدیث، مثلاً «صفحه ۱»، «صفحه ۲»، ...)
     به‌علاوه دو دکمه‌ی میانبر «اولین» و «آخرین»، تا کاربر مجبور نباشد
     پشت سر هم روی «بعدی» بزند تا به حدیث موردنظرش برسد.
-    با زدن هر بازه، به اولین حدیث همان بازه منتقل می‌شود.
+    با زدن هر صفحه، به اولین حدیث همان صفحه منتقل می‌شود.
     """
     if not total or total <= JUMP_STEP:
         return []
@@ -129,12 +131,12 @@ def _jump_buttons(index, total, callback_prefix, h):
     if shortcuts:
         rows.append(shortcuts)
 
-    # ردیف‌های بازه‌ای (۱-۱۰، ۱۱-۲۰، ...)
-    range_starts = list(range(0, total, JUMP_STEP))
+    # ردیف‌های صفحه‌ای (صفحه ۱، صفحه ۲، ...)
+    page_starts = list(range(0, total, JUMP_STEP))
     current_row = []
-    for start in range_starts:
+    for page_num, start in enumerate(page_starts, start=1):
         end = min(start + JUMP_STEP, total) - 1
-        label = _range_label(start, end)
+        label = f"صفحه {_fa_num(page_num)}"
         if start <= index <= end:
             label = f"· {label} ·"
         current_row.append(
@@ -214,12 +216,19 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
 
 async def show_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    نمایش منوی دسته‌بندی ۱۰گانه احادیث
+    نمایش منوی دسته‌بندی احادیث
     """
     query = update.callback_query
     
     # دریافت تعداد حدیث در هر دسته
     categories_with_count = get_hadith_categories_with_count()
+    
+    # دسته‌ی «موضوعات دیگر» یک دسته‌ی کاتچ‌آل موقتی بود که دیگر نمایش داده نمی‌شود
+    # (تمام حدیث‌ها بعد از اصلاح دسته‌بندی، یک دسته‌ی معنادار دارند)
+    categories_with_count = {
+        cat: count for cat, count in categories_with_count.items()
+        if cat != "💎 موضوعات دیگر"
+    }
     total_hadiths = sum(categories_with_count.values())
     
     buttons = []
