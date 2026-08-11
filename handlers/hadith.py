@@ -48,14 +48,6 @@ HADITH_CLOSINGS = [
 DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
 
 
-def _safe_category(row):
-    """دریافت امن مقدار category از sqlite3.Row (که متد get ندارد)."""
-    try:
-        return row["category"]
-    except (KeyError, IndexError, TypeError):
-        return None
-
-
 def format_hadith(row):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
@@ -90,7 +82,10 @@ def format_hadith(row):
     if has_meta:
         if source:
             lines.append(f"📚 منبع: {source}")
-
+        if row["chapter"]:
+            lines.append(f"▫️ باب: {row['chapter']}")
+        if row["hadith_number"]:
+            lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
     # نمایش دسته‌بندی — بدون تکرار ایموجی، چون خودِ row['category'] از قبل
     # با ایموجی ذخیره شده (مثلاً "🌿 اخلاق و رفتار")
@@ -104,32 +99,46 @@ def format_hadith(row):
     return "\n".join(lines)
 
 
-JUMP_STEP = 10  # فاصله‌ی شماره‌های پرش سریع (۱، ۱۱، ۲۱، ...)
-JUMP_BUTTONS_PER_ROW = 5
+JUMP_STEP = 10  # اندازه‌ی هر بازه (۱۰ تا ۱۰ تا)
+JUMP_BUTTONS_PER_ROW = 4
+
+
+def _range_label(start_idx, end_idx):
+    """برچسب یک بازه، مثلاً '۱-۱۰' یا '۸۱-۹۰'"""
+    return f"{start_idx + 1}-{end_idx + 1}"
 
 
 def _jump_buttons(index, total, callback_prefix, h):
     """
-    ساخت دکمه‌های پرش سریع (هر ۱۰ تا یکی) برای دسته/موضوع‌هایی که
-    تعداد حدیثشان زیاد است، تا کاربر مجبور نباشد پشت سر هم «بعدی» بزند.
-    مثلاً برای ۹۰ حدیث: 1, 11, 21, 31, ..., 81
+    ساخت دکمه‌های پرش بازه‌ای (هر بازه ۱۰ تایی، مثلاً «۱-۱۰»، «۱۱-۲۰»، ...)
+    به‌علاوه دو دکمه‌ی میانبر «اولین» و «آخرین»، تا کاربر مجبور نباشد
+    پشت سر هم روی «بعدی» بزند تا به حدیث موردنظرش برسد.
+    با زدن هر بازه، به اولین حدیث همان بازه منتقل می‌شود.
     """
     if not total or total <= JUMP_STEP:
         return []
 
-    jump_indexes = list(range(0, total, JUMP_STEP))
-    # اطمینان از این‌که آخرین حدیث هم در دسترس باشد
-    if jump_indexes[-1] != total - 1:
-        jump_indexes.append(total - 1)
-
     rows = []
+
+    # ردیف میانبر اول/آخر
+    shortcuts = []
+    if index != 0:
+        shortcuts.append(InlineKeyboardButton("⏮ اولین", callback_data=f"{callback_prefix}_0_{h}"))
+    if index != total - 1:
+        shortcuts.append(InlineKeyboardButton("آخرین ⏭", callback_data=f"{callback_prefix}_{total-1}_{h}"))
+    if shortcuts:
+        rows.append(shortcuts)
+
+    # ردیف‌های بازه‌ای (۱-۱۰، ۱۱-۲۰، ...)
+    range_starts = list(range(0, total, JUMP_STEP))
     current_row = []
-    for idx in jump_indexes:
-        label = f"{idx + 1}"
-        if idx == index:
+    for start in range_starts:
+        end = min(start + JUMP_STEP, total) - 1
+        label = _range_label(start, end)
+        if start <= index <= end:
             label = f"· {label} ·"
         current_row.append(
-            InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{idx}_{h}")
+            InlineKeyboardButton(label, callback_data=f"{callback_prefix}_{start}_{h}")
         )
         if len(current_row) == JUMP_BUTTONS_PER_ROW:
             rows.append(current_row)
@@ -487,7 +496,7 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     # پیدا کردن دسته حدیث
-    category = _safe_category(row)
+    category = row.get("category")
     await query.edit_message_text(
         format_hadith(row), 
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -688,7 +697,7 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(results) == 1 and results[0]["type"] == "hadith":
         row = results[0]["row"]
-        category = _safe_category(row)
+        category = row.get("category")
         await update.message.reply_text(
             format_hadith(row),
             reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -737,7 +746,7 @@ async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("این حدیث دیگر در دسترس نیست.")
         return
     
-    category = _safe_category(row)
+    category = row.get("category")
     await query.edit_message_text(
         format_hadith(row),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -794,7 +803,7 @@ async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    category = _safe_category(row)
+    category = row.get("category")
     await update.message.reply_text(
         format_hadith(row),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
@@ -925,7 +934,7 @@ async def find_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     lines = [f"🔎 {len(rows)} نتیجه:\n"]
     for row in rows:
         preview = (row["translation_text"] or "")[:60].replace("\n", " ")
-        cat = _safe_category(row) or "بدون دسته"
+        cat = row.get("category", "بدون دسته")
         lines.append(f"#{row['id']} | {cat}\n{preview}...\n")
 
     await update.message.reply_text("\n".join(lines))
