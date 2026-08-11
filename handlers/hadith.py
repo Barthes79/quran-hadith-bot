@@ -82,8 +82,6 @@ def format_hadith(row):
     if has_meta:
         if source:
             lines.append(f"📚 منبع: {source}")
-        if row["chapter"]:
-            lines.append(f"▫️ باب: {row['chapter']}")
         if row["hadith_number"]:
             lines.append(f"▫️ حدیث: {row['hadith_number']}")
 
