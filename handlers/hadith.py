@@ -48,7 +48,7 @@ HADITH_CLOSINGS = [
 DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
 
 
-def format_hadith(row):
+def format_hadith(row, is_admin=False):
     header = HADITH_HEADERS[row["id"] % len(HADITH_HEADERS)]
     closing = HADITH_CLOSINGS[row["id"] % len(HADITH_CLOSINGS)]
 
@@ -90,7 +90,10 @@ def format_hadith(row):
 
     lines.append("")
     lines.append(closing)
-    lines.append(f"🔖 شناسه: {row['id']}")
+
+    # شناسه‌ی حدیث فقط برای ادمین‌ها نمایش داده می‌شود (برای کاربرای عادی مخفی است)
+    if is_admin:
+        lines.append(f"🔖 شناسه: {row['id']}")
 
     return "\n".join(lines)
 
@@ -312,8 +315,9 @@ async def category_selected_callback(update: Update, context: ContextTypes.DEFAU
     
     # نمایش اولین حدیث
     row = rows[0]
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(
             row["id"], 
             category_name=category_name, 
@@ -351,8 +355,9 @@ async def category_nav_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
     
     row = rows[index]
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(
             row["id"], 
             category_name=category_name, 
@@ -459,8 +464,9 @@ async def topic_selected_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     row = rows[0]
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=0, total=len(rows)),
         parse_mode="Markdown"
     )
@@ -485,8 +491,9 @@ async def topic_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     row = rows[index]
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(row["id"], topic_name=topic_name, index=index, total=len(rows)),
         parse_mode="Markdown"
     )
@@ -502,8 +509,9 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
     
     # پیدا کردن دسته حدیث
     category = row.get("category")
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row), 
+        format_hadith(row, is_admin=is_admin), 
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
         parse_mode="Markdown"
     )
@@ -590,7 +598,8 @@ async def copy_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     try:
-        await context.bot.send_message(chat_id=query.from_user.id, text=format_hadith(row))
+        is_admin = query.from_user.id in ADMIN_IDS
+        await context.bot.send_message(chat_id=query.from_user.id, text=format_hadith(row, is_admin=is_admin))
         await query.answer("📋 متن حدیث به همین چت فرستاده شد")
     except Exception as e:
         logger.warning(f"copy_hadith_callback: ارسال پیام کپی شکست خورد: {e}")
@@ -703,8 +712,9 @@ async def text_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if len(results) == 1 and results[0]["type"] == "hadith":
         row = results[0]["row"]
         category = row.get("category")
+        is_admin = update.effective_user.id in ADMIN_IDS
         await update.message.reply_text(
-            format_hadith(row),
+            format_hadith(row, is_admin=is_admin),
             reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
             parse_mode="Markdown"
         )
@@ -752,8 +762,9 @@ async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     category = row.get("category")
+    is_admin = update.effective_user.id in ADMIN_IDS
     await query.edit_message_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
         parse_mode="Markdown"
     )
@@ -809,8 +820,9 @@ async def id_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     category = row.get("category")
+    is_admin = update.effective_user.id in ADMIN_IDS
     await update.message.reply_text(
-        format_hadith(row),
+        format_hadith(row, is_admin=is_admin),
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
         parse_mode="Markdown"
     )
@@ -1017,7 +1029,7 @@ async def edit_hadith_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     updated_row = get_hadith_by_id(hadith_id)
     await update.message.reply_text(
-        f"✅ حدیث {hadith_id} به‌روزرسانی شد.\n\n" + format_hadith(updated_row),
+        f"✅ حدیث {hadith_id} به‌روزرسانی شد.\n\n" + format_hadith(updated_row, is_admin=True),
         parse_mode="Markdown"
     )
 
