@@ -378,7 +378,7 @@ async def _format_ayah_post():
     data = await get_ayah(surah["number"], ayah_num)
     if not data or not data.get("arabic"):
         return None, None
-    text = f"📖 سوره {surah['name']} - آیه {ayah_num}\n\n{data['arabic']}\n\n🔹 {data['translation']}"
+    text = f"📖 {surah['name']} - آیه {ayah_num}\n\n{data['arabic']}\n\n🔹 {data['translation']}"
     return text, None
 
 
