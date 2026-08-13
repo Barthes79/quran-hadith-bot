@@ -6,6 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, filters as tg_filters
 
 from config import ADMIN_IDS
+from text_utils import to_persian_digits
 from database import (
     add_madahi,
     get_madahi_by_occasion,
@@ -423,9 +424,9 @@ async def madahi_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
     molodi_count = count_madahi("molodi")
     await update.message.reply_text(
         f"📊 آمار مداحی/مولودی:\n"
-        f"🎙 مداحی: {madahi_count}\n"
-        f"🎉 مولودی: {molodi_count}\n"
-        f"جمع کل: {total}"
+        f"🎙 مداحی: {to_persian_digits(madahi_count)}\n"
+        f"🎉 مولودی: {to_persian_digits(molodi_count)}\n"
+        f"جمع کل: {to_persian_digits(total)}"
     )
 
 

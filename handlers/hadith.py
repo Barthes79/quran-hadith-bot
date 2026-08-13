@@ -14,7 +14,7 @@ from database import (
     categorize_topics, get_category_emoji,
 )
 from config import ADMIN_IDS
-from text_utils import normalize_input_text
+from text_utils import normalize_input_text, to_persian_digits
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +115,7 @@ def format_hadith(row, is_admin=False):
 
 JUMP_OFFSETS = [10, 20, 40, 50]  # مقدار پرش رو به جلو
 
-_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
-
-
-def _fa_num(n):
-    """تبدیل عدد به رقم فارسی، مثلاً 12 -> ۱۲"""
-    return str(n).translate(_PERSIAN_DIGITS)
+_fa_num = to_persian_digits
 
 
 def _jump_buttons(index, total, callback_prefix, h):
@@ -176,7 +171,7 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
         nav_row = []
         if index > 0:
             nav_row.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"topicnav_{index-1}_{h}"))
-        nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
+        nav_row.append(InlineKeyboardButton(f"{_fa_num(index+1)}/{_fa_num(total)}", callback_data="noop"))
         if index < total - 1:
             nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"topicnav_{index+1}_{h}"))
         buttons.append(nav_row)
@@ -188,7 +183,7 @@ def hadith_keyboard(hadith_id, topic_name=None, index=None, total=None,
         nav_row = []
         if index > 0:
             nav_row.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"catnav_{index-1}_{h}"))
-        nav_row.append(InlineKeyboardButton(f"{index+1}/{total}", callback_data="noop"))
+        nav_row.append(InlineKeyboardButton(f"{_fa_num(index+1)}/{_fa_num(total)}", callback_data="noop"))
         if index < total - 1:
             nav_row.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"catnav_{index+1}_{h}"))
         buttons.append(nav_row)

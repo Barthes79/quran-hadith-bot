@@ -2,6 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaAudio
 from telegram.ext import ContextTypes
 import database as db
+from text_utils import to_persian_digits
 
 logger = logging.getLogger(__name__)
 
@@ -467,7 +468,7 @@ async def _render_mafatih_item(query, context: ContextTypes.DEFAULT_TYPE, item_i
 
     text = header
     if total_pages > 1:
-        text += f"(صفحه {page + 1} از {total_pages})\n\n"
+        text += f"(صفحه {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)})\n\n"
     text += chunks[page]
 
     image_path = item["image_path"] if "image_path" in item.keys() else None
@@ -517,7 +518,7 @@ async def _send_mafatih_item_to_pv(query, context: ContextTypes.DEFAULT_TYPE, it
     total_pages = len(chunks)
     text = header
     if total_pages > 1:
-        text += f"(صفحه 1 از {total_pages})\n\n"
+        text += f"(صفحه {to_persian_digits(1)} از {to_persian_digits(total_pages)})\n\n"
     text += chunks[0]
 
     image_path = item["image_path"] if "image_path" in item.keys() else None

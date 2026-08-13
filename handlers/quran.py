@@ -5,6 +5,7 @@ from services.quran_api import get_surah_list, get_ayah, get_audio_url
 from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ayah_tafsir
 from config import ADMIN_IDS
 from handlers.ownership import register_owner, GROUP_CHAT_TYPES
+from text_utils import to_persian_digits
 
 PAGE_SIZE = 30
 AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
@@ -178,7 +179,7 @@ async def show_surah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pa
     buttons = []
     row = []
     for s in page_items:
-        label = f"{s['number']}. {s['name']}"
+        label = f"{to_persian_digits(s['number'])}. {s['name']}"
         row.append(InlineKeyboardButton(label, callback_data=f"surah_{s['number']}"))
         if len(row) == 2:
             buttons.append(row)
@@ -255,7 +256,7 @@ async def show_ayah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, sur
     buttons = []
     row = []
     for n in range(start, end + 1):
-        row.append(InlineKeyboardButton(str(n), callback_data=f"ayah_{surah}_{n}"))
+        row.append(InlineKeyboardButton(to_persian_digits(n), callback_data=f"ayah_{surah}_{n}"))
         if len(row) == AYAHS_PER_ROW:
             buttons.append(row)
             row = []
@@ -273,7 +274,7 @@ async def show_ayah_list(update: Update, context: ContextTypes.DEFAULT_TYPE, sur
     buttons.append([InlineKeyboardButton("⬅️ لیست سوره‌ها", callback_data="menu_quran")])
 
     text = (
-        f"📖 سوره {surah_name} — {total_ayahs} آیه\n"
+        f"📖 سوره {surah_name} — {to_persian_digits(total_ayahs)} آیه\n"
         f"{DIVIDER}\n\n"
         "شماره‌ی آیه‌ای که می‌خواهید را انتخاب کنید:"
     )
@@ -335,7 +336,7 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
     else:
         surah_name = surah_info["name"] if surah_info else surah
         text = (
-            f"📖 {surah_name} — آیه {ayah}\n"
+            f"📖 {surah_name} — آیه {to_persian_digits(ayah)}\n"
             f"{DIVIDER}\n\n"
             f"{data['arabic']}\n\n"
             f"🔹 ترجمه:\n{data['translation']}"
@@ -383,7 +384,7 @@ async def audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_audio(
             chat_id=update.effective_chat.id,
             audio=audio_url,
-            title=f"تلاوت سوره {surah} آیه {ayah}",
+            title=f"تلاوت سوره {to_persian_digits(surah)} آیه {to_persian_digits(ayah)}",
             performer="مشاری راشد العفاسی",
         )
     except Exception:

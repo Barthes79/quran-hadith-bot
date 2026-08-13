@@ -6,7 +6,7 @@ from database import (
     add_favorite,
 )
 from config import ADMIN_IDS
-from text_utils import normalize_input_text
+from text_utils import normalize_input_text, to_persian_digits
 
 # شماره‌گذاری متعارف بر اساس نسخه‌ی صبحی صالح
 NAHJ_TOTALS = {
@@ -75,7 +75,7 @@ async def show_nahj_number_list(update: Update, context: ContextTypes.DEFAULT_TY
     buttons = []
     row = []
     for n in range(start, end + 1):
-        label = str(n) if n in existing else f"·{n}·"
+        label = to_persian_digits(n) if n in existing else f"·{to_persian_digits(n)}·"
         row.append(InlineKeyboardButton(label, callback_data=f"nahjitem_{category}_{n}"))
         if len(row) == PER_ROW:
             buttons.append(row)
@@ -96,7 +96,7 @@ async def show_nahj_number_list(update: Update, context: ContextTypes.DEFAULT_TY
     item_label = NAHJ_ITEM_LABELS[category]
     text = (
         f"{NAHJ_MENU_LABELS[category]} — شماره‌ی {item_label} مورد نظر را انتخاب کنید:\n\n"
-        f"({len(existing)} از {total} مورد تاکنون ثبت شده — شماره‌های داخل نقطه هنوز ثبت نشده‌اند)"
+        f"({to_persian_digits(len(existing))} از {to_persian_digits(total)} مورد تاکنون ثبت شده — شماره‌های داخل نقطه هنوز ثبت نشده‌اند)"
     )
     markup = InlineKeyboardMarkup(buttons)
 
@@ -171,7 +171,7 @@ def build_nahj_pages(category: str, number: int, row):
     title_part = f"\n\n{row['title']}" if row["title"] else ""
     
     # الماس در انتهای خط اول می‌ماند، تایتل در سطر بعدی با ایموجی خودش شروع می‌شود
-    header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {number} 💎{title_part}\n\n"
+    header = f"{NAHJ_MENU_LABELS[category]} — {item_label} {to_persian_digits(number)} 💎{title_part}\n\n"
 
     body_parts = []
     if row["arabic_text"]:
@@ -231,7 +231,7 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
     if not row:
         # اصلاح هدر در صورت نبود متن (برای زیبایی بصری)
         text = (
-            f"{NAHJ_MENU_LABELS[category]} — {item_label} {number} 💎\n\n"
+            f"{NAHJ_MENU_LABELS[category]} — {item_label} {to_persian_digits(number)} 💎\n\n"
             "😕 متن این مورد هنوز در ربات ثبت نشده است."
         )
         markup = nahj_item_keyboard(category, number)
@@ -242,7 +242,7 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
 
         text = header
         if total_pages > 1:
-            text += f"(قسمت {page + 1} از {total_pages})\n\n"
+            text += f"(قسمت {to_persian_digits(page + 1)} از {to_persian_digits(total_pages)})\n\n"
         text += chunks[page]
 
         markup = nahj_item_keyboard(category, number, page=page, total_pages=total_pages)
