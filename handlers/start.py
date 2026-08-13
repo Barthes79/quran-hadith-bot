@@ -29,7 +29,7 @@ DIVIDER = "━━━━━━━━━━━━━━"
 #  فرمت: کلید -> (fallback_unicode, custom_emoji_id)
 # ─────────────────────────────────────────────────────────────
 CUSTOM_EMOJI = {
-    "moon":     ("🌙", "5818984798298841943"),
+    "moon":     ("🌙", "PUT_CUSTOM_EMOJI_ID_HERE_1"),
     "book":     ("📖", "PUT_CUSTOM_EMOJI_ID_HERE_2"),
     "mic":      ("🎙", "PUT_CUSTOM_EMOJI_ID_HERE_3"),
     "kaaba":    ("🕋", "PUT_CUSTOM_EMOJI_ID_HERE_4"),
