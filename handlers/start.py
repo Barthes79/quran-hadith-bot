@@ -15,6 +15,37 @@ from database import get_user_translation, set_user_translation
 
 DIVIDER = "━━━━━━━━━━━━━━"
 
+# ─────────────────────────────────────────────────────────────
+#  ایموجی‌های سفارشی (Custom / "Premium" Emoji)
+#  --------------------------------------------------------------
+#  این‌ها آیموجی‌های متحرک/اختصاصی تلگرام هستن که به‌جای رندر شدن
+#  به‌عنوان یونیکد ساده، بر اساس یک custom_emoji_id واقعی نمایش داده
+#  می‌شن. من نمی‌تونم آی‌دی واقعی این ایموجی‌ها رو حدس بزنم یا از حافظه
+#  بسازم — این‌ها اعداد ۱۹-۲۰ رقمی هستن که مال یه ایموجی مشخص از یه
+#  پک مشخصن، و اگه اشتباه بزنم تلگرام یا خطا می‌ده یا فالبک اشتباه
+#  نشون می‌ده. باید خودت این آی‌دی‌ها رو جایگزین مقادیر placeholder
+#  زیر کنی. روش گرفتنشون رو در پیام بعدی توضیح دادم.
+#
+#  فرمت: کلید -> (fallback_unicode, custom_emoji_id)
+# ─────────────────────────────────────────────────────────────
+CUSTOM_EMOJI = {
+    "moon":     ("🌙", "PUT_CUSTOM_EMOJI_ID_HERE_1"),
+    "book":     ("📖", "PUT_CUSTOM_EMOJI_ID_HERE_2"),
+    "mic":      ("🎙", "PUT_CUSTOM_EMOJI_ID_HERE_3"),
+    "kaaba":    ("🕋", "PUT_CUSTOM_EMOJI_ID_HERE_4"),
+    "brain":    ("🧠", "PUT_CUSTOM_EMOJI_ID_HERE_5"),
+}
+
+
+def ce(key: str) -> str:
+    """برمی‌گرداند تگ HTML یک ایموجی سفارشی؛ اگر آی‌دی هنوز placeholder
+    باشد، به‌جای کرش کردن ربات، فقط همان ایموجی معمولی را برمی‌گرداند
+    تا وقتی آی‌دی واقعی را جایگزین نکرده‌ای، ربات از کار نیفتد."""
+    fallback, emoji_id = CUSTOM_EMOJI[key]
+    if emoji_id.startswith("PUT_CUSTOM_EMOJI_ID_HERE"):
+        return fallback
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
 
 def main_menu_keyboard():
     """صفحه‌ی خانه: قرائت و معارف، مداحی و مولودی، اوقات شرعی و اذان،
@@ -59,33 +90,38 @@ def pillar_personal_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-HOME_TEXT = (
-    "🌙 *همراه قرآن و اهل‌بیت*\n"
-    "فضایی آرام برای قرآن، حدیث و معارف اهل‌بیت\n"
-    f"{DIVIDER}\n\n"
-    "📖 *قرائت و معارف*\n"
-    "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
-    "🎙 *مداحی و مولودی*\n\n"
-    "🕋 *اوقات شرعی و اذان*\n\n"
-    "🧠 *تجربه شخصی من*\n"
-    "آزمون، ذخیره‌ها و تنظیمات\n"
-    f"{DIVIDER}\n"
-    "یکی از بخش‌ها را انتخاب کنید 👇"
-)
+def _home_text():
+    return (
+        f"{ce('moon')} <b>همراه قرآن و اهل‌بیت</b>\n"
+        "فضایی آرام برای قرآن، حدیث و معارف اهل‌بیت\n"
+        f"{DIVIDER}\n\n"
+        f"{ce('book')} <b>قرائت و معارف</b>\n"
+        "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
+        f"{ce('mic')} <b>مداحی و مولودی</b>\n\n"
+        f"{ce('kaaba')} <b>اوقات شرعی و اذان</b>\n\n"
+        f"{ce('brain')} <b>تجربه شخصی من</b>\n"
+        "آزمون، ذخیره‌ها و تنظیمات\n"
+        f"{DIVIDER}\n"
+        "یکی از بخش‌ها را انتخاب کنید 👇"
+    )
 
-READING_TEXT = (
-    "📖 *قرائت و معارف*\n"
-    "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
-    f"{DIVIDER}\n"
-    "بخش مورد نظر را انتخاب کنید 👇"
-)
 
-PERSONAL_TEXT = (
-    "🧠 *تجربه شخصی من*\n"
-    "فضای اختصاصی شما در ربات\n"
-    f"{DIVIDER}\n"
-    "بخش مورد نظر را انتخاب کنید 👇"
-)
+def _reading_text():
+    return (
+        f"{ce('book')} <b>قرائت و معارف</b>\n"
+        "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
+        f"{DIVIDER}\n"
+        "بخش مورد نظر را انتخاب کنید 👇"
+    )
+
+
+def _personal_text():
+    return (
+        f"{ce('brain')} <b>تجربه شخصی من</b>\n"
+        "فضای اختصاصی شما در ربات\n"
+        f"{DIVIDER}\n"
+        "بخش مورد نظر را انتخاب کنید 👇"
+    )
 
 
 async def clear_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -103,7 +139,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     await update.message.reply_text(
-        HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+        _home_text(), reply_markup=main_menu_keyboard(), parse_mode="HTML"
     )
 
 
@@ -156,12 +192,12 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # callback_dataهای قدیمی (menu_quran, menu_hadith, ...) وصل است.
     elif query.data == "menu_pillar_reading":
         await query.edit_message_text(
-            READING_TEXT, reply_markup=pillar_reading_keyboard(), parse_mode="Markdown"
+            _reading_text(), reply_markup=pillar_reading_keyboard(), parse_mode="HTML"
         )
 
     elif query.data == "menu_pillar_personal":
         await query.edit_message_text(
-            PERSONAL_TEXT, reply_markup=pillar_personal_keyboard(), parse_mode="Markdown"
+            _personal_text(), reply_markup=pillar_personal_keyboard(), parse_mode="HTML"
         )
 
     # menu_main و menu_back هر دو از فایل‌های مختلف (mafatih.py، hadith.py،
@@ -170,7 +206,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # تا کاربر با دو برچسبِ متفاوت برای یک مقصد گیج نشود.
     elif query.data in ("menu_main", "menu_back"):
         await query.edit_message_text(
-            HOME_TEXT, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+            _home_text(), reply_markup=main_menu_keyboard(), parse_mode="HTML"
         )
 
     elif query.data == "menu_settings":
@@ -199,13 +235,13 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons.append([InlineKeyboardButton("⬅️ بازگشت به خانه", callback_data="menu_back")])
 
     settings_text = (
-        "⚙️ *تنظیمات ترجمه*\n"
+        "⚙️ <b>تنظیمات ترجمه</b>\n"
         "ترجمه‌ی پیش‌فرض برای نمایش آیات را انتخاب کنید:\n"
         f"{DIVIDER}"
     )
 
     await query.edit_message_text(
-        settings_text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown"
+        settings_text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="HTML"
     )
 
 
