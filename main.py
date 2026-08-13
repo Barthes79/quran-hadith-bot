@@ -170,6 +170,35 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await text_search_handler(update, context, text)
 
 
+async def debug_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تابع کمکی موقت برای استخراج custom_emoji_id از پیام‌های ادمین.
+    فقط برای ADMIN_IDS کار می‌کنه تا کاربرهای عادی چیزی نبینن. توی یه
+    group مستقل (-5) ثبت شده، پس مستقل از بقیه‌ی هندلرها اجرا می‌شه و
+    جلوی هیچ‌کدوم از هندلرهای دیگه (general_text_handler و غیره) رو
+    نمی‌گیره — یعنی می‌تونی بدون نگرانی از تداخل، این رو نگه داری یا
+    بعداً حذفش کنی.
+    کار تمام شد؟ کافیه دو خط ثبتش (پایین‌تر در main()) رو کامنت/حذف کنی."""
+    if not update.message or update.effective_user.id not in ADMIN_IDS:
+        return
+    if not update.message.entities:
+        return
+
+    custom_emojis = [e for e in update.message.entities if e.type == "custom_emoji"]
+    if not custom_emojis:
+        return
+
+    text = update.message.text or update.message.caption or ""
+    lines = []
+    for e in custom_emojis:
+        emoji_slice = text[e.offset: e.offset + e.length]
+        lines.append(f"{emoji_slice} → `{e.custom_emoji_id}`")
+
+    await update.message.reply_text(
+        "🔎 *custom_emoji_id پیدا شده:*\n" + "\n".join(lines),
+        parse_mode="Markdown",
+    )
+
+
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد.
     فقط برای ادمین‌ها کار می‌کنه تا file_id فایل‌ها به کاربرهای عادی لو نره."""
@@ -223,6 +252,12 @@ def main():
     app.add_error_handler(_global_error_handler)
 
     app.add_handler(CallbackQueryHandler(ownership_guard_callback), group=-10)
+
+    # هندلر موقت دیباگ: پیدا کردن custom_emoji_id برای ایموجی‌های سفارشی
+    # (فقط برای ادمین‌ها جواب می‌ده). توی group=-5 مستقل از بقیه‌ی
+    # هندلرهای متنی ثبت شده تا هیچ تداخلی با general_text_handler و بقیه
+    # نداشته باشه. بعد از اینکه آی‌دی‌های لازم رو گرفتی، این خط رو حذف کن.
+    app.add_handler(MessageHandler(filters.ALL, debug_custom_emoji), group=-5)
 
     # ==========================================
     # دستورات
