@@ -173,25 +173,21 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def debug_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تابع کمکی موقت برای استخراج custom_emoji_id از پیام‌های ادمین.
     فقط برای ADMIN_IDS کار می‌کنه تا کاربرهای عادی چیزی نبینن. توی یه
-    group مستقل (-5) ثبت شده، پس مستقل از بقیه‌ی هندلرها اجرا می‌شه و
-    جلوی هیچ‌کدوم از هندلرهای دیگه (general_text_handler و غیره) رو
-    نمی‌گیره — یعنی می‌تونی بدون نگرانی از تداخل، این رو نگه داری یا
-    بعداً حذفش کنی.
+    group مستقل (-5) ثبت شده، پس مستقل از بقیه‌ی هندلرها اجرا می‌شه.
+    از parse_entities استفاده می‌کنیم (نه اسلایس دستی روی update.message.text)
+    چون آفست/طول entities بر اساس UTF-16 حساب می‌شه و اسلایس دستی پایتون
+    وقتی چند ایموجی سفارشی پشت‌سرهم باشن، غلط از آب درمیاد.
     کار تمام شد؟ کافیه دو خط ثبتش (پایین‌تر در main()) رو کامنت/حذف کنی."""
     if not update.message or update.effective_user.id not in ADMIN_IDS:
         return
-    if not update.message.entities:
+
+    entities = update.message.parse_entities(types=["custom_emoji"])
+    if not entities:
         return
 
-    custom_emojis = [e for e in update.message.entities if e.type == "custom_emoji"]
-    if not custom_emojis:
-        return
-
-    text = update.message.text or update.message.caption or ""
     lines = []
-    for e in custom_emojis:
-        emoji_slice = text[e.offset: e.offset + e.length]
-        lines.append(f"{emoji_slice} → `{e.custom_emoji_id}`")
+    for entity, emoji_slice in entities.items():
+        lines.append(f"{emoji_slice} → `{entity.custom_emoji_id}`")
 
     await update.message.reply_text(
         "🔎 *custom_emoji_id پیدا شده:*\n" + "\n".join(lines),
