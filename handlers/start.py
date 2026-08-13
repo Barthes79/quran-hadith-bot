@@ -17,14 +17,16 @@ DIVIDER = "━━━━━━━━━━━━━━"
 
 
 def main_menu_keyboard():
-    """صفحه‌ی خانه: ۳ محور اصلیِ نیت کاربر + راهنما.
+    """صفحه‌ی خانه: قرائت و معارف، مداحی و مولودی، اوقات شرعی و اذان،
+    تجربه شخصی من + راهنما.
     ⭐ ذخیره‌های من و ⚙️ تنظیمات برای کاهش cognitive load به زیرمنوی
     «🧠 تجربه شخصی من» منتقل شدند؛ callback_data هر دو (menu_favorites,
     menu_settings) دست‌نخورده باقی مانده و صرفاً از یک لایه پایین‌تر
     صدا زده می‌شوند، پس هیچ handler ای نیاز به تغییر ندارد."""
     keyboard = [
         [InlineKeyboardButton("📖 قرائت و معارف", callback_data="menu_pillar_reading")],
-        [InlineKeyboardButton("🎧 معنویت روزانه", callback_data="menu_pillar_daily")],
+        [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
+        [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
         [InlineKeyboardButton("🧠 تجربه شخصی من", callback_data="menu_pillar_personal")],
         [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
     ]
@@ -38,16 +40,6 @@ def pillar_reading_keyboard():
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
         [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
          InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
-        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-def pillar_daily_keyboard():
-    """زیرمنوی «معنویت روزانه»: مداحی/مولودی و اوقات شرعی/اذان."""
-    keyboard = [
-        [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
-        [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
         [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -73,8 +65,8 @@ HOME_TEXT = (
     f"{DIVIDER}\n\n"
     "📖 *قرائت و معارف*\n"
     "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
-    "🎧 *معنویت روزانه*\n"
-    "مداحی، مولودی و اوقات شرعی\n\n"
+    "🎙 *مداحی و مولودی*\n\n"
+    "🕋 *اوقات شرعی و اذان*\n\n"
     "🧠 *تجربه شخصی من*\n"
     "آزمون، ذخیره‌ها و تنظیمات\n"
     f"{DIVIDER}\n"
@@ -84,13 +76,6 @@ HOME_TEXT = (
 READING_TEXT = (
     "📖 *قرائت و معارف*\n"
     "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
-    f"{DIVIDER}\n"
-    "بخش مورد نظر را انتخاب کنید 👇"
-)
-
-DAILY_TEXT = (
-    "🎧 *معنویت روزانه*\n"
-    "آرامشی برای گوش و دل، در طول روز\n"
     f"{DIVIDER}\n"
     "بخش مورد نظر را انتخاب کنید 👇"
 )
@@ -172,11 +157,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "menu_pillar_reading":
         await query.edit_message_text(
             READING_TEXT, reply_markup=pillar_reading_keyboard(), parse_mode="Markdown"
-        )
-
-    elif query.data == "menu_pillar_daily":
-        await query.edit_message_text(
-            DAILY_TEXT, reply_markup=pillar_daily_keyboard(), parse_mode="Markdown"
         )
 
     elif query.data == "menu_pillar_personal":
