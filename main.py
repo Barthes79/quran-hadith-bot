@@ -74,6 +74,11 @@ from handlers.gamification import (
     achievements_command, achievements_callback,
     leaderboard_gamification_command, leaderboard_gamification_callback,
 )
+from gamification.admin_commands import (
+    gami_xp_command, gami_top_command,
+    gami_missions_list_command, gami_mission_new_command, gami_mission_toggle_command,
+    gami_achievements_list_command, gami_achievement_new_command, gami_achievement_toggle_command,
+)
 from handlers.prayer import (
     prayer_command, prayer_city_callback, prayer_city_list_callback,
     prayer_page_callback, prayer_refresh_callback, prayer_location_callback,
@@ -280,6 +285,16 @@ def main():
     app.add_handler(CallbackQueryHandler(missions_callback, pattern="^gami_missions$"))
     app.add_handler(CallbackQueryHandler(achievements_callback, pattern="^gami_achievements$"))
     app.add_handler(CallbackQueryHandler(leaderboard_gamification_callback, pattern="^gami_leaderboard$"))
+
+    # پنل ادمین گیمیفیکیشن (فقط ADMIN_IDS؛ هر کدام از دستورها خودشان چک می‌کنند)
+    app.add_handler(CommandHandler("gamixp", gami_xp_command))
+    app.add_handler(CommandHandler("gamitop", gami_top_command))
+    app.add_handler(CommandHandler("gamimissions", gami_missions_list_command))
+    app.add_handler(CommandHandler("gamimission_new", gami_mission_new_command))
+    app.add_handler(CommandHandler("gamimission_toggle", gami_mission_toggle_command))
+    app.add_handler(CommandHandler("gamiachievements", gami_achievements_list_command))
+    app.add_handler(CommandHandler("gamiachievement_new", gami_achievement_new_command))
+    app.add_handler(CommandHandler("gamiachievement_toggle", gami_achievement_toggle_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
     app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))

@@ -29,6 +29,7 @@ EVENT_MAFATIH_VIEWED = "mafatih_viewed"
 EVENT_QUIZ_STARTED = "quiz_started"
 EVENT_QUIZ_CORRECT = "quiz_correct"
 EVENT_MISSION_COMPLETE = "mission_complete"
+EVENT_SALAVAT_SENT = "salavat_sent"
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +44,14 @@ XP_REWARDS = {
     EVENT_QUIZ_STARTED: 3,
     EVENT_QUIZ_CORRECT: 15,
     EVENT_MISSION_COMPLETE: 30,
+    # نکته‌ی طراحی مهم: صلوات با بقیه‌ی رویدادها فرق دارد؛ یک پیام می‌تواند
+    # عدد دلخواهی (مثلاً «۱۰۰ صلوات») را به شمارنده اضافه کند. اگر XP متناسب
+    # با آن عدد داده شود، یعنی هر کاربر می‌تواند با نوشتن یک عدد بزرگ در یک
+    # پیام XP نامحدود بگیرد. به همین دلیل XP اینجا فلت و به‌ازای «هر پیامِ
+    # واجد شرایط» است، نه به‌ازای مقدار صلوات آن پیام. خودِ شمارنده‌ی واقعی
+    # صلوات (برای اهداف مذهبی/ختم‌ها) هرگز محدود یا دستکاری نمی‌شود؛ فقط
+    # لایه‌ی XP این سیستم محدود است.
+    EVENT_SALAVAT_SENT: 3,
 }
 
 
@@ -67,6 +76,13 @@ ANTI_ABUSE_RULES = {
     EVENT_QUIZ_STARTED: {"cooldown_seconds": 5, "daily_cap": 20, "per_item_cooldown": False},
     EVENT_QUIZ_CORRECT: {"cooldown_seconds": 0, "daily_cap": 50, "per_item_cooldown": False},
     EVENT_MISSION_COMPLETE: {"cooldown_seconds": 0, "daily_cap": 10, "per_item_cooldown": False},
+    # صلوات ذاتاً «کلیک تکراری مشروع» است (شمارش صلوات)؛ برخلاف حدیث/آیه که
+    # باز کردن مکررش مصنوعی است. پس اینجا per_item_cooldown بی‌معناست (آیتم
+    # مشخصی وجود ندارد) و فقط یک کول‌داون کوتاه بین دو پیامِ XP-دهنده و یک
+    # سقف روزانه‌ی معقول داریم تا کسی با ارسال دسته‌جمعی و سریع پیام‌های
+    # «صلوات» XP نامحدود نگیرد؛ ارسال صلوات بیشتر از سقف همچنان در شمارنده‌ی
+    # واقعی صلوات (و ختم‌ها) به‌طور کامل ثبت می‌شود، فقط دیگر XP اضافه نمی‌دهد.
+    EVENT_SALAVAT_SENT: {"cooldown_seconds": 45, "daily_cap": 15, "per_item_cooldown": False},
 }
 
 

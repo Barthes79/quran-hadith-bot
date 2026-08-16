@@ -41,6 +41,9 @@ from database import (
 
 logger = logging.getLogger(__name__)
 
+from gamification.events import dispatch_event
+from gamification.config import EVENT_SALAVAT_SENT
+
 GROUP_CHAT_TYPES = ("group", "supergroup")
 MILESTONE_STEP = 50
 MAX_SALAVAT_PER_MESSAGE = 1000
@@ -249,9 +252,15 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.debug(f"عدم امکان ست کردن ری‌اکشن صلوات: {e}")
 
-    # ثبت صلوات در شمارنده‌ی کلی گروه (مستقل از ختم‌ها)
+    # ثبت صلوات در شمارنده‌ی کلی گروه (مستقل از ختم‌ها) — این شمارنده‌ی واقعی
+    # هرگز تحت‌تأثیر Anti-Abuse گیمیفیکیشن قرار نمی‌گیرد و همیشه کامل ثبت می‌شود.
     user_count, chat_total = increment_salavat(chat.id, user.id, user_name, amount)
     prev_total = chat_total - amount
+
+    # XP گیمیفیکیشن: فلت و به‌ازای «هر پیامِ واجد شرایط»، نه به‌ازای عدد
+    # صلوات آن پیام (که می‌تواند دلخواه و بزرگ باشد). محدود به کول‌داون و
+    # سقف روزانه در ANTI_ABUSE_RULES تا قابل exploit نباشد.
+    await dispatch_event(EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id))
 
     # پیام تبریک سر رکوردهای رند کلی گروه
     if chat_total // MILESTONE_STEP > prev_total // MILESTONE_STEP:
