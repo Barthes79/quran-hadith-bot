@@ -69,6 +69,11 @@ from handlers.quiz import (
     start_normal_quiz, 
 )
 from handlers.help import help_command, help_callback
+from handlers.gamification import (
+    missions_command, missions_callback,
+    achievements_command, achievements_callback,
+    leaderboard_gamification_command, leaderboard_gamification_callback,
+)
 from handlers.prayer import (
     prayer_command, prayer_city_callback, prayer_city_list_callback,
     prayer_page_callback, prayer_refresh_callback, prayer_location_callback,
@@ -217,6 +222,13 @@ def main():
     init_db()
     ensure_search_index()
 
+    from gamification.missions import seed_default_missions
+    from gamification.achievements import seed_default_achievements
+    from gamification.leaderboard import ensure_xp_index
+    seed_default_missions()
+    seed_default_achievements()
+    ensure_xp_index()
+
     builder = Application.builder().token(BOT_TOKEN)
 
     default_request = HTTPXRequest(
@@ -262,6 +274,12 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("botstats", bot_stats_command))
+    app.add_handler(CommandHandler("missions", missions_command))
+    app.add_handler(CommandHandler("achievements", achievements_command))
+    app.add_handler(CommandHandler("rank", leaderboard_gamification_command))
+    app.add_handler(CallbackQueryHandler(missions_callback, pattern="^gami_missions$"))
+    app.add_handler(CallbackQueryHandler(achievements_callback, pattern="^gami_achievements$"))
+    app.add_handler(CallbackQueryHandler(leaderboard_gamification_callback, pattern="^gami_leaderboard$"))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
     app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))

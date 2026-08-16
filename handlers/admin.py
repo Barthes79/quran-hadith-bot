@@ -14,6 +14,8 @@ from config import ADMIN_IDS
 from handlers.hadith import format_hadith
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 from services.quran_api import get_ayah, get_surah_list
+from gamification.events import dispatch_event
+from gamification.config import EVENT_DAILY_LOGIN
 
 MAFATIH_CATEGORY_FA = {
     "daily": "🕋 اعمال روزانه",
@@ -656,6 +658,9 @@ async def track_user_activity(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not user or user.is_bot:
         return
     register_user(user.id, user.username)
+    # daily_cap=1 در تنظیمات Anti-Abuse تضمین می‌کند که حتی با اجرای این
+    # تابع روی هر آپدیت، XP و streak فقط یک‌بار در روز ثبت شود.
+    await dispatch_event(EVENT_DAILY_LOGIN, user.id)
 
 
 async def bot_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

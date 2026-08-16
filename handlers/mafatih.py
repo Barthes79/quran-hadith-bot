@@ -3,6 +3,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMe
 from telegram.ext import ContextTypes
 import database as db
 from text_utils import to_persian_digits
+from gamification.events import dispatch_event
+from gamification.config import EVENT_MAFATIH_VIEWED
 
 logger = logging.getLogger(__name__)
 
@@ -574,6 +576,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     try:
         await _render_mafatih_item(query, context, item_id, page=0)
+        await dispatch_event(EVENT_MAFATIH_VIEWED, update.effective_user.id, reference_id=item_id)
     except Exception as e:
         logger.exception(f"MAFATIH ERROR {item_id}: {e}")
         await safe_edit_message(

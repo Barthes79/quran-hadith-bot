@@ -7,6 +7,8 @@ from database import (
 )
 from config import ADMIN_IDS
 from text_utils import normalize_input_text, to_persian_digits
+from gamification.events import dispatch_event
+from gamification.config import EVENT_NAHJ_VIEWED
 
 # شماره‌گذاری متعارف بر اساس نسخه‌ی صبحی صالح
 NAHJ_TOTALS = {
@@ -246,6 +248,9 @@ async def show_nahj_item(update: Update, context: ContextTypes.DEFAULT_TYPE, cat
         text += chunks[page]
 
         markup = nahj_item_keyboard(category, number, page=page, total_pages=total_pages)
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id:
+            await dispatch_event(EVENT_NAHJ_VIEWED, user_id, reference_id=f"{category}:{number}")
 
     # اگر این دکمه از داخل یک گروه زده شده (نه چت خصوصی ربات)، به‌جای نمایش
     # متن کامل و صفحه‌بندی/دکمه‌ها داخل گروه، متن کامل را در پیوی خودِ کاربر

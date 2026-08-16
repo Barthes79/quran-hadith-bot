@@ -6,6 +6,8 @@ from database import get_user_translation, add_favorite, get_ayah_tafsir, set_ay
 from config import ADMIN_IDS
 from handlers.ownership import register_owner, GROUP_CHAT_TYPES
 from text_utils import to_persian_digits
+from gamification.events import dispatch_event
+from gamification.config import EVENT_QURAN_VIEWED
 
 PAGE_SIZE = 30
 AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
@@ -352,6 +354,9 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
         # فقط همان کاربر باید بتواند دکمه‌های زیر آن را استفاده کند.
         if update.effective_chat and update.effective_chat.type in GROUP_CHAT_TYPES:
             register_owner(update.effective_chat.id, sent.message_id, update.effective_user.id)
+
+    if data and data.get("arabic"):
+        await dispatch_event(EVENT_QURAN_VIEWED, user_id, reference_id=f"{surah}:{ayah}")
 
 
 async def ayah_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

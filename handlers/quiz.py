@@ -5,6 +5,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import ADMIN_IDS
 from text_utils import normalize_input_text
+from gamification.events import dispatch_event
+from gamification.config import EVENT_QUIZ_CORRECT
+from gamification.notifications import build_event_notification
 from database import (
     get_random_quiz_question, get_quiz_question_by_id, count_quiz_questions,
     add_score, get_leaderboard, get_global_leaderboard,
@@ -513,6 +516,7 @@ async def _settle_buzzer_win(context: ContextTypes.DEFAULT_TYPE, key, uid: int, 
     chat_id, message_id = key
     add_score(chat_id, uid, username, points=points)
     stats_after = record_quiz_result(chat_id, uid, username, category, True, points)
+    gami_result = await dispatch_event(EVENT_QUIZ_CORRECT, uid, reference_id=str(row["id"]))
     new_badges = _check_new_badges(uid, stats_after, category)
 
     option_map = OPTION_LETTER_FA
@@ -535,6 +539,10 @@ async def _settle_buzzer_win(context: ContextTypes.DEFAULT_TYPE, key, uid: int, 
     for bkey in new_badges:
         b = BADGES[bkey]
         result_text += f"\n\n🏅 نشان جدید: {b['emoji']} {b['title']}"
+
+    gami_note = build_event_notification(gami_result)
+    if gami_note:
+        result_text += f"\n\n{gami_note}"
 
     await _finish_round_message(
         context, chat_id, message_id, category,
@@ -564,6 +572,7 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
     correct_lines = []
     wrong_lines = []
     badge_lines = []
+    gami_lines = []
 
     for uid, ans in quiz["answers"].items():
         is_correct = ans["chosen"] == row["correct_option"]
@@ -583,6 +592,11 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
         stats_after = record_quiz_result(
             data["chat_id"], uid, ans["username"], category, is_correct, points
         )
+        if is_correct:
+            gami_result = await dispatch_event(EVENT_QUIZ_CORRECT, uid, reference_id=str(row["id"]))
+            gami_note = build_event_notification(gami_result)
+            if gami_note:
+                gami_lines.append(f"{ans['username']}: {gami_note}")
         new_badges = _check_new_badges(uid, stats_after, category)
         for bkey in new_badges:
             b = BADGES[bkey]
@@ -604,6 +618,9 @@ async def finish_quiz(context: ContextTypes.DEFAULT_TYPE):
 
     if badge_lines:
         result_text += "\n\n🏅 نشان‌های جدید:\n" + "\n".join(badge_lines)
+
+    if gami_lines:
+        result_text += "\n\n" + "\n".join(gami_lines)
 
     # ==========================================
     # اگر حالت زنگ‌اول هست، سوال بعدی خودکار میاد

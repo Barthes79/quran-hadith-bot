@@ -15,6 +15,8 @@ from database import (
 )
 from config import ADMIN_IDS
 from text_utils import normalize_input_text, to_persian_digits
+from gamification.events import dispatch_event
+from gamification.config import EVENT_HADITH_VIEWED
 
 logger = logging.getLogger(__name__)
 
@@ -525,6 +527,7 @@ async def random_hadith_callback(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
         parse_mode="Markdown"
     )
+    await dispatch_event(EVENT_HADITH_VIEWED, update.effective_user.id, reference_id=row["id"])
 
 
 async def fav_hadith_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -778,6 +781,7 @@ async def hadith_view_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=hadith_keyboard(row["id"], category_name=category if category else None),
         parse_mode="Markdown"
     )
+    await dispatch_event(EVENT_HADITH_VIEWED, update.effective_user.id, reference_id=row["id"])
 
 
 # ============================================================

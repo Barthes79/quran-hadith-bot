@@ -418,6 +418,141 @@ def init_db():
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mafatih_slug ON mafatih(slug)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_salavat_goals_chat_title ON salavat_goals(chat_id, title)")
 
+    # ============================================================
+    # جداول سیستم گیمیفیکیشن
+    # ============================================================
+    # توجه مهم: XP فقط یک امتیاز داخلی نرم‌افزاری برای انگیزه‌بخشی به
+    # استفاده از ربات است و هرگز نباید به‌عنوان «مقدار ثواب شرعی» تعبیر شود.
+
+    # پروفایل گیمیفیکیشن هر کاربر (جدا از جدول users که فقط تنظیمات ترجمه دارد)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gamification_profile (
+            user_id INTEGER PRIMARY KEY,
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 1,
+            current_streak INTEGER DEFAULT 0,
+            longest_streak INTEGER DEFAULT 0,
+            last_activity_date TEXT,
+            first_activity_date TEXT,
+            total_hadith_read INTEGER DEFAULT 0,
+            total_quran_read INTEGER DEFAULT 0,
+            total_quiz_played INTEGER DEFAULT 0,
+            total_missions_completed INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # لاگ کامل تراکنش‌های XP؛ idempotency_key برای جلوگیری از ثبت دوباره‌ی
+    # همون رویداد (مثلاً اگه کاربر روی یه دکمه چند بار پشت‌سرهم بزنه یا
+    # آپدیت تلگرام دوبار برسه). هر ردیف یعنی «چرا این XP داده شده».
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS xp_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            xp INTEGER NOT NULL,
+            reference_id TEXT,
+            idempotency_key TEXT UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_xp_transactions_user ON xp_transactions(user_id, created_at)")
+
+    # تعریف مأموریت‌ها (روزانه/هفتگی) — قابل مدیریت توسط ادمین بدون تغییر کد
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS missions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            mission_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            condition_type TEXT NOT NULL,
+            condition_value INTEGER NOT NULL,
+            xp_reward INTEGER NOT NULL DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )
+    """)
+
+    # پیشرفت هر کاربر روی هر مأموریت، به‌تفکیک بازه‌ی زمانی (date_key: تاریخ
+    # روز برای daily، یا شماره‌ی هفته برای weekly). با ریست شدن بازه، ردیف
+    # جدید ساخته می‌شود؛ ردیف‌های قدیمی برای تاریخچه نگه داشته می‌شوند.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_missions (
+            user_id INTEGER NOT NULL,
+            mission_id INTEGER NOT NULL,
+            date_key TEXT NOT NULL,
+            progress INTEGER DEFAULT 0,
+            completed INTEGER DEFAULT 0,
+            completed_at TIMESTAMP,
+            PRIMARY KEY (user_id, mission_id, date_key),
+            FOREIGN KEY (mission_id) REFERENCES missions(id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_missions_lookup ON user_missions(user_id, date_key)")
+
+    # تعریف دستاوردها (Achievement) — قابل توسعه بدون تغییر کد
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS achievements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            icon TEXT,
+            condition_type TEXT NOT NULL,
+            condition_value INTEGER NOT NULL,
+            xp_reward INTEGER DEFAULT 0,
+            is_secret INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            user_id INTEGER NOT NULL,
+            achievement_id INTEGER NOT NULL,
+            unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, achievement_id),
+            FOREIGN KEY (achievement_id) REFERENCES achievements(id)
+        )
+    """)
+
+    # نشان‌های عمومی گیمیفیکیشن (جدا از quiz_badges قدیمی که فقط برای Quiz
+    # است و دست‌نخورده باقی می‌ماند)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gamification_badges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            icon TEXT,
+            rarity TEXT DEFAULT 'common',
+            description TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_gamification_badges (
+            user_id INTEGER NOT NULL,
+            badge_id INTEGER NOT NULL,
+            awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, badge_id),
+            FOREIGN KEY (badge_id) REFERENCES gamification_badges(id)
+        )
+    """)
+
+    # اسنپ‌شات دوره‌ای leaderboard برای جلوگیری از اسکن سنگین دیتابیس در هر
+    # درخواست؛ به‌صورت دوره‌ای (مثلاً هر چند دقیقه) بازسازی می‌شود.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS leaderboard_snapshots (
+            scope TEXT NOT NULL,
+            scope_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            xp INTEGER NOT NULL,
+            rank INTEGER NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (scope, scope_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_leaderboard_scope ON leaderboard_snapshots(scope, scope_id, rank)")
+
     # موتور جستجوی یکپارچه
     cur.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(

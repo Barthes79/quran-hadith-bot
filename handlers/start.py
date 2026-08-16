@@ -77,12 +77,18 @@ def pillar_reading_keyboard():
 
 
 def pillar_personal_keyboard():
-    """زیرمنوی «تجربه شخصی من»: آزمون، ذخیره‌ها، تنظیمات.
+    """زیرمنوی «تجربه شخصی من»: آزمون، مأموریت‌ها، رتبه‌بندی، دستاوردها،
+    ذخیره‌ها، تنظیمات.
     دکمه‌ی آزمون مستقیماً callback_data="quizmenu" را صدا می‌زند که از قبل
     در main.py به‌صورت مستقل ثبت شده (quiz_menu_callback)، پس نیازی به
-    تغییر main.py یا quiz.py نیست."""
+    تغییر main.py یا quiz.py نیست. دکمه‌های مأموریت/رتبه‌بندی/دستاوردها هم
+    به همین ترتیب مستقیماً callbackهای مستقل خودشان (handlers/gamification.py)
+    را صدا می‌زنند."""
     keyboard = [
         [InlineKeyboardButton("🧠 آزمون", callback_data="quizmenu")],
+        [InlineKeyboardButton("🎯 مأموریت‌ها", callback_data="gami_missions"),
+         InlineKeyboardButton("🏆 رتبه‌بندی", callback_data="gami_leaderboard")],
+        [InlineKeyboardButton("🏅 دستاوردها", callback_data="gami_achievements")],
         [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites")],
         [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
         [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
