@@ -26,7 +26,7 @@ from .missions import progress_missions
 from .config import (
     EVENT_DAILY_LOGIN, EVENT_HADITH_VIEWED, EVENT_QURAN_VIEWED,
     EVENT_NAHJ_VIEWED, EVENT_MAFATIH_VIEWED, EVENT_QUIZ_STARTED,
-    EVENT_QUIZ_CORRECT, EVENT_MISSION_COMPLETE,
+    EVENT_QUIZ_CORRECT, EVENT_MISSION_COMPLETE, EVENT_SALAVAT_SENT,
 )
 
 # نگاشت هر نوع رویداد به ستون شمارنده‌ی فعالیتِ مربوطه در gamification_profile
@@ -35,6 +35,7 @@ _ACTIVITY_COUNTERS = {
     EVENT_QURAN_VIEWED: "total_quran_read",
     EVENT_QUIZ_STARTED: "total_quiz_played",
     EVENT_MISSION_COMPLETE: "total_missions_completed",
+    EVENT_SALAVAT_SENT: "total_salavat_sent",
 }
 
 # رویدادهایی که می‌توانند پیشرفت مأموریت (daily/weekly) را جلو ببرند.

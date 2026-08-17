@@ -139,6 +139,7 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
     allowed = {
         "total_hadith_read", "total_quran_read",
         "total_quiz_played", "total_missions_completed",
+        "total_salavat_sent",
     }
     if column not in allowed:
         raise ValueError(f"ستون غیرمجاز: {column}")

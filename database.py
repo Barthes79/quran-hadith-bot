@@ -438,9 +438,14 @@ def init_db():
             total_quran_read INTEGER DEFAULT 0,
             total_quiz_played INTEGER DEFAULT 0,
             total_missions_completed INTEGER DEFAULT 0,
+            total_salavat_sent INTEGER DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # روی دیتابیس‌های قبلاً ساخته‌شده (مثلاً نسخه‌ی در حال اجرا روی Railway)
+    # که این جدول از قبل بدون این ستون ساخته شده، CREATE TABLE IF NOT EXISTS
+    # اثری ندارد؛ پس با همون الگوی امن پروژه ستون را اضافه می‌کنیم.
+    _ensure_column(cur, "gamification_profile", "total_salavat_sent", "INTEGER DEFAULT 0")
 
     # لاگ کامل تراکنش‌های XP؛ idempotency_key برای جلوگیری از ثبت دوباره‌ی
     # همون رویداد (مثلاً اگه کاربر روی یه دکمه چند بار پشت‌سرهم بزنه یا

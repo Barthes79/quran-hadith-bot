@@ -38,6 +38,7 @@ def build_profile_text(user_id: int) -> str:
         f"📖 قرآن: {to_persian_digits(profile['total_quran_read'])}",
         f"📚 حدیث: {to_persian_digits(profile['total_hadith_read'])}",
         f"🧠 آزمون: {to_persian_digits(profile['total_quiz_played'])}",
+        f"🌹 صلوات‌های XP‌دار: {to_persian_digits(profile['total_salavat_sent'])} (برای مجموع واقعی صلوات از /salavat استفاده کنید)",
         f"🎯 مأموریت‌های تکمیل‌شده: {to_persian_digits(profile['total_missions_completed'])}",
     ]
 
