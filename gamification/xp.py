@@ -59,6 +59,36 @@ def _check_anti_abuse(user_id: int, event_type: str, reference_id) -> tuple[bool
     return True, ""
 
 
+def seconds_until_next(user_id: int, event_type: str, reference_id=None) -> int:
+    """
+    چند ثانیه تا این‌که کاربر دوباره اجازه‌ی گرفتن XP برای این رویداد را
+    داشته باشد. اگر همین الان مجاز باشد یا رویداد اصلاً کول‌داون نداشته
+    باشد، صفر برمی‌گرداند. برای نمایش «⏳ بعد از X دیگه می‌تونی...» در
+    پیام‌های handler استفاده می‌شود.
+    """
+    rules = ANTI_ABUSE_RULES.get(event_type)
+    if not rules:
+        return 0
+
+    cooldown = rules.get("cooldown_seconds", 0)
+    if cooldown <= 0:
+        return 0
+
+    last = db.last_event_time(user_id, event_type, reference_id, rules.get("per_item_cooldown", False))
+    if not last:
+        return 0
+
+    try:
+        last_dt = datetime.datetime.fromisoformat(last)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=datetime.timezone.utc)
+        elapsed = (datetime.datetime.now(datetime.timezone.utc) - last_dt.astimezone(datetime.timezone.utc)).total_seconds()
+        remaining = cooldown - elapsed
+        return max(0, int(remaining))
+    except (ValueError, TypeError):
+        return 0
+
+
 def award_xp(user_id: int, event_type: str, reference_id=None,
              idempotency_key: str = None) -> dict:
     """
@@ -76,6 +106,51 @@ def award_xp(user_id: int, event_type: str, reference_id=None,
          "leveled_up": bool, "new_level": int|None}
     """
     xp_amount = XP_REWARDS.get(event_type, 0)
+    if xp_amount <= 0:
+        return {"awarded": False, "xp": 0, "reason": "no_reward_defined",
+                "leveled_up": False, "new_level": None}
+
+    allowed, reason = _check_anti_abuse(user_id, event_type, reference_id)
+    if not allowed:
+        return {"awarded": False, "xp": 0, "reason": reason,
+                "leveled_up": False, "new_level": None}
+
+    if not idempotency_key:
+        idempotency_key = f"{user_id}:{event_type}:{reference_id}:{int(time.time())}"
+
+    profile_before = db.get_profile(user_id)
+    xp_before = profile_before["xp"] if profile_before else 0
+
+    inserted = db.insert_xp_transaction(user_id, event_type, xp_amount, reference_id, idempotency_key)
+    if not inserted:
+        return {"awarded": False, "xp": 0, "reason": "duplicate_event",
+                "leveled_up": False, "new_level": None}
+
+    xp_after = xp_before + xp_amount
+    level_before = calculate_level(xp_before)
+    level_after = calculate_level(xp_after)
+
+    leveled_up = level_after > level_before
+    if leveled_up:
+        db.set_level(user_id, level_after)
+
+    return {
+        "awarded": True,
+        "xp": xp_amount,
+        "reason": "ok",
+        "leveled_up": leveled_up,
+        "new_level": level_after if leveled_up else None,
+    }
+
+
+def award_variable_xp(user_id: int, event_type: str, xp_amount: int,
+                       reference_id=None, idempotency_key: str = None) -> dict:
+    """
+    مثل award_xp، با این تفاوت که مقدار XP از پارامتر گرفته می‌شود، نه از
+    XP_REWARDS ثابت. برای رویدادهایی مثل «نذری» که هر بار آیتم رندومی با
+    مقدار متفاوت می‌دهند، ولی همچنان باید طبق ANTI_ABUSE_RULES همان
+    event_type (کول‌داون/سقف روزانه) عبور کنند.
+    """
     if xp_amount <= 0:
         return {"awarded": False, "xp": 0, "reason": "no_reward_defined",
                 "leveled_up": False, "new_level": None}

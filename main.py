@@ -112,6 +112,7 @@ from handlers.salavat import (
     salavat_count_command,
     salavat_home_callback,
 )
+from handlers.pigeon import pigeon_text_handler, pigeon_feed_callback
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -165,6 +166,17 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await salavat_text_handler(update, context)
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
+
+    # شخصیت همراه (کبوتر): صلوات/نذری/کبوترم -- فقط در پیوی، تا با
+    # صلوات‌شمار گروهی بالا (که خودش روی کلمه‌ی «صلوات» توی گروه‌ها کار
+    # می‌کنه) تداخل نکنه. اگه matched بشه، همینجا return می‌کنیم تا سراغ
+    # آیه/سرچ نره.
+    if is_private:
+        try:
+            if await pigeon_text_handler(update, context, text):
+                return
+        except Exception as e:
+            logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:
@@ -384,6 +396,11 @@ def main():
     app.add_handler(CallbackQueryHandler(salavat_goal_pick_callback, pattern="^(salgoal_|salskip_)"))
     app.add_handler(CallbackQueryHandler(salavat_delete_pick_callback, pattern="^salrm"))
     app.add_handler(CallbackQueryHandler(salavat_home_callback, pattern="^salhome_"))
+
+    # ==========================================
+    # شخصیت همراه (کبوتر)
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(pigeon_feed_callback, pattern="^pigeon_feed$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی

@@ -152,3 +152,80 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# شخصیت همراه: کبوتر 🕊️ (نام، دون فعلی، یخچال نذری)
+# ---------------------------------------------------------------------------
+
+def get_pigeon_state(user_id: int) -> dict:
+    """نام، دون فعلی و موجودی یخچال کبوتر کاربر را برمی‌گرداند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_name, pigeon_seed, nazri_fridge FROM gamification_profile WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"pigeon_name": None, "pigeon_seed": 0, "nazri_fridge": 0}
+    return dict(row)
+
+
+def set_pigeon_name(user_id: int, name: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_name = ? WHERE user_id = ?",
+        (name, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def add_to_fridge(user_id: int, amount: int):
+    """مقدار داده‌شده (مثلاً «دونِ» یه آیتم نذری) رو به یخچال کاربر اضافه می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET nazri_fridge = nazri_fridge + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def feed_pigeon(user_id: int, capacity: int) -> dict:
+    """
+    نذری‌های یخچال رو تا سقفِ ظرفیتِ دون کبوتر منتقل می‌کنه (اگه یخچال از
+    فضای خالی بیشتر بود، باقی‌مونده توی یخچال می‌مونه برای بار بعد).
+    اتمیک: خوندن و آپدیت هر دو ستون توی یه تراکنش انجام می‌شه.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    row = cur.execute(
+        "SELECT pigeon_seed, nazri_fridge FROM gamification_profile WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    current_seed = row["pigeon_seed"] if row else 0
+    fridge = row["nazri_fridge"] if row else 0
+
+    space = max(0, capacity - current_seed)
+    fed = min(space, fridge)
+
+    if fed > 0:
+        cur.execute(
+            """UPDATE gamification_profile
+               SET pigeon_seed = pigeon_seed + ?, nazri_fridge = nazri_fridge - ?
+               WHERE user_id = ?""",
+            (fed, fed, user_id),
+        )
+        conn.commit()
+
+    conn.close()
+    return {"fed": fed, "new_seed": current_seed + fed, "remaining_fridge": fridge - fed}

@@ -447,6 +447,13 @@ def init_db():
     # اثری ندارد؛ پس با همون الگوی امن پروژه ستون را اضافه می‌کنیم.
     _ensure_column(cur, "gamification_profile", "total_salavat_sent", "INTEGER DEFAULT 0")
 
+    # ستون‌های شخصیت همراه (کبوتر): اسم، دون فعلی، و یخچال نذری‌های
+    # منتظرِ تغذیه. با همون الگوی _ensure_column بالا اضافه می‌شن تا هم
+    # روی دیتابیس تازه و هم روی دیتابیس‌های قبلاً ساخته‌شده کار کنه.
+    _ensure_column(cur, "gamification_profile", "pigeon_name", "TEXT")
+    _ensure_column(cur, "gamification_profile", "pigeon_seed", "INTEGER DEFAULT 0")
+    _ensure_column(cur, "gamification_profile", "nazri_fridge", "INTEGER DEFAULT 0")
+
     # لاگ کامل تراکنش‌های XP؛ idempotency_key برای جلوگیری از ثبت دوباره‌ی
     # همون رویداد (مثلاً اگه کاربر روی یه دکمه چند بار پشت‌سرهم بزنه یا
     # آپدیت تلگرام دوبار برسه). هر ردیف یعنی «چرا این XP داده شده».
