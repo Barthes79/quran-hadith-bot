@@ -167,16 +167,16 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
 
-    # شخصیت همراه (کبوتر): صلوات/نذری/کبوترم -- فقط در پیوی، تا با
-    # صلوات‌شمار گروهی بالا (که خودش روی کلمه‌ی «صلوات» توی گروه‌ها کار
-    # می‌کنه) تداخل نکنه. اگه matched بشه، همینجا return می‌کنیم تا سراغ
-    # آیه/سرچ نره.
-    if is_private:
-        try:
-            if await pigeon_text_handler(update, context, text):
-                return
-        except Exception as e:
-            logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
+    # شخصیت همراه (کبوتر): صلوات/نذری/کبوترم -- «نذری» و «کبوترم» هم تو
+    # پیوی هم تو گروه کار می‌کنن. «صلوات» رو خودِ pigeon_text_handler فقط
+    # تو پیوی award می‌کنه؛ تو گروه، صلوات‌شمار بالا (salavat_text_handler)
+    # خودش هم award کرده هم کارت رو فرستاده، پس اینجا برای «صلوات» تو
+    # گروه کاری انجام نمی‌شه (داخل خود تابع این تفکیک انجام می‌شه).
+    try:
+        if await pigeon_text_handler(update, context, text):
+            return
+    except Exception as e:
+        logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:

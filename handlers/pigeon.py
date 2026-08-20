@@ -48,14 +48,23 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
     general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
     اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
+
+    «نذری»، «کبوترم» و تغییر اسم هم تو پیوی و هم تو گروه کار می‌کنن.
+    «صلوات» فقط تو پیوی از همینجا award می‌شه؛ تو گروه، خودِ
+    handlers/salavat.py (صلوات‌شمار گروهی) هم award می‌کنه هم کارت صلوات
+    پوینت رو می‌فرسته -- تا XP دوبار داده نشه.
     """
     if not update.message:
         return False
 
     user = update.effective_user
+    chat = update.effective_chat
     normalized = text.strip()
+    is_private = chat.type == "private"
 
     if normalized == "صلوات":
+        if not is_private:
+            return False
         register_user(user.id, user.username)
         await update.message.reply_text(handle_salavat_points(user.id))
         return True

@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 from gamification.events import dispatch_event
 from gamification.config import EVENT_SALAVAT_SENT
+from gamification.pigeon import build_salavat_card_from_dispatch
 
 GROUP_CHAT_TYPES = ("group", "supergroup")
 MILESTONE_STEP = 50
@@ -260,7 +261,15 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # XP گیمیفیکیشن: فلت و به‌ازای «هر پیامِ واجد شرایط»، نه به‌ازای عدد
     # صلوات آن پیام (که می‌تواند دلخواه و بزرگ باشد). محدود به کول‌داون و
     # سقف روزانه در ANTI_ABUSE_RULES تا قابل exploit نباشد.
-    await dispatch_event(EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id))
+    dispatch_result = await dispatch_event(EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id))
+
+    # کارت «صلوات پوینت» (همون کارتی که تو پیوی هم نشون داده می‌شه) --
+    # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛
+    # وگرنه چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
+    try:
+        await message.reply_text(build_salavat_card_from_dispatch(user.id, dispatch_result))
+    except Exception as e:
+        logger.error(f"خطا در ارسال کارت صلوات‌پوینت (چت {chat.id}): {e}")
 
     # پیام تبریک سر رکوردهای رند کلی گروه
     if chat_total // MILESTONE_STEP > prev_total // MILESTONE_STEP:

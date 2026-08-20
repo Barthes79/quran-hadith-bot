@@ -35,10 +35,14 @@ def _format_cooldown(seconds: int) -> str:
     return f"{to_persian_digits(minutes)}:{secs_str}"
 
 
-def handle_salavat_points(user_id: int) -> str:
-    """پیام مربوط به کلمه‌ی «صلوات» در پیوی رو می‌سازه."""
-    result = award_xp(user_id, EVENT_SALAVAT_SENT)
-
+def _build_salavat_card(user_id: int, result: dict) -> str:
+    """
+    متن کارت «صلوات پوینت» رو از روی یه نتیجه‌ی award (که از قبل محاسبه
+    شده) می‌سازه؛ خودش award_xp صدا نمی‌زنه. این جداسازی لازمه چون تو
+    گروه، award همین الان توسط salavat_text_handler (که شمارنده‌ی واقعی
+    گروه رو هم آپدیت می‌کنه) انجام شده؛ اگه این تابع دوباره award_xp صدا
+    بزنه، کول‌داون تازه‌ست و همیشه رد می‌شه.
+    """
     if result["awarded"]:
         profile = db.get_profile(user_id)
         total = profile["xp"] if profile else result["xp"]
@@ -49,7 +53,7 @@ def handle_salavat_points(user_id: int) -> str:
             "",
             f"🎉 {to_persian_digits(result['xp'])} صلوات پوینت گرفتی!",
             f"💰 صلوات پوینت‌هات: {total_str} 🪙",
-            f"⏳ بعد از {_format_cooldown(remaining)} می‌تونی دوباره صلوات بفرستی.",
+            f"⏳ بعد از {_format_cooldown(remaining)} می‌تونی دوباره صلوات پوینت بگیری.",
         ]
         if result["leveled_up"]:
             lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {to_persian_digits(result['new_level'])}!")
@@ -57,12 +61,25 @@ def handle_salavat_points(user_id: int) -> str:
 
     if result["reason"] == "cooldown":
         remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
-        return f"⏳ صبر کن {_format_cooldown(remaining)} دیگه، بعد دوباره صلوات بفرست 🌹"
+        return f"⏳ صلوات پوینتِ بعدیت {_format_cooldown(remaining)} دیگه آماده می‌شه 🌹"
 
     if result["reason"] == "daily_cap":
         return "🌙 امروز به سقف صلوات پوینت رسیدی؛ فردا دوباره تلاش کن 🌹"
 
     return "🌹 صلوات قبول باشه."
+
+
+def build_salavat_card_from_dispatch(user_id: int, dispatch_result: dict) -> str:
+    """نسخه‌ی عمومی برای فراخوانی از بیرون این ماژول (مثلاً handlers/salavat.py
+    تو گروه)، بعد از این‌که خودشون award/dispatch رو انجام دادن."""
+    return _build_salavat_card(user_id, dispatch_result)
+
+
+def handle_salavat_points(user_id: int) -> str:
+    """مسیر پیوی: هیچ سیستم دیگه‌ای قبلش صلوات رو پردازش نکرده، پس خودش
+    award_xp رو صدا می‌زنه و بعد کارت رو می‌سازه."""
+    result = award_xp(user_id, EVENT_SALAVAT_SENT)
+    return _build_salavat_card(user_id, result)
 
 
 def handle_nazri(user_id: int) -> str:
