@@ -13,6 +13,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from database import register_user
+from text_utils import normalize_for_search
 from gamification.pigeon import (
     handle_salavat_points,
     handle_nazri,
@@ -29,6 +30,16 @@ _STATUS_TRIGGERS = ("کبوترم", "پروفایل کبوترم", "وضعیت �
 
 HARVEST_CALLBACK_DATA = "pigeon_harvest"
 LEVELUP_CALLBACK_DATA = "pigeon_levelup"
+
+# باید عین کامل عبارت صلوات نوشته بشه، نه فقط کلمه‌ی «صلوات». از
+# normalize_for_search استفاده می‌کنیم تا «آل»/«ال»، فاصله‌های اضافه، و
+# تفاوت‌های ظاهری عربی/فارسی (که تو کیبورد موبایل رایجه) مشکلی ایجاد
+# نکنن؛ ولی همچنان باید عبارت *کامل* باشه، نه بخشی از یه پیام بزرگ‌تر.
+_SALAVAT_PHRASE_NORMALIZED = normalize_for_search("اللهم صل علی محمد و آل محمد")
+
+
+def _is_full_salavat_phrase(text: str) -> bool:
+    return normalize_for_search(text) == _SALAVAT_PHRASE_NORMALIZED
 
 
 def _display_name(user) -> str:
@@ -57,7 +68,7 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     normalized = text.strip()
     is_private = chat.type == "private"
 
-    if normalized == "صلوات":
+    if _is_full_salavat_phrase(normalized):
         if not is_private:
             return False
         register_user(user.id, user.username)

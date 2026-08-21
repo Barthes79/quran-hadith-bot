@@ -128,8 +128,6 @@ def _build_salavat_card(user_id: int, result: dict) -> str:
         remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
         total_str = to_persian_digits(f"{total:,}")
         lines = [
-            "🕊️ اللهم صل علی محمد و آل محمد",
-            "",
             f"🎉 {to_persian_digits(result['xp'])} صلوات پوینت گرفتی!",
             f"💰 صلوات پوینت‌هات: {total_str} 🪙",
             f"⏳ بعد از {_format_cooldown(remaining)} می‌تونی دوباره صلوات پوینت بگیری.",
