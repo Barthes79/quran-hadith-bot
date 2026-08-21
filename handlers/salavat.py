@@ -298,6 +298,12 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.error(f"خطا در ارسال پیام رکورد صلوات (چت {chat.id}): {e}")
 
+    # عبارت کامل صلوات فقط به شمارش کلی گروه اضافه می‌شه (و صلوات پوینت
+    # می‌ده)؛ پنل انتخاب ختم براش باز نمی‌شه. پنل فقط برای فرمت «عدد
+    # [تا] صلوات» یا یه عدد ساده (وقتی ختم فعال هست) نمایش داده می‌شه.
+    if is_full_phrase:
+        return True
+
     # ختم‌های فعال این گروه
     active_goals = get_active_goals(chat.id)
     if not active_goals:
