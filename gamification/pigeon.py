@@ -30,9 +30,23 @@ from .config import (
     PIGEON_RANK_STAGES, PIGEON_FUEL_SECONDS_PER_UNIT,
     pigeon_fuel_capacity, pigeon_stage_info, pigeon_level_up_cost, pigeon_production_rate,
 )
-from text_utils import to_persian_digits
+from text_utils import to_persian_digits, normalize_for_search
 
 DEFAULT_PIGEON_NAME = "کبوتر"
+
+# صلوات پوینت (چه پیوی چه گروه) فقط وقتی داده می‌شه که کاربر *عین کامل*
+# عبارت صلوات رو نوشته باشه، نه فقط کلمه‌ی «صلوات» یا «N صلوات». از
+# normalize_for_search استفاده می‌کنیم تا «آل»/«ال»، فاصله‌های اضافه، و
+# تفاوت‌های ظاهری عربی/فارسی (رایج تو کیبورد موبایل) مشکلی ایجاد نکنن؛
+# ولی همچنان باید عبارت *کامل* باشه، نه بخشی از یه پیام بزرگ‌تر یا کوتاه‌تر.
+_SALAVAT_PHRASE_NORMALIZED = normalize_for_search("اللهم صل علی محمد و آل محمد")
+
+
+def is_full_salavat_phrase(text: str) -> bool:
+    """True فقط اگه کل پیام (بعد از نرمال‌سازی) دقیقاً همون عبارت کامل
+    صلوات باشه. هم handlers/pigeon.py (پیوی) هم handlers/salavat.py
+    (گروه) از همین یه تابع استفاده می‌کنن تا رفتار یکسان بمونه."""
+    return normalize_for_search(text) == _SALAVAT_PHRASE_NORMALIZED
 
 
 def _format_cooldown(seconds: int) -> str:

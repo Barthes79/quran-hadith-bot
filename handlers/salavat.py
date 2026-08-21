@@ -3,9 +3,14 @@
 صلوات‌شمار گروهی - با پشتیبانی از چند ختمِ همزمان
 
 منطق کلی:
-- هر پیامی که کلمه‌ی «صلوات» توش باشه (یا فقط یه عدد ساده باشه، وقتی حداقل
-  یه ختم فعال توی گروه هست) به‌عنوان صلوات شمرده می‌شه و روی شمارنده‌ی کل
-  گروه اضافه می‌شه.
+- پیام‌هایی که دقیقاً فرمتِ «عدد صلوات» یا «عدد تا صلوات» باشن (مثل «10
+  صلوات») یا فقط یه عدد ساده باشن (وقتی حداقل یه ختم فعال توی گروه هست)،
+  به‌عنوان صلوات شمرده می‌شن و روی شمارنده‌ی کل گروه اضافه می‌شن.
+- خودِ کلمه‌ی تنهای «صلوات» (بدون عدد) دیگه هیچ‌چیزی رو trigger نمی‌کنه.
+- عینِ کاملِ «اللهم صل علی محمد و آل محمد» هم ۱ صلوات به شمارنده اضافه
+  می‌کنه، هم صلوات‌پوینتِ گیمیفیکیشن (XP کبوتر) می‌ده -- این تنها راهیه
+  که صلوات‌پوینت گرفته می‌شه؛ نوشتن خودِ کلمه‌ی «صلوات» یا «N صلوات» فقط
+  شمارنده‌ی واقعی رو تکون می‌ده، XP نمی‌ده.
 - اگه اون لحظه توی گروه یک یا چند ختم فعال وجود داشته باشه، یه پنل شیشه‌ای
   (inline keyboard) زیر پیام باز می‌شه که وضعیت هر ختم رو نشون می‌ده و از
   فرستنده می‌پرسه این صلوات‌ها رو به نیت کدوم ختم می‌فرسته.
@@ -43,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 from gamification.events import dispatch_event
 from gamification.config import EVENT_SALAVAT_SENT
-from gamification.pigeon import build_salavat_card_from_dispatch, roll_salavat_points
+from gamification.pigeon import build_salavat_card_from_dispatch, roll_salavat_points, is_full_salavat_phrase
 
 GROUP_CHAT_TYPES = ("group", "supergroup")
 MILESTONE_STEP = 50
@@ -52,34 +57,32 @@ MAX_GOALS_IN_PANEL = 8  # اگه ختم‌های فعال خیلی زیاد شد
 
 _DIGIT_TRANSLATION = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
-# پیام باید *کلاً* یکی از این دو شکل باشه تا صلوات حساب بشه (نه فقط شامل کلمه‌ی
-# «صلوات» جایی وسط یه متن بلندتر):
-#   ۱) فقط خودِ کلمه‌ی «صلوات»                -> «صلوات»
-#   ۲) یه عدد + (اختیاری) «تا» + «صلوات»      -> «10 صلوات» یا «10 تا صلوات»
-_SALAVAT_FULL_PATTERN = re.compile(r"^(?:(\d+)\s*(?:تا)?\s*)?صلوات$")
+# پیام باید *کلاً* یکی از این شکل‌ها باشه تا صلوات (واقعی، برای شمارنده‌ی
+# گروه/ختم‌ها) حساب بشه:
+#   عدد + (اختیاری) «تا» + «صلوات»      -> «10 صلوات» یا «10 تا صلوات»
+# نکته‌ی مهم: دیگه خودِ کلمه‌ی تنهای «صلوات» (بدون عدد) هیچ‌چیزی رو
+# trigger نمی‌کنه -- نه شمارنده، نه ری‌اکشن، نه پوینت. تنها راهِ گرفتنِ
+# صلوات‌پوینتِ گیمیفیکیشن، نوشتنِ *عینِ کامل* «اللهم صل علی محمد و آل
+# محمد» است (چک جدا، پایین‌تر، از طریق is_full_salavat_phrase).
+_SALAVAT_FULL_PATTERN = re.compile(r"^(\d+)\s*(?:تا)?\s*صلوات$")
 _PURE_NUMBER_PATTERN = re.compile(r"^\d{1,4}$")
 
 
 def _match_salavat_keyword(text: str):
-    """اگه کل پیام دقیقاً یکی از دو فرمتِ «صلوات» یا «عدد [تا] صلوات» باشه،
-    مقدار (amount) رو برمی‌گردونه؛ وگرنه None. دیگه به این که کلمه‌ی «صلوات»
-    یه‌جای وسط یه پیام بلند باشه توجه نمی‌کنیم."""
+    """اگه کل پیام دقیقاً فرمتِ «عدد [تا] صلوات» باشه، مقدار (amount) رو
+    برمی‌گردونه؛ وگرنه None."""
     normalized = text.strip().translate(_DIGIT_TRANSLATION)
     match = _SALAVAT_FULL_PATTERN.match(normalized)
     if not match:
         return None
 
-    num_str = match.group(1)
-    if not num_str:
-        return 1
-
     try:
-        amount = int(num_str)
+        amount = int(match.group(1))
     except (TypeError, ValueError):
-        return 1
+        return None
 
     if amount <= 0:
-        return 1
+        return None
     return min(amount, MAX_SALAVAT_PER_MESSAGE)
 
 
@@ -226,10 +229,18 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return False
 
     text = message.text.strip()
+
+    # عبارت کامل صلوات («اللهم صل علی محمد و آل محمد») -- تنها چیزی که
+    # صلوات‌پوینتِ گیمیفیکیشن رو trigger می‌کنه، و به‌عنوان ۱ صلوات واقعی
+    # هم به شمارنده‌ی گروه اضافه می‌شه.
+    is_full_phrase = is_full_salavat_phrase(text)
+
     keyword_amount = _match_salavat_keyword(text)
     has_keyword = keyword_amount is not None
 
-    if has_keyword:
+    if is_full_phrase:
+        amount = 1
+    elif has_keyword:
         amount = keyword_amount
     else:
         # پیام فقط یه عدد ساده هست؛ فقط وقتی به‌حساب صلوات می‌ذاریمش که
@@ -242,8 +253,8 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_name = _display_name(user)
 
-    # ری‌اکشن بی‌صدا روی خود پیام (فقط وقتی صریحاً نوشته «صلوات»)
-    if has_keyword:
+    # ری‌اکشن بی‌صدا روی خود پیام (وقتی صریحاً عبارت کامل یا «عدد صلوات» نوشته)
+    if is_full_phrase or has_keyword:
         try:
             await context.bot.set_message_reaction(
                 chat_id=chat.id,
@@ -258,21 +269,22 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     user_count, chat_total = increment_salavat(chat.id, user.id, user_name, amount)
     prev_total = chat_total - amount
 
-    # XP گیمیفیکیشن: عددی تصادفی (SALAVAT_POINT_MIN تا MAX) به‌ازای «هر
-    # پیامِ واجد شرایط»، نه به‌ازای عدد صلوات آن پیام (که می‌تواند دلخواه و
-    # بزرگ باشد). محدود به کول‌داون و سقف روزانه در ANTI_ABUSE_RULES تا
-    # قابل exploit نباشد.
-    dispatch_result = await dispatch_event(
-        EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id), xp_override=roll_salavat_points()
-    )
+    # XP گیمیفیکیشن: فقط وقتی عینِ کامل عبارت صلوات نوشته شده باشه، نه با
+    # نوشتن «صلوات» تنها یا «N صلوات». عددی تصادفی (SALAVAT_POINT_MIN تا
+    # MAX) به‌ازای هر پیامِ واجد شرایط. محدود به کول‌داون/سقف روزانه در
+    # ANTI_ABUSE_RULES تا قابل exploit نباشد.
+    if is_full_phrase:
+        dispatch_result = await dispatch_event(
+            EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id), xp_override=roll_salavat_points()
+        )
 
-    # کارت «صلوات پوینت» (همون کارتی که تو پیوی هم نشون داده می‌شه) --
-    # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛
-    # وگرنه چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
-    try:
-        await message.reply_text(build_salavat_card_from_dispatch(user.id, dispatch_result))
-    except Exception as e:
-        logger.error(f"خطا در ارسال کارت صلوات‌پوینت (چت {chat.id}): {e}")
+        # کارت «صلوات پوینت» (همون کارتی که تو پیوی هم نشون داده می‌شه) --
+        # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛
+        # وگرنه چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
+        try:
+            await message.reply_text(build_salavat_card_from_dispatch(user.id, dispatch_result))
+        except Exception as e:
+            logger.error(f"خطا در ارسال کارت صلوات‌پوینت (چت {chat.id}): {e}")
 
     # پیام تبریک سر رکوردهای رند کلی گروه
     if chat_total // MILESTONE_STEP > prev_total // MILESTONE_STEP:
