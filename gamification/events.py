@@ -17,10 +17,16 @@
 دیتابیس sync است (هماهنگ با سبک فعلی database.py که همه‌جا sync است)؛
 اما تابع را async تعریف کرده‌ایم تا در آینده اگر لازم شد به‌سادگی به
 executor جداگانه منتقل شود بدون تغییر امضای فراخوانی در handlerها.
+
+پارامتر xp_override: برای رویدادهایی مثل صلوات که مقدار XP ثابت (از
+XP_REWARDS) نیست و هر بار عددی رندوم است (مثلاً بین ۱۴ تا ۸۰)، فراخواننده
+همون عدد رندوم رو اینجا می‌ده؛ در این حالت به‌جای award_xp از
+award_variable_xp استفاده می‌شود، ولی Anti-Abuse (کول‌داون/سقف روزانه)
+دقیقاً همون قانونِ event_type اعمال می‌شود -- فقط مقدار XP فرق می‌کند.
 """
 
 from . import db
-from .xp import award_xp
+from .xp import award_xp, award_variable_xp
 from .streak import touch_daily_streak
 from .missions import progress_missions
 from .config import (
@@ -47,19 +53,27 @@ _MISSION_TRACKED_EVENTS = {
 
 
 async def dispatch_event(event_type: str, user_id: int, reference_id=None,
-                          idempotency_key: str = None) -> dict:
+                          idempotency_key: str = None, xp_override: int = None) -> dict:
     """
     رویداد را پردازش می‌کند: XP می‌دهد (اگر مجاز باشد)، شمارنده‌ی فعالیت
     را افزایش می‌دهد، در صورت لزوم streak را لمس می‌کند، و پیشرفت
     مأموریت‌های مرتبط را جلو می‌برد.
+
+    اگر xp_override داده شود (عدد رندومِ از قبل تعیین‌شده)، به‌جای مقدار
+    ثابتِ XP_REWARDS[event_type] همان استفاده می‌شود؛ Anti-Abuse همچنان
+    طبق ANTI_ABUSE_RULES[event_type] چک می‌شود.
 
     خروجی همان دیکشنری award_xp است به‌علاوه‌ی کلید "completed_missions"
     (لیست مأموریت‌هایی که همین الان تکمیل شدند) تا handler فراخواننده در
     صورت تمایل بتواند به کاربر پیام «سطح جدید» یا «مأموریت تکمیل شد»
     نشان دهد.
     """
-    result = award_xp(user_id, event_type, reference_id=reference_id,
-                       idempotency_key=idempotency_key)
+    if xp_override is not None:
+        result = award_variable_xp(user_id, event_type, xp_override,
+                                    reference_id=reference_id, idempotency_key=idempotency_key)
+    else:
+        result = award_xp(user_id, event_type, reference_id=reference_id,
+                           idempotency_key=idempotency_key)
 
     result["completed_missions"] = []
 

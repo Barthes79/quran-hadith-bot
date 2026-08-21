@@ -453,6 +453,12 @@ def init_db():
     _ensure_column(cur, "gamification_profile", "pigeon_name", "TEXT")
     _ensure_column(cur, "gamification_profile", "pigeon_seed", "INTEGER DEFAULT 0")
     _ensure_column(cur, "gamification_profile", "nazri_fridge", "INTEGER DEFAULT 0")
+    # سیستم idle-mining کبوتر: سطح کلی مستقل (برای مقام/سطح/نرخ تولید)،
+    # پوینتِ تولیدشده‌ای که هنوز برداشت نشده، و آخرین زمانی که تولید
+    # محاسبه شده (برای حساب‌کردن مدت‌زمان سپری‌شده در سینک بعدی).
+    _ensure_column(cur, "gamification_profile", "pigeon_global_level", "INTEGER DEFAULT 1")
+    _ensure_column(cur, "gamification_profile", "pigeon_pending_points", "REAL DEFAULT 0")
+    _ensure_column(cur, "gamification_profile", "pigeon_last_synced_at", "TEXT")
 
     # لاگ کامل تراکنش‌های XP؛ idempotency_key برای جلوگیری از ثبت دوباره‌ی
     # همون رویداد (مثلاً اگه کاربر روی یه دکمه چند بار پشت‌سرهم بزنه یا

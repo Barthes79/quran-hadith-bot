@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر) — فقط در پیوی.
+هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر).
 
-عمداً از گروه‌ها کنار گذاشته شده چون صلوات‌شمار گروهی (handlers/salavat.py)
-از قبل روی کلمه‌ی «صلوات» توی گروه‌ها کار می‌کنه (ختم‌ها، پنل شیشه‌ای،
-رکوردهای گروهی...)؛ اضافه‌کردن یه پاسخ دومِ کارت‌مانند روی همون پیام، تو
-گروه‌های شلوغ صرفاً باعث شلوغی می‌شه. XP هر دو مسیر (گروه و پیوی) از
-همون EVENT_SALAVAT_SENT با کول‌داون/سقف مشترک استفاده می‌کنن، پس امکان
-گرفتن XP دوبرابر با رفتن بین گروه و پیوی وجود نداره.
+«نذری» و «کبوترم» هم پیوی هم گروه کار می‌کنن. «صلوات» فقط تو پیوی از
+همینجا award می‌شه؛ تو گروه، صلوات‌شمار گروهی (handlers/salavat.py) خودش
+هم award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار داده نشه.
 """
 
 import re
@@ -20,7 +17,8 @@ from gamification.pigeon import (
     handle_salavat_points,
     handle_nazri,
     build_pigeon_status_text,
-    feed_pigeon_from_fridge,
+    harvest_points,
+    level_up_pigeon,
     set_pigeon_name,
 )
 
@@ -29,7 +27,8 @@ _RENAME_PATTERN = re.compile(r"^اسم\s+کبوترم\s+(.+)$")
 
 _STATUS_TRIGGERS = ("کبوترم", "پروفایل کبوترم", "وضعیت کبوترم")
 
-FEED_CALLBACK_DATA = "pigeon_feed"
+HARVEST_CALLBACK_DATA = "pigeon_harvest"
+LEVELUP_CALLBACK_DATA = "pigeon_levelup"
 
 
 def _display_name(user) -> str:
@@ -37,9 +36,10 @@ def _display_name(user) -> str:
 
 
 def _status_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🍽 به کبوترم غذا بده", callback_data=FEED_CALLBACK_DATA)
-    ]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=HARVEST_CALLBACK_DATA)],
+        [InlineKeyboardButton("⬆️ ارتقا", callback_data=LEVELUP_CALLBACK_DATA)],
+    ])
 
 
 async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
@@ -48,11 +48,6 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
     general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
     اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
-
-    «نذری»، «کبوترم» و تغییر اسم هم تو پیوی و هم تو گروه کار می‌کنن.
-    «صلوات» فقط تو پیوی از همینجا award می‌شه؛ تو گروه، خودِ
-    handlers/salavat.py (صلوات‌شمار گروهی) هم award می‌کنه هم کارت صلوات
-    پوینت رو می‌فرسته -- تا XP دوبار داده نشه.
     """
     if not update.message:
         return False
@@ -89,22 +84,37 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 
-async def pigeon_feed_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «🍽 به کبوترم غذا بده» زیر کارت وضعیت."""
+async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «📥 برداشت صلوات پوینت»."""
     query = update.callback_query
     if not query:
         return
     await query.answer()
 
     user = update.effective_user
-    feed_message = feed_pigeon_from_fridge(user.id)
+    harvest_message = harvest_points(user.id)
     status_text = build_pigeon_status_text(user.id, _display_name(user))
-    combined = f"{feed_message}\n\n{status_text}"
+    combined = f"{harvest_message}\n\n{status_text}"
 
     try:
         await query.edit_message_text(combined, reply_markup=_status_keyboard())
     except Exception:
-        # اگه متن با پیام قبلی فرقی نداشت (مثلاً یخچال خالی بود و دوباره
-        # زده)، تلگرام روی edit خطای "message not modified" می‌ده؛ در این
-        # حالت فقط با یه پیام جدید (کوتاه) اطلاع می‌دیم.
-        await query.message.reply_text(feed_message)
+        await query.message.reply_text(harvest_message)
+
+
+async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «⬆️ ارتقا» (ارتقا سطح یا ارتقا مقام، بسته به وضعیت فعلی)."""
+    query = update.callback_query
+    if not query:
+        return
+    await query.answer()
+
+    user = update.effective_user
+    levelup_message = level_up_pigeon(user.id)
+    status_text = build_pigeon_status_text(user.id, _display_name(user))
+    combined = f"{levelup_message}\n\n{status_text}"
+
+    try:
+        await query.edit_message_text(combined, reply_markup=_status_keyboard())
+    except Exception:
+        await query.message.reply_text(levelup_message)

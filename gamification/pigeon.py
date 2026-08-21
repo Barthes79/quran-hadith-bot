@@ -2,25 +2,33 @@
 """
 منطق شخصیت همراه: کبوتر 🕊️
 
-سه رفتار اصلی:
-  - «صلوات» در پیوی → صلوات پوینت با کول‌داون ۵ دقیقه (EVENT_SALAVAT_SENT)
-  - «نذری» در پیوی → یه آیتم نذری رندوم با کول‌داون ۱ ساعته (EVENT_NAZRI_RECEIVED)،
-    که هم XP می‌ده هم می‌ره تو یخچال کاربر
-  - «کبوترم» → کارت وضعیت کبوتر (نام، دون، مقام، سطح) + دکمه‌ی تغذیه از یخچال
+رفتارهای اصلی:
+  - «صلوات» → صلوات پوینتِ تصادفی (SALAVAT_POINT_MIN تا MAX) با کول‌داون
+    ۵ دقیقه؛ در پیوی مستقیماً award می‌شه، در گروه از طریق
+    dispatch_event(xp_override=...) که handlers/salavat.py صداش می‌زنه.
+  - «نذری» → یه آیتم نذری رندوم با کول‌داون ۱ ساعته؛ می‌ره تو یخچال و
+    به‌عنوان سوخت (دون) کبوتر استفاده می‌شه.
+  - کبوتر، وقتی سوخت داره، خودش مثل یه ماینر passive صلوات پوینت تولید
+    می‌کنه (نرخ تولید به سطح کلی خودش بستگی داره). این پوینت‌ها اول تو
+    یه استخر «آماده‌ی برداشت» جمع می‌شن و با دکمه‌ی «برداشت» به کیف‌پول
+    اصلی (ستون xp) منتقل می‌شن.
+  - کاربر می‌تونه با خرج از کیف‌پول، سطح کبوتر رو بالا ببره؛ وقتی سطح به
+    سقفِ مقام فعلی رسید، به‌جاش «ارتقا مقام» (هزینه‌ی سنگین‌تر) میاد.
 
 توجه: این ماژول فقط متن آماده برمی‌گرداند؛ ارسال پیام/دکمه به تلگرام در
-handlers/pigeon.py انجام می‌شود تا لایه‌ی منطق از لایه‌ی تلگرام جدا بماند
-(همون الگویی که gamification/profile.py و بقیه‌ی ماژول‌ها استفاده می‌کنند).
+handlers/pigeon.py انجام می‌شود.
 """
 
 import random
+import datetime
 
 from . import db
-from .xp import award_xp, award_variable_xp, seconds_until_next
-from .levels import level_progress
+from .xp import award_variable_xp, grant_bonus_xp, seconds_until_next
 from .config import (
-    EVENT_SALAVAT_SENT, EVENT_NAZRI_RECEIVED,
-    NAZRI_ITEMS, MAX_LEVEL, get_pigeon_rank, pigeon_seed_capacity,
+    EVENT_SALAVAT_SENT, EVENT_NAZRI_RECEIVED, EVENT_PIGEON_HARVEST,
+    NAZRI_ITEMS, SALAVAT_POINT_MIN, SALAVAT_POINT_MAX,
+    PIGEON_RANK_STAGES, PIGEON_FUEL_SECONDS_PER_UNIT,
+    pigeon_fuel_capacity, pigeon_stage_info, pigeon_level_up_cost, pigeon_production_rate,
 )
 from text_utils import to_persian_digits
 
@@ -35,13 +43,84 @@ def _format_cooldown(seconds: int) -> str:
     return f"{to_persian_digits(minutes)}:{secs_str}"
 
 
+def _fmt_rate(rate: float) -> str:
+    """عدد نرخ تولید رو کوتاه و بدون صفرهای اضافه نشون می‌ده (۰.۱، ۴.۵، ۱۰)."""
+    return to_persian_digits(f"{rate:g}")
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def roll_salavat_points() -> int:
+    """یه عدد تصادفیِ صلوات پوینت برمی‌گردونه (برای پیوی و گروه، یکسان)."""
+    return random.randint(SALAVAT_POINT_MIN, SALAVAT_POINT_MAX)
+
+
+def _sync_production(user_id: int) -> dict:
+    """
+    از آخرین سینک تا الان، بر اساس سوخت (دون) موجود، تولیدِ passive رو
+    حساب می‌کنه: اول یخچال رو خودکار به دون منتقل می‌کنه (تا سقف ظرفیت
+    سوخت)، بعد تولید رو به pigeon_pending_points اضافه می‌کنه و دون
+    مصرف‌شده رو کم می‌کنه. همیشه قبل از ساختن کارت وضعیت یا برداشت صدا
+    زده می‌شه تا اعداد به‌روز باشن.
+    """
+    state = db.get_pigeon_state(user_id)
+    now = _now()
+    last = _parse_dt(state.get("pigeon_last_synced_at")) or now
+    elapsed = max(0.0, (now - last).total_seconds())
+
+    global_level = state["pigeon_global_level"] or 1
+    seed = float(state["pigeon_seed"] or 0)
+    fridge = int(state["nazri_fridge"] or 0)
+    pending = float(state["pigeon_pending_points"] or 0)
+
+    capacity = pigeon_fuel_capacity(global_level)
+
+    # اول خودکار از یخچال پر کن (تا سقف ظرفیت سوخت) -- دیگه نیازی به
+    # دکمه‌ی دستی «تغذیه» نیست.
+    if seed < capacity and fridge > 0:
+        refill = min(capacity - seed, fridge)
+        seed += refill
+        fridge -= refill
+
+    if elapsed > 0 and seed > 0:
+        rate = pigeon_production_rate(global_level)
+        fuel_seconds = seed * PIGEON_FUEL_SECONDS_PER_UNIT
+        active_seconds = min(elapsed, fuel_seconds)
+        produced = rate * active_seconds
+        seed_used = active_seconds / PIGEON_FUEL_SECONDS_PER_UNIT
+        seed = max(0.0, seed - seed_used)
+        pending += produced
+
+    db.sync_pigeon_production(user_id, seed=seed, fridge=fridge, pending=pending, synced_at=now.isoformat())
+
+    return {
+        "global_level": global_level,
+        "seed": seed,
+        "fridge": fridge,
+        "pending": pending,
+        "capacity": capacity,
+    }
+
+
 def _build_salavat_card(user_id: int, result: dict) -> str:
     """
     متن کارت «صلوات پوینت» رو از روی یه نتیجه‌ی award (که از قبل محاسبه
-    شده) می‌سازه؛ خودش award_xp صدا نمی‌زنه. این جداسازی لازمه چون تو
-    گروه، award همین الان توسط salavat_text_handler (که شمارنده‌ی واقعی
-    گروه رو هم آپدیت می‌کنه) انجام شده؛ اگه این تابع دوباره award_xp صدا
-    بزنه، کول‌داون تازه‌ست و همیشه رد می‌شه.
+    شده) می‌سازه؛ خودش award صدا نمی‌زنه. این جداسازی لازمه چون تو گروه،
+    award همین الان توسط salavat_text_handler انجام شده.
     """
     if result["awarded"]:
         profile = db.get_profile(user_id)
@@ -70,15 +149,15 @@ def _build_salavat_card(user_id: int, result: dict) -> str:
 
 
 def build_salavat_card_from_dispatch(user_id: int, dispatch_result: dict) -> str:
-    """نسخه‌ی عمومی برای فراخوانی از بیرون این ماژول (مثلاً handlers/salavat.py
-    تو گروه)، بعد از این‌که خودشون award/dispatch رو انجام دادن."""
+    """نسخه‌ی عمومی برای فراخوانی از handlers/salavat.py تو گروه، بعد از
+    این‌که خودشون dispatch_event رو انجام دادن."""
     return _build_salavat_card(user_id, dispatch_result)
 
 
 def handle_salavat_points(user_id: int) -> str:
     """مسیر پیوی: هیچ سیستم دیگه‌ای قبلش صلوات رو پردازش نکرده، پس خودش
-    award_xp رو صدا می‌زنه و بعد کارت رو می‌سازه."""
-    result = award_xp(user_id, EVENT_SALAVAT_SENT)
+    award_variable_xp رو با یه عدد رندوم صدا می‌زنه و بعد کارت رو می‌سازه."""
+    result = award_variable_xp(user_id, EVENT_SALAVAT_SENT, roll_salavat_points())
     return _build_salavat_card(user_id, result)
 
 
@@ -101,7 +180,7 @@ def handle_nazri(user_id: int) -> str:
     lines = [
         f"{item['emoji']} یه پرس {item['name']} گیرت اومد!",
         f"🧊 گذاشتیمش تو یخچالت (الان {to_persian_digits(state['nazri_fridge'])} واحد نذری داری)",
-        "🕊️ برای دادنش به کبوترت بنویس «کبوترم» و دکمه‌ی تغذیه رو بزن.",
+        "🕊️ کبوترت خودکار ازش به‌عنوان سوخت استفاده می‌کنه و صلوات پوینت تولید می‌کنه.",
     ]
     if result["leveled_up"]:
         lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {to_persian_digits(result['new_level'])}!")
@@ -117,63 +196,131 @@ def set_pigeon_name(user_id: int, name: str) -> str:
 
 
 def build_pigeon_status_text(user_id: int, display_name: str) -> str:
-    """کارت وضعیت کبوتر رو می‌سازه: نام، دون، مقام، سطح، صلوات پوینت‌ها."""
+    """کارت وضعیت کبوتر رو می‌سازه: نام، دون، مقام/سطح، تولید، آماده‌ی
+    برداشت، کیف‌پول، و هزینه‌ی اقدام بعدی (ارتقا سطح/مقام)."""
+    synced = _sync_production(user_id)
     profile = db.get_profile(user_id)
     state = db.get_pigeon_state(user_id)
-    xp = profile["xp"] if profile else 0
-    progress = level_progress(xp)
 
-    capacity = pigeon_seed_capacity(progress["level"])
-    seed = min(state["pigeon_seed"], capacity)
-    rank = get_pigeon_rank(progress["level"])
+    wallet = profile["xp"] if profile else 0
+    global_level = synced["global_level"]
+    stage = pigeon_stage_info(global_level)
+    rate = pigeon_production_rate(global_level)
+    capacity = synced["capacity"]
+    seed = synced["seed"]
+    pending = synced["pending"]
     pigeon_name = state["pigeon_name"] or DEFAULT_PIGEON_NAME
 
     if seed >= capacity:
         seed_status = "😋 سیره"
-    elif seed >= capacity // 2:
+    elif seed >= capacity / 2:
         seed_status = "😐 نیمه‌گرسنه"
     else:
         seed_status = "😟 گرسنه‌ست"
 
-    xp_str = to_persian_digits(f"{xp:,}")
+    at_cap = stage["sub_level"] >= stage["cap"]
+    if at_cap and not stage["is_last_stage"]:
+        next_cost = stage["rank_up_cost"]
+        next_label = "ارتقا مقام"
+    elif at_cap and stage["is_last_stage"]:
+        next_cost = None
+        next_label = None
+    else:
+        next_cost = pigeon_level_up_cost(global_level)
+        next_label = "ارتقا سطح"
+
+    wallet_str = to_persian_digits(f"{wallet:,}")
+    pending_str = to_persian_digits(f"{int(pending):,}")
+    seed_str = to_persian_digits(f"{seed:.1f}".rstrip("0").rstrip("."))
 
     lines = [
         f"🕊️ کبوتر {display_name}",
         "",
         f"💕 نام: {pigeon_name}",
-        f"🌾 دون: {seed_status} ({to_persian_digits(seed)} / {to_persian_digits(capacity)})",
+        f"🌾 دون: {seed_status} ({seed_str} / {to_persian_digits(capacity)})",
         "",
-        f"🌟 مقام: {rank}",
-        f"⭐️ سطح: {to_persian_digits(progress['level'])} / {to_persian_digits(MAX_LEVEL)}",
+        f"🌟 مقام: {stage['name']}",
+        f"⭐️ سطح: {to_persian_digits(stage['sub_level'])} / {to_persian_digits(stage['cap'])}",
         "",
-        f"💰 صلوات پوینت‌ها: {xp_str} 🪙",
+        f"💰 صلوات پوینت‌ها: {wallet_str} 🪙",
+        f"💫 تولید در ثانیه: {_fmt_rate(rate)} 🪙",
+        f"📥 آماده‌ی برداشت: {pending_str} 🪙",
         f"🧊 نذری تو یخچال: {to_persian_digits(state['nazri_fridge'])} واحد",
     ]
 
-    if not progress["is_max_level"]:
-        next_level_xp = to_persian_digits(f"{progress['xp_for_next_level']:,}")
-        lines.append(f"💰 امتیاز لازم برای سطح بعد: {next_level_xp}")
+    if next_cost is not None:
+        cost_str = to_persian_digits(f"{next_cost:,}")
+        lines.append(f"💰 هزینه‌ی {next_label}: {cost_str} 🪙")
     else:
-        lines.append("👑 کبوترت به بالاترین سطح رسیده!")
+        lines.append("👑 کبوترت به بالاترین مقام و سطح رسیده!")
 
     return "\n".join(lines)
 
 
-def feed_pigeon_from_fridge(user_id: int) -> str:
-    """محتوای یخچال رو (تا سقف ظرفیتِ دون) به کبوتر می‌ده."""
-    profile = db.get_profile(user_id)
-    xp = profile["xp"] if profile else 0
-    level = level_progress(xp)["level"]
-    capacity = pigeon_seed_capacity(level)
+def harvest_points(user_id: int) -> str:
+    """پوینتِ آماده‌ی برداشت رو (بخش صحیحش) به کیف‌پول اصلی منتقل می‌کنه."""
+    synced = _sync_production(user_id)
+    pending = synced["pending"]
+    harvest_amount = int(pending)
 
-    result = db.feed_pigeon(user_id, capacity)
-    if result["fed"] <= 0:
-        if result["remaining_fridge"] <= 0:
-            return "🧊 یخچالت خالیه؛ اول با نوشتن «نذری» یه چیزی جمع کن."
-        return "🌾 کبوترت الان سیره، بعداً بهش غذا بده."
+    if harvest_amount <= 0:
+        return "⏳ هنوز چیزی برای برداشت جمع نشده؛ یکم صبر کن یا با «نذری» بهش سوخت بده 🕊️"
 
-    return (
-        f"🕊️ {to_persian_digits(result['fed'])} واحد از یخچال به کبوترت دادی!\n"
-        f"🌾 دون فعلی: {to_persian_digits(result['new_seed'])} / {to_persian_digits(capacity)}\n"
-        f"🧊 نذری باقی‌مانده در یخچال: {to_persian_digits(result['remaining_fridge'])}"
+    now = _now()
+    idem_key = f"{user_id}:pigeon_harvest:{int(now.timestamp())}"
+    result = grant_bonus_xp(
+        user_id, harvest_amount, EVENT_PIGEON_HARVEST,
+        reference_id=str(int(now.timestamp())), idempotency_key=idem_key,
     )
+    if not result["awarded"]:
+        return "⚠️ مشکلی توی برداشت پیش اومد، دوباره امتحان کن."
+
+    leftover = pending - harvest_amount
+    db.set_pigeon_pending(user_id, leftover)
+
+    amount_str = to_persian_digits(f"{harvest_amount:,}")
+    lines = [f"📥 {amount_str} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
+    if result["leveled_up"]:
+        lines.append(f"🎊 تبریک! رفتی سطح {to_persian_digits(result['new_level'])}!")
+    return "\n".join(lines)
+
+
+def level_up_pigeon(user_id: int) -> str:
+    """با خرج از کیف‌پول، سطح کبوتر رو بالا می‌بره (یا اگه به سقف مقام
+    رسیده، ارتقا مقام می‌ده)."""
+    profile = db.get_profile(user_id)
+    wallet = profile["xp"] if profile else 0
+    state = db.get_pigeon_state(user_id)
+    global_level = state["pigeon_global_level"] or 1
+    stage = pigeon_stage_info(global_level)
+
+    at_cap = stage["sub_level"] >= stage["cap"]
+
+    if at_cap and stage["is_last_stage"]:
+        return "👑 کبوترت همین الان تو بالاترین مقام و سطح ممکنه!"
+
+    if at_cap:
+        cost = stage["rank_up_cost"]
+        next_stage = PIGEON_RANK_STAGES[stage["stage_index"] + 1]
+        action_label = f"ارتقا مقام به «{next_stage['name']}»"
+    else:
+        cost = pigeon_level_up_cost(global_level)
+        action_label = "ارتقا سطح"
+
+    if wallet < cost:
+        missing = cost - wallet
+        return (
+            f"💰 برای {action_label} به {to_persian_digits(f'{cost:,}')} صلوات پوینت نیاز داری.\n"
+            f"هنوز {to_persian_digits(f'{missing:,}')} پوینت کم داری."
+        )
+
+    if not db.spend_points(user_id, cost):
+        return "⚠️ مشکلی پیش اومد (شاید موجودیت تغییر کرده)، دوباره امتحان کن."
+
+    new_level = global_level + 1
+    db.set_pigeon_level(user_id, new_level)
+    new_stage = pigeon_stage_info(new_level)
+
+    if new_stage["stage_index"] != stage["stage_index"]:
+        return f"🎉 مبارکه! کبوترت الان شد «{new_stage['name']}»!"
+    return f"⬆️ کبوترت رفت سطح {to_persian_digits(new_stage['sub_level'])} / {to_persian_digits(new_stage['cap'])}!"

@@ -155,22 +155,29 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
 
 
 # ---------------------------------------------------------------------------
-# شخصیت همراه: کبوتر 🕊️ (نام، دون فعلی، یخچال نذری)
+# شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
 # ---------------------------------------------------------------------------
 
 def get_pigeon_state(user_id: int) -> dict:
-    """نام، دون فعلی و موجودی یخچال کبوتر کاربر را برمی‌گرداند."""
+    """نام، سطح کلی، سوخت فعلی، یخچال، پوینتِ آماده‌ی برداشت، و آخرین
+    زمان سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     conn.commit()
     row = cur.execute(
-        "SELECT pigeon_name, pigeon_seed, nazri_fridge FROM gamification_profile WHERE user_id = ?",
+        """SELECT pigeon_name, pigeon_seed, nazri_fridge, pigeon_global_level,
+                  pigeon_pending_points, pigeon_last_synced_at
+           FROM gamification_profile WHERE user_id = ?""",
         (user_id,),
     ).fetchone()
     conn.close()
     if not row:
-        return {"pigeon_name": None, "pigeon_seed": 0, "nazri_fridge": 0}
+        return {
+            "pigeon_name": None, "pigeon_seed": 0, "nazri_fridge": 0,
+            "pigeon_global_level": 1, "pigeon_pending_points": 0,
+            "pigeon_last_synced_at": None,
+        }
     return dict(row)
 
 
@@ -199,33 +206,77 @@ def add_to_fridge(user_id: int, amount: int):
     conn.close()
 
 
-def feed_pigeon(user_id: int, capacity: int) -> dict:
-    """
-    نذری‌های یخچال رو تا سقفِ ظرفیتِ دون کبوتر منتقل می‌کنه (اگه یخچال از
-    فضای خالی بیشتر بود، باقی‌مونده توی یخچال می‌مونه برای بار بعد).
-    اتمیک: خوندن و آپدیت هر دو ستون توی یه تراکنش انجام می‌شه.
-    """
+def sync_pigeon_production(user_id: int, seed: float, fridge: int, pending: float, synced_at: str):
+    """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، یخچالِ خالی‌شده،
+    پوینتِ اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
-    row = cur.execute(
-        "SELECT pigeon_seed, nazri_fridge FROM gamification_profile WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
-    current_seed = row["pigeon_seed"] if row else 0
-    fridge = row["nazri_fridge"] if row else 0
+    cur.execute(
+        """UPDATE gamification_profile
+           SET pigeon_seed = ?, nazri_fridge = ?, pigeon_pending_points = ?,
+               pigeon_last_synced_at = ?
+           WHERE user_id = ?""",
+        (seed, fridge, pending, synced_at, user_id),
+    )
+    conn.commit()
+    conn.close()
 
-    space = max(0, capacity - current_seed)
-    fed = min(space, fridge)
 
-    if fed > 0:
+def set_pigeon_pending(user_id: int, pending: float):
+    """بعد از برداشت، باقی‌مانده‌ی اعشاریِ pending (بخشی که هنوز به
+    عددِ صحیح نرسیده) رو ذخیره می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_pending_points = ? WHERE user_id = ?",
+        (pending, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_pigeon_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_global_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def spend_points(user_id: int, amount: int) -> bool:
+    """
+    اگه کیف‌پول (ستون xp) کافی باشه، amount رو ازش کم می‌کنه و True
+    برمی‌گردونه؛ وگرنه بدون هیچ تغییری False. چک‌کردنِ موجودی و کم‌کردن
+    هر دو تو یه تراکنش انجام می‌شه تا race condition (مثلاً دو تا خرید
+    همزمان) باعث نشه موجودی منفی بشه.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        row = cur.execute(
+            "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        current = row["xp"] if row else 0
+        if current < amount:
+            conn.rollback()
+            return False
         cur.execute(
-            """UPDATE gamification_profile
-               SET pigeon_seed = pigeon_seed + ?, nazri_fridge = nazri_fridge - ?
-               WHERE user_id = ?""",
-            (fed, fed, user_id),
+            "UPDATE gamification_profile SET xp = xp - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
         )
         conn.commit()
-
-    conn.close()
-    return {"fed": fed, "new_seed": current_seed + fed, "remaining_fridge": fridge - fed}
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()

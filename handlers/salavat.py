@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 from gamification.events import dispatch_event
 from gamification.config import EVENT_SALAVAT_SENT
-from gamification.pigeon import build_salavat_card_from_dispatch
+from gamification.pigeon import build_salavat_card_from_dispatch, roll_salavat_points
 
 GROUP_CHAT_TYPES = ("group", "supergroup")
 MILESTONE_STEP = 50
@@ -258,10 +258,13 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     user_count, chat_total = increment_salavat(chat.id, user.id, user_name, amount)
     prev_total = chat_total - amount
 
-    # XP گیمیفیکیشن: فلت و به‌ازای «هر پیامِ واجد شرایط»، نه به‌ازای عدد
-    # صلوات آن پیام (که می‌تواند دلخواه و بزرگ باشد). محدود به کول‌داون و
-    # سقف روزانه در ANTI_ABUSE_RULES تا قابل exploit نباشد.
-    dispatch_result = await dispatch_event(EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id))
+    # XP گیمیفیکیشن: عددی تصادفی (SALAVAT_POINT_MIN تا MAX) به‌ازای «هر
+    # پیامِ واجد شرایط»، نه به‌ازای عدد صلوات آن پیام (که می‌تواند دلخواه و
+    # بزرگ باشد). محدود به کول‌داون و سقف روزانه در ANTI_ABUSE_RULES تا
+    # قابل exploit نباشد.
+    dispatch_result = await dispatch_event(
+        EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id), xp_override=roll_salavat_points()
+    )
 
     # کارت «صلوات پوینت» (همون کارتی که تو پیوی هم نشون داده می‌شه) --
     # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛

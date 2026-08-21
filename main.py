@@ -112,7 +112,7 @@ from handlers.salavat import (
     salavat_count_command,
     salavat_home_callback,
 )
-from handlers.pigeon import pigeon_text_handler, pigeon_feed_callback
+from handlers.pigeon import pigeon_text_handler, pigeon_harvest_callback, pigeon_levelup_callback
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -400,7 +400,8 @@ def main():
     # ==========================================
     # شخصیت همراه (کبوتر)
     # ==========================================
-    app.add_handler(CallbackQueryHandler(pigeon_feed_callback, pattern="^pigeon_feed$"))
+    app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern="^pigeon_harvest$"))
+    app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern="^pigeon_levelup$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
