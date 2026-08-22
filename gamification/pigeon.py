@@ -20,6 +20,7 @@ handlers/pigeon.py انجام می‌شود.
 """
 
 import random
+import math
 import datetime
 
 from . import db
@@ -98,17 +99,25 @@ def _sync_production(user_id: int) -> dict:
 
     global_level = state["pigeon_global_level"] or 1
     seed = float(state["pigeon_seed"] or 0)
-    fridge = int(state["nazri_fridge"] or 0)
+    # یخچال باید همیشه عددِ صحیحِ واحدِ نذری بمونه؛ round می‌کنیم تا اگه
+    # قبلاً (به‌خاطر یه باگِ رفع‌شده) مقدار اعشاریِ خرابی توش نشسته، همینجا
+    # تمیز بشه.
+    fridge = int(round(state["nazri_fridge"] or 0))
     pending = float(state["pigeon_pending_points"] or 0)
 
     capacity = pigeon_fuel_capacity(global_level)
 
     # اول خودکار از یخچال پر کن (تا سقف ظرفیت سوخت) -- دیگه نیازی به
-    # دکمه‌ی دستی «تغذیه» نیست.
+    # دکمه‌ی دستی «تغذیه» نیست. فقط واحدِ کامل (int) از یخچال کم می‌شه؛
+    # چون seed اعشاریه (سوخت وسط مصرف‌شدن)، اگه فضای خالیِ سوخت کسری بود
+    # (مثلاً ۰.۷ واحد جا داشت)، تا رسیدن به ۱ واحدِ کامل صبر می‌کنیم --
+    # وگرنه با هر بار sync یه ذره از یخچال کم می‌شد و یخچال هم اعشاری
+    # می‌شد (همون باگی که قبلاً بود).
     if seed < capacity and fridge > 0:
-        refill = min(capacity - seed, fridge)
-        seed += refill
-        fridge -= refill
+        refill = min(math.floor(capacity - seed), fridge)
+        if refill > 0:
+            seed += refill
+            fridge -= refill
 
     if elapsed > 0 and seed > 0:
         rate = pigeon_production_rate(global_level)
