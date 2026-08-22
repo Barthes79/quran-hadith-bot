@@ -29,19 +29,34 @@ _RENAME_PATTERN = re.compile(r"^اسم\s+کبوترم\s+(.+)$")
 
 _STATUS_TRIGGERS = ("کبوترم", "پروفایل کبوترم", "وضعیت کبوترم")
 
-HARVEST_CALLBACK_DATA = "pigeon_harvest"
-LEVELUP_CALLBACK_DATA = "pigeon_levelup"
+HARVEST_CALLBACK_PREFIX = "pigeon_harvest"
+LEVELUP_CALLBACK_PREFIX = "pigeon_levelup"
+
+# owner_id همیشه تو خودِ callback_data قایم می‌شه (نه فقط تو حافظه‌ی
+# چت)، چون تو گروه ممکنه چندین نفر همزمان پنل‌های جدا داشته باشن و پیام
+# ربات هم بین ری‌استارت‌ها می‌مونه؛ این تنها راهِ قابل‌اعتماد برای اینه که
+# بفهمیم این پنل مال کدوم کاربره.
+_CALLBACK_PATTERN = re.compile(r"^(pigeon_harvest|pigeon_levelup):(\d+)$")
 
 
 def _display_name(user) -> str:
     return user.first_name or user.full_name or (f"@{user.username}" if user.username else "کاربر")
 
 
-def _status_keyboard() -> InlineKeyboardMarkup:
+def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=HARVEST_CALLBACK_DATA)],
-        [InlineKeyboardButton("⬆️ ارتقا", callback_data=LEVELUP_CALLBACK_DATA)],
+        [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=f"{HARVEST_CALLBACK_PREFIX}:{owner_id}")],
+        [InlineKeyboardButton("⬆️ ارتقا", callback_data=f"{LEVELUP_CALLBACK_PREFIX}:{owner_id}")],
     ])
+
+
+async def _reject_if_not_owner(query, owner_id: int) -> bool:
+    """اگه کلیک‌کننده صاحبِ این پنل نباشه، یه alert نشونش می‌ده و True
+    برمی‌گردونه (یعنی باید متوقف بشیم). صاحبِ پنل با False ادامه می‌ده."""
+    if query.from_user.id != owner_id:
+        await query.answer("🚫 این پنل مال شما نیست؛ خودت با «کبوترم» پنل خودتو باز کن.", show_alert=True)
+        return True
+    return False
 
 
 async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
@@ -78,7 +93,9 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if normalized in _STATUS_TRIGGERS:
         register_user(user.id, user.username)
         status_text = build_pigeon_status_text(user.id, _display_name(user))
-        await update.message.reply_text(status_text, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            status_text, reply_markup=_status_keyboard(user.id), parse_mode=ParseMode.MARKDOWN
+        )
         return True
 
     rename_match = _RENAME_PATTERN.match(normalized)
@@ -91,36 +108,52 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «📥 برداشت صلوات پوینت»."""
+    """دکمه‌ی «📥 برداشت صلوات پوینت» -- فقط صاحبِ پنل می‌تونه بزنه."""
     query = update.callback_query
     if not query:
         return
+
+    match = _CALLBACK_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
+    owner_id = int(match.group(2))
+
+    if await _reject_if_not_owner(query, owner_id):
+        return
     await query.answer()
 
-    user = update.effective_user
-    harvest_message = harvest_points(user.id)
-    status_text = build_pigeon_status_text(user.id, _display_name(user))
+    harvest_message = harvest_points(owner_id)
+    status_text = build_pigeon_status_text(owner_id, _display_name(query.from_user))
     combined = f"{harvest_message}\n\n{status_text}"
 
     try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(combined, reply_markup=_status_keyboard(owner_id), parse_mode=ParseMode.MARKDOWN)
     except Exception:
         await query.message.reply_text(harvest_message, parse_mode=ParseMode.MARKDOWN)
 
 
 async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «⬆️ ارتقا» (ارتقا سطح یا ارتقا مقام، بسته به وضعیت فعلی)."""
+    """دکمه‌ی «⬆️ ارتقا» -- فقط صاحبِ پنل می‌تونه بزنه."""
     query = update.callback_query
     if not query:
         return
+
+    match = _CALLBACK_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
+    owner_id = int(match.group(2))
+
+    if await _reject_if_not_owner(query, owner_id):
+        return
     await query.answer()
 
-    user = update.effective_user
-    levelup_message = level_up_pigeon(user.id)
-    status_text = build_pigeon_status_text(user.id, _display_name(user))
+    levelup_message = level_up_pigeon(owner_id)
+    status_text = build_pigeon_status_text(owner_id, _display_name(query.from_user))
     combined = f"{levelup_message}\n\n{status_text}"
 
     try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(combined, reply_markup=_status_keyboard(owner_id), parse_mode=ParseMode.MARKDOWN)
     except Exception:
         await query.message.reply_text(levelup_message, parse_mode=ParseMode.MARKDOWN)

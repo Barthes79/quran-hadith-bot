@@ -400,8 +400,8 @@ def main():
     # ==========================================
     # شخصیت همراه (کبوتر)
     # ==========================================
-    app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern="^pigeon_harvest$"))
-    app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern="^pigeon_levelup$"))
+    app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern=r"^pigeon_harvest:\d+$"))
+    app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern=r"^pigeon_levelup:\d+$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
