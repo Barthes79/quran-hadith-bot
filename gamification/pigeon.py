@@ -196,11 +196,16 @@ def handle_nazri(user_id: int) -> str:
         return "🍛 نوش جان!"
 
     db.add_to_fridge(user_id, item["seed"])
-    state = db.get_pigeon_state(user_id)
+
+    # sync می‌کنیم تا هم تولیدِ passive این مدت حساب بشه، هم (مهم‌تر) اگه
+    # یخچال قبلاً به‌خاطر یه باگِ رفع‌شده اعشاری شده بود، همینجا با
+    # round به عدد صحیح برگرده و ذخیره بشه -- نه فقط تو نمایش.
+    synced = _sync_production(user_id)
+    fridge_str = to_persian_digits(int(round(synced["fridge"])))
 
     lines = [
         f"{item['emoji']} یه پرس {item['name']} گیرت اومد!",
-        f"🧊 گذاشتیمش تو یخچالت (الان {to_persian_digits(state['nazri_fridge'])} واحد نذری داری)",
+        f"🧊 گذاشتیمش تو یخچالت (الان {fridge_str} واحد نذری داری)",
         "🕊️ کبوترت خودکار ازش به‌عنوان سوخت استفاده می‌کنه و صلوات پوینت تولید می‌کنه.",
     ]
     if result["leveled_up"]:
@@ -266,7 +271,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
         f"💰 صلوات پوینت‌ها: {wallet_str} 🪙",
         f"💫 تولید در ثانیه: {_fmt_rate(rate)} 🪙",
         f"📥 آماده‌ی برداشت: {pending_str} 🪙",
-        f"🧊 نذری تو یخچال: {to_persian_digits(state['nazri_fridge'])} واحد",
+        f"🧊 نذری تو یخچال: {to_persian_digits(int(round(synced['fridge'])))} واحد",
     ]
 
     if next_cost is not None:
