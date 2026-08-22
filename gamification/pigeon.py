@@ -58,6 +58,14 @@ def _format_cooldown(seconds: int) -> str:
     return f"{to_persian_digits(minutes)}:{secs_str}"
 
 
+def _code(value) -> str:
+    """مقدار رو بین بک‌تیک می‌ذاره تا تو تلگرام به‌شکل monospace/آبی و
+    قابل‌کپی (با یه تپ) نمایش داده بشه -- دقیقاً همون افکتی که تو
+    مثال‌های Meowie رو اعداد بود. پیام‌هایی که از این استفاده می‌کنن باید
+    با parse_mode="Markdown" فرستاده بشن."""
+    return f"`{value}`"
+
+
 def _fmt_rate(rate: float) -> str:
     """عدد نرخ تولید رو کوتاه و بدون صفرهای اضافه نشون می‌ده (۰.۱، ۴.۵، ۱۰)."""
     return to_persian_digits(f"{rate:g}")
@@ -151,17 +159,17 @@ def _build_salavat_card(user_id: int, result: dict) -> str:
         remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
         total_str = to_persian_digits(f"{total:,}")
         lines = [
-            f"🎉 {to_persian_digits(result['xp'])} صلوات پوینت گرفتی!",
-            f"💰 صلوات پوینت‌هات: {total_str} 🪙",
-            f"⏳ بعد از {_format_cooldown(remaining)} می‌تونی دوباره صلوات پوینت بگیری.",
+            f"🎉 {_code(to_persian_digits(result['xp']))} صلوات پوینت گرفتی!",
+            f"💰 صلوات پوینت‌هات: {_code(total_str)} 🪙",
+            f"⏳ بعد از {_code(_format_cooldown(remaining))} می‌تونی دوباره صلوات پوینت بگیری.",
         ]
         if result["leveled_up"]:
-            lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {to_persian_digits(result['new_level'])}!")
+            lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {_code(to_persian_digits(result['new_level']))}!")
         return "\n".join(lines)
 
     if result["reason"] == "cooldown":
         remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
-        return f"⏳ صلوات پوینتِ بعدیت {_format_cooldown(remaining)} دیگه آماده می‌شه 🌹"
+        return f"⏳ صلوات پوینتِ بعدیت {_code(_format_cooldown(remaining))} دیگه آماده می‌شه 🌹"
 
     if result["reason"] == "daily_cap":
         return "🌙 امروز به سقف صلوات پوینت رسیدی؛ فردا دوباره تلاش کن 🌹"
@@ -190,7 +198,7 @@ def handle_nazri(user_id: int) -> str:
     if not result["awarded"]:
         if result["reason"] == "cooldown":
             remaining = seconds_until_next(user_id, EVENT_NAZRI_RECEIVED)
-            return f"⏳ هنوز نذری قبلی هضم نشده! {_format_cooldown(remaining)} دیگه صبر کن 😋"
+            return f"⏳ هنوز نذری قبلی هضم نشده! {_code(_format_cooldown(remaining))} دیگه صبر کن 😋"
         if result["reason"] == "daily_cap":
             return "🌙 امروز دیگه نذری‌ای نمونده؛ فردا دوباره سر بزن 🍛"
         return "🍛 نوش جان!"
@@ -205,11 +213,11 @@ def handle_nazri(user_id: int) -> str:
 
     lines = [
         f"{item['emoji']} یه پرس {item['name']} گیرت اومد!",
-        f"🧊 گذاشتیمش تو یخچالت (الان {fridge_str} واحد نذری داری)",
+        f"🧊 گذاشتیمش تو یخچالت (الان {_code(fridge_str)} واحد نذری داری)",
         "🕊️ کبوترت خودکار ازش به‌عنوان سوخت استفاده می‌کنه و صلوات پوینت تولید می‌کنه.",
     ]
     if result["leveled_up"]:
-        lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {to_persian_digits(result['new_level'])}!")
+        lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {_code(to_persian_digits(result['new_level']))}!")
     return "\n".join(lines)
 
 
@@ -263,20 +271,20 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
         f"🕊️ کبوتر {display_name}",
         "",
         f"💕 نام: {pigeon_name}",
-        f"🌾 دون: {seed_status} ({seed_str} / {to_persian_digits(capacity)})",
+        f"🌾 دون: {seed_status} ({_code(seed_str)} / {_code(to_persian_digits(capacity))})",
         "",
         f"🌟 مقام: {stage['name']}",
-        f"⭐️ سطح: {to_persian_digits(stage['sub_level'])} / {to_persian_digits(stage['cap'])}",
+        f"⭐️ سطح: {_code(to_persian_digits(stage['sub_level']))} / {_code(to_persian_digits(stage['cap']))}",
         "",
-        f"💰 صلوات پوینت‌ها: {wallet_str} 🪙",
-        f"💫 تولید در ثانیه: {_fmt_rate(rate)} 🪙",
-        f"📥 آماده‌ی برداشت: {pending_str} 🪙",
-        f"🧊 نذری تو یخچال: {to_persian_digits(int(round(synced['fridge'])))} واحد",
+        f"💰 صلوات پوینت‌ها: {_code(wallet_str)} 🪙",
+        f"💫 تولید در ثانیه: {_code(_fmt_rate(rate))} 🪙",
+        f"📥 آماده‌ی برداشت: {_code(pending_str)} 🪙",
+        f"🧊 نذری تو یخچال: {_code(to_persian_digits(int(round(synced['fridge']))))} واحد",
     ]
 
     if next_cost is not None:
         cost_str = to_persian_digits(f"{next_cost:,}")
-        lines.append(f"💰 هزینه‌ی {next_label}: {cost_str} 🪙")
+        lines.append(f"💰 هزینه‌ی {next_label}: {_code(cost_str)} 🪙")
     else:
         lines.append("👑 کبوترت به بالاترین مقام و سطح رسیده!")
 
@@ -305,9 +313,9 @@ def harvest_points(user_id: int) -> str:
     db.set_pigeon_pending(user_id, leftover)
 
     amount_str = to_persian_digits(f"{harvest_amount:,}")
-    lines = [f"📥 {amount_str} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
+    lines = [f"📥 {_code(amount_str)} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
     if result["leveled_up"]:
-        lines.append(f"🎊 تبریک! رفتی سطح {to_persian_digits(result['new_level'])}!")
+        lines.append(f"🎊 تبریک! رفتی سطح {_code(to_persian_digits(result['new_level']))}!")
     return "\n".join(lines)
 
 
@@ -336,8 +344,8 @@ def level_up_pigeon(user_id: int) -> str:
     if wallet < cost:
         missing = cost - wallet
         return (
-            f"💰 برای {action_label} به {to_persian_digits(f'{cost:,}')} صلوات پوینت نیاز داری.\n"
-            f"هنوز {to_persian_digits(f'{missing:,}')} پوینت کم داری."
+            f"💰 برای {action_label} به {_code(to_persian_digits(f'{cost:,}'))} صلوات پوینت نیاز داری.\n"
+            f"هنوز {_code(to_persian_digits(f'{missing:,}'))} پوینت کم داری."
         )
 
     if not db.spend_points(user_id, cost):
@@ -349,4 +357,4 @@ def level_up_pigeon(user_id: int) -> str:
 
     if new_stage["stage_index"] != stage["stage_index"]:
         return f"🎉 مبارکه! کبوترت الان شد «{new_stage['name']}»!"
-    return f"⬆️ کبوترت رفت سطح {to_persian_digits(new_stage['sub_level'])} / {to_persian_digits(new_stage['cap'])}!"
+    return f"⬆️ کبوترت رفت سطح {_code(to_persian_digits(new_stage['sub_level']))} / {_code(to_persian_digits(new_stage['cap']))}!"

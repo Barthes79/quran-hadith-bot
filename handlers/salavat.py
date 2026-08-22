@@ -282,7 +282,10 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛
         # وگرنه چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
         try:
-            await message.reply_text(build_salavat_card_from_dispatch(user.id, dispatch_result))
+            await message.reply_text(
+                build_salavat_card_from_dispatch(user.id, dispatch_result),
+                parse_mode="Markdown",
+            )
         except Exception as e:
             logger.error(f"خطا در ارسال کارت صلوات‌پوینت (چت {chat.id}): {e}")
 

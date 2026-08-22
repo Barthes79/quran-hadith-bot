@@ -10,6 +10,7 @@
 import re
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from database import register_user
@@ -49,6 +50,10 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
     general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
     اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
+
+    توجه: پیام‌هایی که عدد توشونه با parse_mode=Markdown فرستاده می‌شن تا
+    بک‌تیک‌های دورِ عدد (تو gamification/pigeon.py) به‌شکل کدِ آبیِ
+    قابل‌کپی تلگرام نمایش داده بشن، نه به‌شکل خام با علامتِ ` .
     """
     if not update.message:
         return False
@@ -62,18 +67,18 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not is_private:
             return False
         register_user(user.id, user.username)
-        await update.message.reply_text(handle_salavat_points(user.id))
+        await update.message.reply_text(handle_salavat_points(user.id), parse_mode=ParseMode.MARKDOWN)
         return True
 
     if normalized == "نذری":
         register_user(user.id, user.username)
-        await update.message.reply_text(handle_nazri(user.id))
+        await update.message.reply_text(handle_nazri(user.id), parse_mode=ParseMode.MARKDOWN)
         return True
 
     if normalized in _STATUS_TRIGGERS:
         register_user(user.id, user.username)
         status_text = build_pigeon_status_text(user.id, _display_name(user))
-        await update.message.reply_text(status_text, reply_markup=_status_keyboard())
+        await update.message.reply_text(status_text, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
         return True
 
     rename_match = _RENAME_PATTERN.match(normalized)
@@ -98,9 +103,9 @@ async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_
     combined = f"{harvest_message}\n\n{status_text}"
 
     try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard())
+        await query.edit_message_text(combined, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
     except Exception:
-        await query.message.reply_text(harvest_message)
+        await query.message.reply_text(harvest_message, parse_mode=ParseMode.MARKDOWN)
 
 
 async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,6 +121,6 @@ async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_
     combined = f"{levelup_message}\n\n{status_text}"
 
     try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard())
+        await query.edit_message_text(combined, reply_markup=_status_keyboard(), parse_mode=ParseMode.MARKDOWN)
     except Exception:
-        await query.message.reply_text(levelup_message)
+        await query.message.reply_text(levelup_message, parse_mode=ParseMode.MARKDOWN)
