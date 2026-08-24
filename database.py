@@ -462,6 +462,9 @@ def init_db():
     _ensure_column(cur, "gamification_profile", "pigeon_global_level", "INTEGER DEFAULT 1")
     _ensure_column(cur, "gamification_profile", "pigeon_pending_points", "REAL DEFAULT 0")
     _ensure_column(cur, "gamification_profile", "pigeon_last_synced_at", "TEXT")
+    # شمارنده‌ی دفعاتی که کاربر عینِ کاملِ عبارتِ صلوات رو نوشته -- تنها
+    # منبعِ لول‌آپِ کبوتر الان همینه، مستقل از تولید/برداشتِ idle-mining.
+    _ensure_column(cur, "gamification_profile", "pigeon_salavat_count", "INTEGER DEFAULT 0")
     # سطح یخچال صلواتی (ظرفیت چند تا آیتم هم‌زمان)
     _ensure_column(cur, "gamification_profile", "fridge_level", "INTEGER DEFAULT 1")
 

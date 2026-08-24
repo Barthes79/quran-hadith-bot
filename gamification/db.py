@@ -167,7 +167,7 @@ def get_pigeon_state(user_id: int) -> dict:
     conn.commit()
     row = cur.execute(
         """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
-                  pigeon_pending_points, pigeon_last_synced_at
+                  pigeon_pending_points, pigeon_last_synced_at, pigeon_salavat_count
            FROM gamification_profile WHERE user_id = ?""",
         (user_id,),
     ).fetchone()
@@ -176,7 +176,7 @@ def get_pigeon_state(user_id: int) -> dict:
         return {
             "pigeon_name": None, "pigeon_seed": 0,
             "pigeon_global_level": 1, "pigeon_pending_points": 0,
-            "pigeon_last_synced_at": None,
+            "pigeon_last_synced_at": None, "pigeon_salavat_count": 0,
         }
     return dict(row)
 
@@ -233,6 +233,27 @@ def set_pigeon_level(user_id: int, level: int):
     )
     conn.commit()
     conn.close()
+
+
+def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
+    """شمارنده‌ی دفعاتی که کاربر *عینِ کاملِ* عبارتِ صلوات رو نوشته
+    (چه پیوی چه گروه) رو +amount می‌کنه و مقدارِ جدید رو برمی‌گردونه.
+    این شمارنده کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ
+    کیف‌پوله (EVENT_SALAVAT_SENT) -- هیچ‌وقت محدود نمی‌شه، چون منبعِ
+    تنهای لول‌آپِ کبوتره، نه یه ارزِ قابل‌فارم‌کردن."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = pigeon_salavat_count + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else amount
 
 
 def spend_points(user_id: int, amount: int) -> bool:
