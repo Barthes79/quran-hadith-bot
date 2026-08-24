@@ -1,9 +1,9 @@
 """
-افزودن 111 حدیث جدید (بچ ۱۸) و تنظیم مستقیم دسته‌بندی هرکدام،
+افزودن 111 حدیث جدید (بچ ۲۰) و تنظیم مستقیم دسته‌بندی هرکدام،
 بدون فراخوانی recategorize_all_hadiths.
 ⚠️ این اسکریپت را فقط یک‌بار اجرا کن.
 نحوه اجرا (روی Railway از تب Console):
-    python add_hadiths_batch18.py
+    python add_hadiths_batch20.py
 """
 import json
 from database import init_db, add_hadith, update_hadith_category
@@ -124,7 +124,7 @@ CATEGORIES = [
 
 def main():
     init_db()
-    with open("hadiths_batch18_new.json", encoding="utf-8") as f:
+    with open("hadiths_batch20_new.json", encoding="utf-8") as f:
         hadiths = json.load(f)
     assert len(hadiths) == len(CATEGORIES), "تعداد حدیث‌ها و دسته‌ها برابر نیست!"
     for h, category in zip(hadiths, CATEGORIES):
