@@ -1,159 +1,359 @@
 # -*- coding: utf-8 -*-
 """
-هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر): صلوات، کارتِ وضعیت،
-برداشت، ارتقا، تغییرِ اسم.
+منطق شخصیت همراه: کبوتر 🕊️
 
-«کبوترم» هم پیوی هم گروه کار می‌کنه. «صلوات» فقط تو پیوی از همینجا
-award می‌شه؛ تو گروه، صلوات‌شمار گروهی (handlers/salavat.py) خودش هم
-award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار داده نشه.
+رفتارهای اصلی:
+  - «صلوات» → صلوات پوینتِ تصادفی (SALAVAT_POINT_MIN تا MAX) با کول‌داون
+    ۵ دقیقه؛ در پیوی مستقیماً award می‌شه، در گروه از طریق
+    dispatch_event(xp_override=...) که handlers/salavat.py صداش می‌زنه.
+  - کبوتر، وقتی سوخت (دون) داره، خودش مثل یه ماینر passive صلوات پوینت
+    تولید می‌کنه (نرخ تولید به سطح کلی خودش بستگی داره). این پوینت‌ها
+    اول تو یه استخر «آماده‌ی برداشت» جمع می‌شن و با دکمه‌ی «برداشت» به
+    کیف‌پول اصلی (ستون xp) منتقل می‌شن.
+  - کاربر می‌تونه با خرج از کیف‌پول، سطح کبوتر رو بالا ببره؛ وقتی سطح به
+    سقفِ مقام فعلی رسید، به‌جاش «ارتقا مقام» (هزینه‌ی سنگین‌تر) میاد.
+  - سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه؛ منطقِ «نذری»/یخچال کامل
+    تو gamification/fridge.py هست و از تابع add_seed_to_pigeon همینجا
+    برای «بده کبوترت بخوره» استفاده می‌کنه.
 
-توجه: «نذری» و «یخچالم» دیگه اینجا نیستن؛ رفتن تو handlers/fridge.py.
+توجه: این ماژول فقط متن آماده برمی‌گرداند؛ ارسال پیام/دکمه به تلگرام در
+handlers/pigeon.py انجام می‌شود.
 """
 
-import re
+import random
+import datetime
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
-from telegram.ext import ContextTypes
-
-from database import register_user
-from gamification.pigeon import (
-    handle_salavat_points,
-    build_pigeon_status_text,
-    harvest_points,
-    level_up_pigeon,
-    set_pigeon_name,
-    is_full_salavat_phrase,
+from . import db
+from .xp import award_variable_xp, grant_bonus_xp, seconds_until_next
+from .config import (
+    EVENT_SALAVAT_SENT, EVENT_PIGEON_HARVEST,
+    SALAVAT_POINT_MIN, SALAVAT_POINT_MAX,
+    PIGEON_FUEL_SECONDS_PER_UNIT, PIGEON_MAX_LEVEL,
+    pigeon_fuel_capacity, pigeon_production_rate,
+    pigeon_level_for_count, pigeon_count_for_next_level, pigeon_rank_name,
+    fridge_capacity,
 )
+from text_utils import to_persian_digits, normalize_for_search
 
-# «اسم کبوترم رستم» -> گروه ۱ = "رستم"
-_RENAME_PATTERN = re.compile(r"^اسم\s+کبوترم\s+(.+)$")
+DEFAULT_PIGEON_NAME = "کبوتر"
 
-_STATUS_TRIGGERS = ("کبوترم", "پروفایل کبوترم", "وضعیت کبوترم")
-
-HARVEST_CALLBACK_PREFIX = "pigeon_harvest"
-LEVELUP_CALLBACK_PREFIX = "pigeon_levelup"
-
-# owner_id همیشه تو خودِ callback_data قایم می‌شه (نه فقط تو حافظه‌ی
-# چت)، چون تو گروه ممکنه چندین نفر همزمان پنل‌های جدا داشته باشن و پیام
-# ربات هم بین ری‌استارت‌ها می‌مونه؛ این تنها راهِ قابل‌اعتماد برای اینه که
-# بفهمیم این پنل مال کدوم کاربره.
-_CALLBACK_PATTERN = re.compile(r"^(pigeon_harvest|pigeon_levelup):(\d+)$")
+# صلوات پوینت (چه پیوی چه گروه) فقط وقتی داده می‌شه که کاربر *عین کامل*
+# عبارت صلوات رو نوشته باشه، نه فقط کلمه‌ی «صلوات» یا «N صلوات». از
+# normalize_for_search استفاده می‌کنیم تا «آل»/«ال»، فاصله‌های اضافه، و
+# تفاوت‌های ظاهری عربی/فارسی (رایج تو کیبورد موبایل) مشکلی ایجاد نکنن؛
+# ولی همچنان باید عبارت *کامل* باشه، نه بخشی از یه پیام بزرگ‌تر یا کوتاه‌تر.
+_SALAVAT_PHRASE_NORMALIZED = normalize_for_search("اللهم صل علی محمد و آل محمد")
 
 
-def _display_name(user) -> str:
-    return user.first_name or user.full_name or (f"@{user.username}" if user.username else "کاربر")
+def is_full_salavat_phrase(text: str) -> bool:
+    """True فقط اگه کل پیام (بعد از نرمال‌سازی) دقیقاً همون عبارت کامل
+    صلوات باشه. هم handlers/pigeon.py (پیوی) هم handlers/salavat.py
+    (گروه) از همین یه تابع استفاده می‌کنن تا رفتار یکسان بمونه."""
+    return normalize_for_search(text) == _SALAVAT_PHRASE_NORMALIZED
 
 
-def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
-    # دکمه‌ی «⬆️ ارتقا» عمداً حذف شده: سطحِ کبوتر دیگه با خرجِ کیف‌پول
-    # بالا نمی‌ره، فقط با گفتنِ عینِ صلوات. pigeon_levelup_callback هنوز
-    # تعریفه (پایینِ همین فایل) تا اگه دکمه‌ی قدیمی‌ای رو یه پیامِ کهنه
-    # کسی زد، خطا نده -- فقط دیگه از هیچ کیبوردِ جدیدی ساخته نمی‌شه.
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=f"{HARVEST_CALLBACK_PREFIX}:{owner_id}")],
-    ])
+def _format_cooldown(seconds: int) -> str:
+    """ثانیه را به شکل mm:ss با ارقام فارسی نمایش می‌دهد (مثلاً «۴:۵۵»)."""
+    seconds = max(0, int(seconds))
+    minutes, secs = divmod(seconds, 60)
+    secs_str = to_persian_digits(f"{secs:02d}")
+    return f"{to_persian_digits(minutes)}:{secs_str}"
 
 
-async def reject_if_not_owner(query, owner_id: int) -> bool:
-    """اگه کلیک‌کننده صاحبِ این پنل نباشه، یه alert نشونش می‌ده و True
-    برمی‌گردونه (یعنی باید متوقف بشیم). صاحبِ پنل با False ادامه می‌ده."""
-    if query.from_user.id != owner_id:
-        await query.answer("🚫 این پنل مال شما نیست؛ خودت با «کبوترم» پنل خودتو باز کن.", show_alert=True)
-        return True
-    return False
+def _code(value) -> str:
+    """مقدار رو بین بک‌تیک می‌ذاره تا تو تلگرام به‌شکل monospace/آبی و
+    قابل‌کپی (با یه تپ) نمایش داده بشه -- دقیقاً همون افکتی که تو
+    مثال‌های Meowie رو اعداد بود. پیام‌هایی که از این استفاده می‌کنن باید
+    با parse_mode="Markdown" فرستاده بشن."""
+    return f"`{value}`"
 
 
-async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+def _fmt_rate(rate: float) -> str:
+    """عدد نرخ تولید رو کوتاه و بدون صفرهای اضافه نشون می‌ده (۰.۱، ۴.۵، ۱۰)."""
+    return to_persian_digits(f"{rate:g}")
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def roll_salavat_points() -> int:
+    """یه عدد تصادفیِ صلوات پوینت برمی‌گردونه (برای پیوی و گروه، یکسان)."""
+    return random.randint(SALAVAT_POINT_MIN, SALAVAT_POINT_MAX)
+
+
+def _sync_production(user_id: int) -> dict:
     """
-    اگه متنِ پیام یکی از کلیدواژه‌های کبوتر («صلوات کامل»، «کبوترم»، یا
-    «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
-    general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
-    اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
+    از آخرین سینک تا الان، بر اساس سوخت (دون) موجود، تولیدِ passive رو
+    حساب می‌کنه: تولید رو به pigeon_pending_points اضافه می‌کنه و دون
+    مصرف‌شده رو کم می‌کنه. همیشه قبل از ساختن کارت وضعیت یا برداشت صدا
+    زده می‌شه تا اعداد به‌روز باشن.
 
-    توجه: پیام‌هایی که عدد توشونه با parse_mode=Markdown فرستاده می‌شن تا
-    بک‌تیک‌های دورِ عدد (تو gamification/pigeon.py) به‌شکل کدِ آبیِ
-    قابل‌کپی تلگرام نمایش داده بشن، نه به‌شکل خام با علامتِ ` .
+    توجه: سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه -- فقط با «بده
+    کبوترت بخوره» (gamification/fridge.py، از طریق add_seed_to_pigeon
+    همینجا) پر می‌شه.
     """
-    if not update.message:
-        return False
+    state = db.get_pigeon_state(user_id)
+    now = _now()
+    last = _parse_dt(state.get("pigeon_last_synced_at")) or now
+    elapsed = max(0.0, (now - last).total_seconds())
 
-    user = update.effective_user
-    chat = update.effective_chat
-    normalized = text.strip()
-    is_private = chat.type == "private"
+    global_level = state["pigeon_global_level"] or 1
+    seed = float(state["pigeon_seed"] or 0)
+    pending = float(state["pigeon_pending_points"] or 0)
 
-    if is_full_salavat_phrase(normalized):
-        if not is_private:
-            return False
-        register_user(user.id, user.username)
-        await update.message.reply_text(handle_salavat_points(user.id), parse_mode=ParseMode.MARKDOWN)
-        return True
+    capacity = pigeon_fuel_capacity(global_level)
 
-    if normalized in _STATUS_TRIGGERS:
-        register_user(user.id, user.username)
-        status_text = build_pigeon_status_text(user.id, _display_name(user))
-        await update.message.reply_text(
-            status_text, reply_markup=_status_keyboard(user.id), parse_mode=ParseMode.MARKDOWN
+    if elapsed > 0 and seed > 0:
+        rate = pigeon_production_rate(global_level)
+        fuel_seconds = seed * PIGEON_FUEL_SECONDS_PER_UNIT
+        active_seconds = min(elapsed, fuel_seconds)
+        produced = rate * active_seconds
+        seed_used = active_seconds / PIGEON_FUEL_SECONDS_PER_UNIT
+        seed = max(0.0, seed - seed_used)
+        pending += produced
+
+    db.update_pigeon_seed_and_pending(user_id, seed=seed, pending=pending, synced_at=now.isoformat())
+
+    return {
+        "global_level": global_level,
+        "seed": seed,
+        "pending": pending,
+        "capacity": capacity,
+    }
+
+
+def add_seed_to_pigeon(user_id: int, amount: float) -> dict:
+    """مستقیم مقدار amount رو به سوخت (دون) کبوتر اضافه می‌کنه (تا سقف
+    ظرفیت)؛ قبلش سینک می‌کنه تا وضعیت فعلی درست باشه. برای «بده کبوترت
+    بخوره» روی آیتم‌های نذری (gamification/fridge.py) استفاده می‌شه."""
+    synced = _sync_production(user_id)
+    new_seed = min(synced["capacity"], synced["seed"] + amount)
+    db.update_pigeon_seed_and_pending(
+        user_id, seed=new_seed, pending=synced["pending"], synced_at=_now().isoformat()
+    )
+    return {"new_seed": new_seed, "capacity": synced["capacity"]}
+
+
+def register_pigeon_salavat(user_id: int) -> dict:
+    """
+    هر بار که کاربر *عینِ کاملِ* عبارتِ صلوات رو می‌نویسه (چه پیوی چه
+    گروه) صدا زده می‌شه: شمارنده‌ی pigeon_salavat_count رو +۱ می‌کنه و
+    اگه با شمارشِ جدید، سطحِ کبوتر (طبقِ PIGEON_LEVEL_THRESHOLDS) بالا
+    رفته باشه، همون‌جا ذخیره‌ش می‌کنه.
+
+    عمداً کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ کیف‌پوله
+    (ANTI_ABUSE_RULES[EVENT_SALAVAT_SENT]) -- چون اون محدودیت مالِ «ارز»
+    (صلوات‌پوینتِ کیف‌پول)‌ه، ولی این شمارش صرفاً تعدادِ دفعاتِ ذکرگفتنه و
+    نباید محدود بشه. برای همین باید مستقل از نتیجه‌ی award_variable_xp/
+    dispatch_event صدا زده بشه، نه شرطی به آن.
+    """
+    new_count = db.increment_pigeon_salavat_count(user_id, 1)
+    old_level = db.get_pigeon_state(user_id)["pigeon_global_level"] or 1
+    new_level = pigeon_level_for_count(new_count)
+    leveled_up = new_level > old_level
+    if leveled_up:
+        db.set_pigeon_level(user_id, new_level)
+    return {
+        "count": new_count,
+        "old_level": old_level,
+        "new_level": new_level if leveled_up else old_level,
+        "leveled_up": leveled_up,
+        "rank_name": pigeon_rank_name(new_level if leveled_up else old_level),
+    }
+
+
+def _pigeon_levelup_line(level_result: dict) -> str:
+    return (
+        f"🕊️ کبوترت با گفتنِ صلوات رفت سطح {_code(to_persian_digits(level_result['new_level']))}! "
+        f"مقامش الان شد «{level_result['rank_name']}» 🎊"
+    )
+
+
+def _build_salavat_card(user_id: int, result: dict, pigeon_level_result: dict | None = None) -> str:
+    """
+    متن کارت «صلوات پوینت» رو از روی یه نتیجه‌ی award (که از قبل محاسبه
+    شده) می‌سازه؛ خودش award صدا نمی‌زنه. این جداسازی لازمه چون تو گروه،
+    award همین الان توسط salavat_text_handler انجام شده.
+
+    pigeon_level_result اگه داده بشه (خروجیِ register_pigeon_salavat)،
+    مستقل از این‌که کیف‌پول award شده باشه یا نه (کول‌داون/سقفِ روزانه
+    خورده باشه هم فرقی نداره)، پیامِ لول‌آپِ کبوتر رو اضافه می‌کنه.
+    """
+    leveled_up_line = None
+    if pigeon_level_result and pigeon_level_result.get("leveled_up"):
+        leveled_up_line = _pigeon_levelup_line(pigeon_level_result)
+
+    if result["awarded"]:
+        profile = db.get_profile(user_id)
+        total = profile["xp"] if profile else result["xp"]
+        remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
+        total_str = to_persian_digits(f"{total:,}")
+        lines = [
+            f"🎉 {_code(to_persian_digits(result['xp']))} صلوات پوینت گرفتی!",
+            f"💰 صلوات پوینت‌هات: {_code(total_str)} 🪙",
+            f"⏳ بعد از {_code(_format_cooldown(remaining))} می‌تونی دوباره صلوات پوینت بگیری.",
+        ]
+        # توجه: result["leveled_up"]/result["new_level"] مالِ سیستمِ سطحِ
+        # کلیِ XP (leaderboard، gamification/xp.py)‌ست، نه سطحِ خودِ کبوتر؛
+        # این دو از هم جدا شدن تا دیگه با هم قاطی نشن (همون چیزی که باعثِ
+        # گیج‌شدنِ کاربر شده بود: «رفتی سطح ۳۳» رو مالِ کبوتر فکر می‌کرد).
+        if result["leveled_up"]:
+            lines.append(f"🌟 سطح کلیِ حسابت هم رفت {_code(to_persian_digits(result['new_level']))}!")
+        if leveled_up_line:
+            lines.append(leveled_up_line)
+        return "\n".join(lines)
+
+    if result["reason"] == "cooldown":
+        remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
+        base = f"⏳ صلوات پوینتِ بعدیت {_code(_format_cooldown(remaining))} دیگه آماده می‌شه 🌹"
+        return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+
+    if result["reason"] == "daily_cap":
+        base = "🌙 امروز به سقف صلوات پوینت رسیدی؛ فردا دوباره تلاش کن 🌹"
+        return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+
+    base = "🌹 صلوات قبول باشه."
+    return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+
+
+def build_salavat_card_from_dispatch(user_id: int, dispatch_result: dict) -> str:
+    """نسخه‌ی عمومی برای فراخوانی از handlers/salavat.py تو گروه، بعد از
+    این‌که خودشون dispatch_event رو انجام دادن. شمارشِ صلواتِ کبوتر رو هم
+    همینجا (مستقل از نتیجه‌ی dispatch) ثبت می‌کنه."""
+    level_result = register_pigeon_salavat(user_id)
+    return _build_salavat_card(user_id, dispatch_result, level_result)
+
+
+def handle_salavat_points(user_id: int) -> str:
+    """مسیر پیوی: هیچ سیستم دیگه‌ای قبلش صلوات رو پردازش نکرده، پس خودش
+    award_variable_xp رو با یه عدد رندوم صدا می‌زنه، شمارشِ صلواتِ کبوتر
+    رو ثبت می‌کنه، و بعد کارت رو می‌سازه."""
+    result = award_variable_xp(user_id, EVENT_SALAVAT_SENT, roll_salavat_points())
+    level_result = register_pigeon_salavat(user_id)
+    return _build_salavat_card(user_id, result, level_result)
+
+
+def set_pigeon_name(user_id: int, name: str) -> str:
+    name = name.strip()[:30]
+    if not name:
+        return "⚠️ اسم نمی‌تونه خالی باشه."
+    db.set_pigeon_name(user_id, name)
+    return f"🕊️ از این به بعد کبوترت «{name}» صدا زده می‌شه."
+
+
+def build_pigeon_status_text(user_id: int, display_name: str) -> str:
+    """کارت وضعیت کبوتر رو می‌سازه: نام، دون، مقام/سطح، تولید، آماده‌ی
+    برداشت، کیف‌پول، و تعدادِ صلواتِ لازم تا سطحِ بعد."""
+    synced = _sync_production(user_id)
+    profile = db.get_profile(user_id)
+    state = db.get_pigeon_state(user_id)
+
+    wallet = profile["xp"] if profile else 0
+    global_level = synced["global_level"]
+    rank_name = pigeon_rank_name(global_level)
+    rate = pigeon_production_rate(global_level)
+    capacity = synced["capacity"]
+    seed = synced["seed"]
+    pending = synced["pending"]
+    pigeon_name = state["pigeon_name"] or DEFAULT_PIGEON_NAME
+    salavat_count = state.get("pigeon_salavat_count") or 0
+
+    fridge_level = db.get_fridge_level(user_id)
+    fridge_count = db.count_fridge_items(user_id)
+    fridge_cap = fridge_capacity(fridge_level)
+
+    if seed >= capacity:
+        seed_status = "😋 سیره"
+    elif seed >= capacity / 2:
+        seed_status = "😐 نیمه‌گرسنه"
+    else:
+        seed_status = "😟 گرسنه‌ست"
+
+    next_threshold = pigeon_count_for_next_level(global_level)
+
+    wallet_str = to_persian_digits(f"{wallet:,}")
+    pending_str = to_persian_digits(f"{int(pending):,}")
+    seed_str = to_persian_digits(f"{seed:.1f}".rstrip("0").rstrip("."))
+    count_str = to_persian_digits(f"{salavat_count:,}")
+
+    lines = [
+        f"🕊️ کبوتر {display_name}",
+        "",
+        f"💕 نام: {pigeon_name}",
+        f"🌾 دون: {seed_status} ({_code(seed_str)} / {_code(to_persian_digits(capacity))})",
+        "",
+        f"🌟 مقام: {rank_name}",
+        f"⭐️ سطح: {_code(to_persian_digits(global_level))} / {_code(to_persian_digits(PIGEON_MAX_LEVEL))}",
+        f"🤲 صلوات‌های کامل گفته‌شده: {_code(count_str)}",
+        "",
+        f"💰 صلوات پوینت‌ها: {_code(wallet_str)} 🪙",
+        f"💫 تولید در ثانیه: {_code(_fmt_rate(rate))} 🪙",
+        f"📥 آماده‌ی برداشت: {_code(pending_str)} 🪙",
+        f"❄️ یخچال: {_code(to_persian_digits(fridge_count))} / {_code(to_persian_digits(fridge_cap))} (با «یخچالم» ببینش)",
+    ]
+
+    if next_threshold is not None:
+        remaining = max(0, next_threshold - salavat_count)
+        lines.append(
+            f"🤲 تا سطح بعد: {_code(to_persian_digits(remaining))} صلواتِ کامل دیگه بگو "
+            f"(اللهم صل علی محمد و آل محمد)"
         )
-        return True
+    else:
+        lines.append("👑 کبوترت به بالاترین سطح و مقام رسیده!")
 
-    rename_match = _RENAME_PATTERN.match(normalized)
-    if rename_match:
-        register_user(user.id, user.username)
-        await update.message.reply_text(set_pigeon_name(user.id, rename_match.group(1)))
-        return True
-
-    return False
+    return "\n".join(lines)
 
 
-async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «📥 برداشت صلوات پوینت» -- فقط صاحبِ پنل می‌تونه بزنه."""
-    query = update.callback_query
-    if not query:
-        return
+def harvest_points(user_id: int) -> str:
+    """پوینتِ آماده‌ی برداشت رو (بخش صحیحش) به کیف‌پول اصلی منتقل می‌کنه."""
+    synced = _sync_production(user_id)
+    pending = synced["pending"]
+    harvest_amount = int(pending)
 
-    match = _CALLBACK_PATTERN.match(query.data or "")
-    if not match:
-        await query.answer()
-        return
-    owner_id = int(match.group(2))
+    if harvest_amount <= 0:
+        return "⏳ هنوز چیزی برای برداشت جمع نشده؛ یکم صبر کن یا با «نذری» بهش سوخت بده 🕊️"
 
-    if await reject_if_not_owner(query, owner_id):
-        return
-    await query.answer()
+    now = _now()
+    idem_key = f"{user_id}:pigeon_harvest:{int(now.timestamp())}"
+    result = grant_bonus_xp(
+        user_id, harvest_amount, EVENT_PIGEON_HARVEST,
+        reference_id=str(int(now.timestamp())), idempotency_key=idem_key,
+    )
+    if not result["awarded"]:
+        return "⚠️ مشکلی توی برداشت پیش اومد، دوباره امتحان کن."
 
-    harvest_message = harvest_points(owner_id)
-    status_text = build_pigeon_status_text(owner_id, _display_name(query.from_user))
-    combined = f"{harvest_message}\n\n{status_text}"
+    leftover = pending - harvest_amount
+    db.set_pigeon_pending(user_id, leftover)
 
-    try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard(owner_id), parse_mode=ParseMode.MARKDOWN)
-    except Exception:
-        await query.message.reply_text(harvest_message, parse_mode=ParseMode.MARKDOWN)
+    amount_str = to_persian_digits(f"{harvest_amount:,}")
+    lines = [f"📥 {_code(amount_str)} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
+    # توجه: این «سطح کلیِ حساب»ه (leaderboard XP)، نه سطحِ خودِ کبوتر --
+    # سطحِ کبوتر فقط با گفتنِ خودِ صلوات بالا می‌ره، نه با برداشت/تولید.
+    if result["leveled_up"]:
+        lines.append(f"🌟 سطح کلیِ حسابت رفت {_code(to_persian_digits(result['new_level']))}!")
+    return "\n".join(lines)
 
 
-async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «⬆️ ارتقا» -- فقط صاحبِ پنل می‌تونه بزنه."""
-    query = update.callback_query
-    if not query:
-        return
-
-    match = _CALLBACK_PATTERN.match(query.data or "")
-    if not match:
-        await query.answer()
-        return
-    owner_id = int(match.group(2))
-
-    if await reject_if_not_owner(query, owner_id):
-        return
-    await query.answer()
-
-    levelup_message = level_up_pigeon(owner_id)
-    status_text = build_pigeon_status_text(owner_id, _display_name(query.from_user))
-    combined = f"{levelup_message}\n\n{status_text}"
-
-    try:
-        await query.edit_message_text(combined, reply_markup=_status_keyboard(owner_id), parse_mode=ParseMode.MARKDOWN)
-    except Exception:
-        await query.message.reply_text(levelup_message, parse_mode=ParseMode.MARKDOWN)
+def level_up_pigeon(user_id: int) -> str:
+    """قدیمی: قبلاً اینجا کاربر با خرج از کیف‌پول سطحِ کبوتر رو می‌خرید.
+    الان سطحِ کبوتر فقط با گفتنِ عینِ خودِ صلوات بالا می‌ره، پس این تابع
+    دیگه هیچ اقدامی انجام نمی‌ده -- فقط برای دکمه‌های «⬆️ ارتقا»ی قدیمی که
+    شاید هنوز تو چت‌ها (قبل از این آپدیت) مونده باشن، یه توضیح می‌ده تا
+    کلیک‌کردن‌شون خطا ندهد."""
+    return (
+        "🕊️ کبوترت دیگه با خرجِ صلوات پوینت لول نمی‌گیره؛\n"
+        "فقط با گفتنِ عینِ «اللهم صل علی محمد و آل محمد» سطحش بالا می‌ره 🌹"
+    )
