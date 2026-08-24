@@ -156,18 +156,43 @@ SALAVAT_POINT_MAX = 80
 EVENT_PIGEON_HARVEST = "pigeon_harvest"
 
 # آیتم‌های نذری که با نوشتن «نذری» (کول‌داون ۱ ساعته) به‌صورت رندوم به
-# کاربر می‌رسد. عدد seed هم مقدار XP آن آیتم است و هم مقداری که به یخچال
-# (nazri_fridge) اضافه می‌شود و به‌عنوان سوخت (دون) کبوتر استفاده می‌شود.
+# کاربر پیشنهاد می‌شه. هر بار وزن (weight) به‌صورت رندوم بین min_kg و
+# max_kg تعیین می‌شه؛ ارزش (برای فروش) متناسب با وزنه، ولی ارزش غذایی
+# (برای تغذیه‌ی کبوتر) ثابت و مستقل از وزنه.
 NAZRI_ITEMS = [
-    {"name": "قیمه", "emoji": "🍛", "seed": 8},
-    {"name": "حلیم", "emoji": "🥣", "seed": 10},
-    {"name": "شله‌زرد", "emoji": "🍮", "seed": 6},
-    {"name": "آش رشته", "emoji": "🍜", "seed": 9},
-    {"name": "زرشک‌پلو با مرغ", "emoji": "🍗", "seed": 12},
-    {"name": "سمنو", "emoji": "🍯", "seed": 5},
-    {"name": "چای و نبات", "emoji": "☕", "seed": 3},
-    {"name": "شربت آبلیمو", "emoji": "🥤", "seed": 4},
+    {"key": "gheimeh",     "name": "قیمه",             "emoji": "🍛", "min_kg": 0.3, "max_kg": 1.2, "value_per_kg": 1500, "nutrition": 6},
+    {"key": "halim",       "name": "حلیم",              "emoji": "🥣", "min_kg": 0.5, "max_kg": 2.0, "value_per_kg": 1200, "nutrition": 8},
+    {"key": "sholezard",   "name": "شله‌زرد",           "emoji": "🍮", "min_kg": 0.3, "max_kg": 1.5, "value_per_kg": 900,  "nutrition": 4},
+    {"key": "ashreshteh",  "name": "آش رشته",           "emoji": "🍜", "min_kg": 0.4, "max_kg": 1.8, "value_per_kg": 1100, "nutrition": 7},
+    {"key": "zereshkpolo", "name": "زرشک‌پلو با مرغ",   "emoji": "🍗", "min_kg": 0.5, "max_kg": 2.5, "value_per_kg": 2200, "nutrition": 10},
+    {"key": "sammanu",     "name": "سمنو",              "emoji": "🍯", "min_kg": 0.2, "max_kg": 1.0, "value_per_kg": 800,  "nutrition": 3},
+    {"key": "chaynabat",   "name": "چای و نبات",        "emoji": "☕", "min_kg": 0.1, "max_kg": 0.5, "value_per_kg": 400,  "nutrition": 1},
+    {"key": "ablimoo",     "name": "شربت آبلیمو",       "emoji": "🥤", "min_kg": 0.2, "max_kg": 0.8, "value_per_kg": 500,  "nutrition": 2},
 ]
+NAZRI_ITEMS_BY_KEY = {item["key"]: item for item in NAZRI_ITEMS}
+
+# گرم‌کردن یه آیتمِ تو یخچال، بعد از این‌مدت آماده می‌شه و ارزش/ارزش
+# غذاییش چند برابر می‌شه (طبق ضرایب زیر).
+WARM_DURATION_SECONDS = 600  # ۱۰ دقیقه
+WARM_VALUE_MULTIPLIER = 2.0
+WARM_NUTRITION_MULTIPLIER = 2.0
+
+# یخچال صلواتی: هر سطح ظرفیت بیشتری داره؛ ارتقاش با خرج از کیف‌پول
+# صلوات‌پوینته (رشد نمایی‌گونه، شبیه هزینه‌ی ارتقای کبوتر).
+FRIDGE_BASE_CAPACITY = 2
+FRIDGE_CAPACITY_PER_LEVEL = 1
+FRIDGE_UPGRADE_BASE_COST = 200000
+FRIDGE_UPGRADE_GROWTH = 2.0
+
+
+def fridge_capacity(level: int) -> int:
+    """ظرفیت یخچال (چند تا آیتم هم‌زمان جا می‌شه) بر اساس سطح یخچال."""
+    return FRIDGE_BASE_CAPACITY + (level - 1) * FRIDGE_CAPACITY_PER_LEVEL
+
+
+def fridge_upgrade_cost(level: int) -> int:
+    """هزینه‌ی ارتقا از این سطح به سطح بعد. سطح ۱→۲ دقیقاً همون ۲۰۰,۰۰۰ست."""
+    return int(round(FRIDGE_UPGRADE_BASE_COST * (FRIDGE_UPGRADE_GROWTH ** (level - 1))))
 
 # پیشرفت مستقل کبوتر: هر «مقام» یه سقفِ سطح (cap) داره. کاربر با خرجِ
 # صلوات پوینت از کیف‌پولش، سطح‌به‌سطح می‌ره بالا (۱ تا cap). وقتی به سقف

@@ -59,6 +59,18 @@ def _check_anti_abuse(user_id: int, event_type: str, reference_id) -> tuple[bool
     return True, ""
 
 
+def check_cooldown(user_id: int, event_type: str, reference_id=None) -> tuple[bool, str]:
+    """
+    نسخه‌ی عمومیِ چکِ Anti-Abuse، برای رویدادهایی که خودشون award نمی‌کنن
+    ولی باید کول‌داون/سقف روزانه‌شون رعایت بشه -- مثلاً رول‌کردنِ یه
+    آیتم نذری (gamification/fridge.py) که ممکنه بعداً فروخته نشه، پس
+    نمی‌تونیم award_xp/award_variable_xp معمولی رو صداش بزنیم (چون اونا
+    فرض می‌کنن همین الان xp داده می‌شه).
+    خروجی: (مجاز است؟, دلیل رد در صورت رد شدن)
+    """
+    return _check_anti_abuse(user_id, event_type, reference_id)
+
+
 def seconds_until_next(user_id: int, event_type: str, reference_id=None) -> int:
     """
     چند ثانیه تا این‌که کاربر دوباره اجازه‌ی گرفتن XP برای این رویداد را

@@ -6,30 +6,31 @@
   - «صلوات» → صلوات پوینتِ تصادفی (SALAVAT_POINT_MIN تا MAX) با کول‌داون
     ۵ دقیقه؛ در پیوی مستقیماً award می‌شه، در گروه از طریق
     dispatch_event(xp_override=...) که handlers/salavat.py صداش می‌زنه.
-  - «نذری» → یه آیتم نذری رندوم با کول‌داون ۱ ساعته؛ می‌ره تو یخچال و
-    به‌عنوان سوخت (دون) کبوتر استفاده می‌شه.
-  - کبوتر، وقتی سوخت داره، خودش مثل یه ماینر passive صلوات پوینت تولید
-    می‌کنه (نرخ تولید به سطح کلی خودش بستگی داره). این پوینت‌ها اول تو
-    یه استخر «آماده‌ی برداشت» جمع می‌شن و با دکمه‌ی «برداشت» به کیف‌پول
-    اصلی (ستون xp) منتقل می‌شن.
+  - کبوتر، وقتی سوخت (دون) داره، خودش مثل یه ماینر passive صلوات پوینت
+    تولید می‌کنه (نرخ تولید به سطح کلی خودش بستگی داره). این پوینت‌ها
+    اول تو یه استخر «آماده‌ی برداشت» جمع می‌شن و با دکمه‌ی «برداشت» به
+    کیف‌پول اصلی (ستون xp) منتقل می‌شن.
   - کاربر می‌تونه با خرج از کیف‌پول، سطح کبوتر رو بالا ببره؛ وقتی سطح به
     سقفِ مقام فعلی رسید، به‌جاش «ارتقا مقام» (هزینه‌ی سنگین‌تر) میاد.
+  - سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه؛ منطقِ «نذری»/یخچال کامل
+    تو gamification/fridge.py هست و از تابع add_seed_to_pigeon همینجا
+    برای «بده کبوترت بخوره» استفاده می‌کنه.
 
 توجه: این ماژول فقط متن آماده برمی‌گرداند؛ ارسال پیام/دکمه به تلگرام در
 handlers/pigeon.py انجام می‌شود.
 """
 
 import random
-import math
 import datetime
 
 from . import db
 from .xp import award_variable_xp, grant_bonus_xp, seconds_until_next
 from .config import (
-    EVENT_SALAVAT_SENT, EVENT_NAZRI_RECEIVED, EVENT_PIGEON_HARVEST,
-    NAZRI_ITEMS, SALAVAT_POINT_MIN, SALAVAT_POINT_MAX,
+    EVENT_SALAVAT_SENT, EVENT_PIGEON_HARVEST,
+    SALAVAT_POINT_MIN, SALAVAT_POINT_MAX,
     PIGEON_RANK_STAGES, PIGEON_FUEL_SECONDS_PER_UNIT,
     pigeon_fuel_capacity, pigeon_stage_info, pigeon_level_up_cost, pigeon_production_rate,
+    fridge_capacity,
 )
 from text_utils import to_persian_digits, normalize_for_search
 
@@ -95,10 +96,13 @@ def roll_salavat_points() -> int:
 def _sync_production(user_id: int) -> dict:
     """
     از آخرین سینک تا الان، بر اساس سوخت (دون) موجود، تولیدِ passive رو
-    حساب می‌کنه: اول یخچال رو خودکار به دون منتقل می‌کنه (تا سقف ظرفیت
-    سوخت)، بعد تولید رو به pigeon_pending_points اضافه می‌کنه و دون
+    حساب می‌کنه: تولید رو به pigeon_pending_points اضافه می‌کنه و دون
     مصرف‌شده رو کم می‌کنه. همیشه قبل از ساختن کارت وضعیت یا برداشت صدا
     زده می‌شه تا اعداد به‌روز باشن.
+
+    توجه: سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه -- فقط با «بده
+    کبوترت بخوره» (gamification/fridge.py، از طریق add_seed_to_pigeon
+    همینجا) پر می‌شه.
     """
     state = db.get_pigeon_state(user_id)
     now = _now()
@@ -107,25 +111,9 @@ def _sync_production(user_id: int) -> dict:
 
     global_level = state["pigeon_global_level"] or 1
     seed = float(state["pigeon_seed"] or 0)
-    # یخچال باید همیشه عددِ صحیحِ واحدِ نذری بمونه؛ round می‌کنیم تا اگه
-    # قبلاً (به‌خاطر یه باگِ رفع‌شده) مقدار اعشاریِ خرابی توش نشسته، همینجا
-    # تمیز بشه.
-    fridge = int(round(state["nazri_fridge"] or 0))
     pending = float(state["pigeon_pending_points"] or 0)
 
     capacity = pigeon_fuel_capacity(global_level)
-
-    # اول خودکار از یخچال پر کن (تا سقف ظرفیت سوخت) -- دیگه نیازی به
-    # دکمه‌ی دستی «تغذیه» نیست. فقط واحدِ کامل (int) از یخچال کم می‌شه؛
-    # چون seed اعشاریه (سوخت وسط مصرف‌شدن)، اگه فضای خالیِ سوخت کسری بود
-    # (مثلاً ۰.۷ واحد جا داشت)، تا رسیدن به ۱ واحدِ کامل صبر می‌کنیم --
-    # وگرنه با هر بار sync یه ذره از یخچال کم می‌شد و یخچال هم اعشاری
-    # می‌شد (همون باگی که قبلاً بود).
-    if seed < capacity and fridge > 0:
-        refill = min(math.floor(capacity - seed), fridge)
-        if refill > 0:
-            seed += refill
-            fridge -= refill
 
     if elapsed > 0 and seed > 0:
         rate = pigeon_production_rate(global_level)
@@ -136,15 +124,26 @@ def _sync_production(user_id: int) -> dict:
         seed = max(0.0, seed - seed_used)
         pending += produced
 
-    db.sync_pigeon_production(user_id, seed=seed, fridge=fridge, pending=pending, synced_at=now.isoformat())
+    db.update_pigeon_seed_and_pending(user_id, seed=seed, pending=pending, synced_at=now.isoformat())
 
     return {
         "global_level": global_level,
         "seed": seed,
-        "fridge": fridge,
         "pending": pending,
         "capacity": capacity,
     }
+
+
+def add_seed_to_pigeon(user_id: int, amount: float) -> dict:
+    """مستقیم مقدار amount رو به سوخت (دون) کبوتر اضافه می‌کنه (تا سقف
+    ظرفیت)؛ قبلش سینک می‌کنه تا وضعیت فعلی درست باشه. برای «بده کبوترت
+    بخوره» روی آیتم‌های نذری (gamification/fridge.py) استفاده می‌شه."""
+    synced = _sync_production(user_id)
+    new_seed = min(synced["capacity"], synced["seed"] + amount)
+    db.update_pigeon_seed_and_pending(
+        user_id, seed=new_seed, pending=synced["pending"], synced_at=_now().isoformat()
+    )
+    return {"new_seed": new_seed, "capacity": synced["capacity"]}
 
 
 def _build_salavat_card(user_id: int, result: dict) -> str:
@@ -190,37 +189,6 @@ def handle_salavat_points(user_id: int) -> str:
     return _build_salavat_card(user_id, result)
 
 
-def handle_nazri(user_id: int) -> str:
-    """پیام مربوط به کلمه‌ی «نذری» رو می‌سازه: یه غذای رندوم + اضافه به یخچال."""
-    item = random.choice(NAZRI_ITEMS)
-    result = award_variable_xp(user_id, EVENT_NAZRI_RECEIVED, item["seed"])
-
-    if not result["awarded"]:
-        if result["reason"] == "cooldown":
-            remaining = seconds_until_next(user_id, EVENT_NAZRI_RECEIVED)
-            return f"⏳ هنوز نذری قبلی هضم نشده! {_code(_format_cooldown(remaining))} دیگه صبر کن 😋"
-        if result["reason"] == "daily_cap":
-            return "🌙 امروز دیگه نذری‌ای نمونده؛ فردا دوباره سر بزن 🍛"
-        return "🍛 نوش جان!"
-
-    db.add_to_fridge(user_id, item["seed"])
-
-    # sync می‌کنیم تا هم تولیدِ passive این مدت حساب بشه، هم (مهم‌تر) اگه
-    # یخچال قبلاً به‌خاطر یه باگِ رفع‌شده اعشاری شده بود، همینجا با
-    # round به عدد صحیح برگرده و ذخیره بشه -- نه فقط تو نمایش.
-    synced = _sync_production(user_id)
-    fridge_str = to_persian_digits(int(round(synced["fridge"])))
-
-    lines = [
-        f"{item['emoji']} یه پرس {item['name']} گیرت اومد!",
-        f"🧊 گذاشتیمش تو یخچالت (الان {_code(fridge_str)} واحد نذری داری)",
-        "🕊️ کبوترت خودکار ازش به‌عنوان سوخت استفاده می‌کنه و صلوات پوینت تولید می‌کنه.",
-    ]
-    if result["leveled_up"]:
-        lines.append(f"\n🎊 تبریک! کبوترت رفت سطح {_code(to_persian_digits(result['new_level']))}!")
-    return "\n".join(lines)
-
-
 def set_pigeon_name(user_id: int, name: str) -> str:
     name = name.strip()[:30]
     if not name:
@@ -244,6 +212,10 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
     seed = synced["seed"]
     pending = synced["pending"]
     pigeon_name = state["pigeon_name"] or DEFAULT_PIGEON_NAME
+
+    fridge_level = db.get_fridge_level(user_id)
+    fridge_count = db.count_fridge_items(user_id)
+    fridge_cap = fridge_capacity(fridge_level)
 
     if seed >= capacity:
         seed_status = "😋 سیره"
@@ -279,7 +251,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
         f"💰 صلوات پوینت‌ها: {_code(wallet_str)} 🪙",
         f"💫 تولید در ثانیه: {_code(_fmt_rate(rate))} 🪙",
         f"📥 آماده‌ی برداشت: {_code(pending_str)} 🪙",
-        f"🧊 نذری تو یخچال: {_code(to_persian_digits(int(round(synced['fridge']))))} واحد",
+        f"❄️ یخچال: {_code(to_persian_digits(fridge_count))} / {_code(to_persian_digits(fridge_cap))} (با «یخچالم» ببینش)",
     ]
 
     if next_cost is not None:

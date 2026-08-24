@@ -447,11 +447,14 @@ def init_db():
     # اثری ندارد؛ پس با همون الگوی امن پروژه ستون را اضافه می‌کنیم.
     _ensure_column(cur, "gamification_profile", "total_salavat_sent", "INTEGER DEFAULT 0")
 
-    # ستون‌های شخصیت همراه (کبوتر): اسم، دون فعلی، و یخچال نذری‌های
-    # منتظرِ تغذیه. با همون الگوی _ensure_column بالا اضافه می‌شن تا هم
-    # روی دیتابیس تازه و هم روی دیتابیس‌های قبلاً ساخته‌شده کار کنه.
+    # ستون‌های شخصیت همراه (کبوتر): اسم و دون فعلی. با همون الگوی
+    # _ensure_column بالا اضافه می‌شن تا هم روی دیتابیس تازه و هم روی
+    # دیتابیس‌های قبلاً ساخته‌شده کار کنه.
     _ensure_column(cur, "gamification_profile", "pigeon_name", "TEXT")
     _ensure_column(cur, "gamification_profile", "pigeon_seed", "INTEGER DEFAULT 0")
+    # nazri_fridge: ستون قدیمیِ نسخه‌ی اولِ یخچال (شمارنده‌ی ساده). از
+    # نسخه‌ی جدید یخچال (جدول nazri_items پایین) دیگه استفاده نمی‌شه؛
+    # فقط برای سازگاری با دیتابیس‌های قبلی نگه داشته شده، بی‌ضرره.
     _ensure_column(cur, "gamification_profile", "nazri_fridge", "INTEGER DEFAULT 0")
     # سیستم idle-mining کبوتر: سطح کلی مستقل (برای مقام/سطح/نرخ تولید)،
     # پوینتِ تولیدشده‌ای که هنوز برداشت نشده، و آخرین زمانی که تولید
@@ -459,6 +462,24 @@ def init_db():
     _ensure_column(cur, "gamification_profile", "pigeon_global_level", "INTEGER DEFAULT 1")
     _ensure_column(cur, "gamification_profile", "pigeon_pending_points", "REAL DEFAULT 0")
     _ensure_column(cur, "gamification_profile", "pigeon_last_synced_at", "TEXT")
+    # سطح یخچال صلواتی (ظرفیت چند تا آیتم هم‌زمان)
+    _ensure_column(cur, "gamification_profile", "fridge_level", "INTEGER DEFAULT 1")
+
+    # آیتم‌های نذریِ ذخیره‌شده تو یخچالِ هر کاربر: هرکدوم وزن/گرم‌بودنِ
+    # مستقل خودشو داره؛ با فروش/تغذیه‌ی کبوتر حذف می‌شه.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS nazri_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            food_key TEXT NOT NULL,
+            weight REAL NOT NULL,
+            is_warmed INTEGER DEFAULT 0,
+            warm_started_at TEXT,
+            warm_ready_at TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_nazri_items_user ON nazri_items(user_id)")
 
     # لاگ کامل تراکنش‌های XP؛ idempotency_key برای جلوگیری از ثبت دوباره‌ی
     # همون رویداد (مثلاً اگه کاربر روی یه دکمه چند بار پشت‌سرهم بزنه یا

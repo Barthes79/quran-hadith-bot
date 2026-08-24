@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر).
+هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر): صلوات، کارتِ وضعیت،
+برداشت، ارتقا، تغییرِ اسم.
 
-«نذری» و «کبوترم» هم پیوی هم گروه کار می‌کنن. «صلوات» فقط تو پیوی از
-همینجا award می‌شه؛ تو گروه، صلوات‌شمار گروهی (handlers/salavat.py) خودش
-هم award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار داده نشه.
+«کبوترم» هم پیوی هم گروه کار می‌کنه. «صلوات» فقط تو پیوی از همینجا
+award می‌شه؛ تو گروه، صلوات‌شمار گروهی (handlers/salavat.py) خودش هم
+award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار داده نشه.
+
+توجه: «نذری» و «یخچالم» دیگه اینجا نیستن؛ رفتن تو handlers/fridge.py.
 """
 
 import re
@@ -16,7 +19,6 @@ from telegram.ext import ContextTypes
 from database import register_user
 from gamification.pigeon import (
     handle_salavat_points,
-    handle_nazri,
     build_pigeon_status_text,
     harvest_points,
     level_up_pigeon,
@@ -50,7 +52,7 @@ def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-async def _reject_if_not_owner(query, owner_id: int) -> bool:
+async def reject_if_not_owner(query, owner_id: int) -> bool:
     """اگه کلیک‌کننده صاحبِ این پنل نباشه، یه alert نشونش می‌ده و True
     برمی‌گردونه (یعنی باید متوقف بشیم). صاحبِ پنل با False ادامه می‌ده."""
     if query.from_user.id != owner_id:
@@ -61,7 +63,7 @@ async def _reject_if_not_owner(query, owner_id: int) -> bool:
 
 async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     """
-    اگه متنِ پیام یکی از کلیدواژه‌های کبوتر («صلوات»، «نذری»، «کبوترم»، یا
+    اگه متنِ پیام یکی از کلیدواژه‌های کبوتر («صلوات کامل»، «کبوترم»، یا
     «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
     general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
     اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
@@ -83,11 +85,6 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             return False
         register_user(user.id, user.username)
         await update.message.reply_text(handle_salavat_points(user.id), parse_mode=ParseMode.MARKDOWN)
-        return True
-
-    if normalized == "نذری":
-        register_user(user.id, user.username)
-        await update.message.reply_text(handle_nazri(user.id), parse_mode=ParseMode.MARKDOWN)
         return True
 
     if normalized in _STATUS_TRIGGERS:
@@ -119,7 +116,7 @@ async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_
         return
     owner_id = int(match.group(2))
 
-    if await _reject_if_not_owner(query, owner_id):
+    if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
 
@@ -145,7 +142,7 @@ async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_
         return
     owner_id = int(match.group(2))
 
-    if await _reject_if_not_owner(query, owner_id):
+    if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
 

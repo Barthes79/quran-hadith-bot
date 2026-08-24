@@ -113,6 +113,12 @@ from handlers.salavat import (
     salavat_home_callback,
 )
 from handlers.pigeon import pigeon_text_handler, pigeon_harvest_callback, pigeon_levelup_callback
+from handlers.fridge import (
+    fridge_text_handler,
+    nazri_offer_callback,
+    nazri_item_callback,
+    fridge_upgrade_callback,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -167,16 +173,23 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
 
-    # شخصیت همراه (کبوتر): صلوات/نذری/کبوترم -- «نذری» و «کبوترم» هم تو
-    # پیوی هم تو گروه کار می‌کنن. «صلوات» رو خودِ pigeon_text_handler فقط
-    # تو پیوی award می‌کنه؛ تو گروه، صلوات‌شمار بالا (salavat_text_handler)
-    # خودش هم award کرده هم کارت رو فرستاده، پس اینجا برای «صلوات» تو
-    # گروه کاری انجام نمی‌شه (داخل خود تابع این تفکیک انجام می‌شه).
+    # شخصیت همراه (کبوتر): صلوات/کبوترم -- «کبوترم» هم تو پیوی هم تو
+    # گروه کار می‌کنه. «صلوات» رو خودِ pigeon_text_handler فقط تو پیوی
+    # award می‌کنه؛ تو گروه، صلوات‌شمار بالا (salavat_text_handler) خودش
+    # هم award کرده هم کارت رو فرستاده، پس اینجا برای «صلوات» تو گروه
+    # کاری انجام نمی‌شه (داخل خود تابع این تفکیک انجام می‌شه).
     try:
         if await pigeon_text_handler(update, context, text):
             return
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
+
+    # یخچال صلواتی و آیتم‌های نذری: «نذری» و «یخچالم» -- هم پیوی هم گروه.
+    try:
+        if await fridge_text_handler(update, context, text):
+            return
+    except Exception as e:
+        logger.error(f"خطای مدیریت‌نشده در یخچال/نذری: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:
@@ -402,6 +415,13 @@ def main():
     # ==========================================
     app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern=r"^pigeon_harvest:\d+$"))
     app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern=r"^pigeon_levelup:\d+$"))
+
+    # ==========================================
+    # یخچال صلواتی و آیتم‌های نذری
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(nazri_offer_callback, pattern=r"^nzoffer:"))
+    app.add_handler(CallbackQueryHandler(nazri_item_callback, pattern=r"^nzitem:"))
+    app.add_handler(CallbackQueryHandler(fridge_upgrade_callback, pattern=r"^nzupgrade:\d+$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی

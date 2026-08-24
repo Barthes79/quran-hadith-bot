@@ -159,14 +159,14 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
 # ---------------------------------------------------------------------------
 
 def get_pigeon_state(user_id: int) -> dict:
-    """نام، سطح کلی، سوخت فعلی، یخچال، پوینتِ آماده‌ی برداشت، و آخرین
-    زمان سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
+    """نام، سطح کلی، سوخت فعلی، پوینتِ آماده‌ی برداشت، و آخرین زمان
+    سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     conn.commit()
     row = cur.execute(
-        """SELECT pigeon_name, pigeon_seed, nazri_fridge, pigeon_global_level,
+        """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
                   pigeon_pending_points, pigeon_last_synced_at
            FROM gamification_profile WHERE user_id = ?""",
         (user_id,),
@@ -174,7 +174,7 @@ def get_pigeon_state(user_id: int) -> dict:
     conn.close()
     if not row:
         return {
-            "pigeon_name": None, "pigeon_seed": 0, "nazri_fridge": 0,
+            "pigeon_name": None, "pigeon_seed": 0,
             "pigeon_global_level": 1, "pigeon_pending_points": 0,
             "pigeon_last_synced_at": None,
         }
@@ -193,31 +193,17 @@ def set_pigeon_name(user_id: int, name: str):
     conn.close()
 
 
-def add_to_fridge(user_id: int, amount: int):
-    """مقدار داده‌شده (مثلاً «دونِ» یه آیتم نذری) رو به یخچال کاربر اضافه می‌کنه."""
-    conn = get_connection()
-    cur = conn.cursor()
-    _ensure_profile(cur, user_id)
-    cur.execute(
-        "UPDATE gamification_profile SET nazri_fridge = nazri_fridge + ? WHERE user_id = ?",
-        (amount, user_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def sync_pigeon_production(user_id: int, seed: float, fridge: int, pending: float, synced_at: str):
-    """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، یخچالِ خالی‌شده،
-    پوینتِ اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
+def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, synced_at: str):
+    """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، پوینتِ
+    اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     cur.execute(
         """UPDATE gamification_profile
-           SET pigeon_seed = ?, nazri_fridge = ?, pigeon_pending_points = ?,
-               pigeon_last_synced_at = ?
+           SET pigeon_seed = ?, pigeon_pending_points = ?, pigeon_last_synced_at = ?
            WHERE user_id = ?""",
-        (seed, fridge, pending, synced_at, user_id),
+        (seed, pending, synced_at, user_id),
     )
     conn.commit()
     conn.close()
@@ -280,3 +266,110 @@ def spend_points(user_id: int, amount: int) -> bool:
         return False
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده)
+# ---------------------------------------------------------------------------
+
+def get_fridge_level(user_id: int) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    conn.commit()
+    row = cur.execute(
+        "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["fridge_level"] if row and row["fridge_level"] else 1
+
+
+def set_fridge_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def count_fridge_items(user_id: int) -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM nazri_items WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["c"] if row else 0
+
+
+def get_fridge_items(user_id: int) -> list:
+    """همه‌ی آیتم‌های تو یخچالِ این کاربر، قدیمی‌ترین اول."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM nazri_items WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_fridge_item(user_id: int, item_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def insert_fridge_item(user_id: int, food_key: str, weight: float) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO nazri_items (user_id, food_key, weight) VALUES (?, ?, ?)",
+        (user_id, food_key, weight),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+
+def delete_fridge_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def start_warming_item(user_id: int, item_id: int, started_at: str, ready_at: str) -> bool:
+    """فقط اگه آیتم قبلاً رو گرم‌کن گذاشته نشده باشه، تایمرش رو شروع می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE nazri_items SET warm_started_at = ?, warm_ready_at = ?
+           WHERE id = ? AND user_id = ? AND warm_started_at IS NULL AND is_warmed = 0""",
+        (started_at, ready_at, item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
+def finalize_warm_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE nazri_items SET is_warmed = 1 WHERE id = ? AND user_id = ? AND is_warmed = 0",
+        (item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
