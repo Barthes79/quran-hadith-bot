@@ -353,7 +353,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
         f"💕 نام: {pigeon_name}",
         f"🍽️ شکم: {seed_status} ({_code(seed_str)} / {_code(to_persian_digits(capacity))})",
         "",
-        f"🌟 مقام: {stage['name']}",
+        f"🌟 مقام {_code(to_persian_digits(stage['stage_number']))}: {stage['name']}",
         f"⭐️ سطح: {_code(to_persian_digits(stage['sub_level']))} / {_code(to_persian_digits(stage['cap']))}",
         "",
         f"💰 صلوات پوینت‌ها: {_code(wallet_str)} 🪙",

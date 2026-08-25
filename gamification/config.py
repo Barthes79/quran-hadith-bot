@@ -238,6 +238,9 @@ def pigeon_count_for_next_feature_level(feature_level: int):
 # سنگین‌ترِ «ارتقا کبوتر» میاد: اسمِ مقام عوض می‌شه، سطح از ۱ ریست می‌شه،
 # و تولیدِ خودکار هم دوباره از ۰.۱ شروع می‌شه. آخرین آیتمِ لیست مقامِ
 # نهاییه (rank_up_cost=None).
+#
+# شماره‌ی هر مقام (۱ تا ۵) به صورت خودکار از اندیس+۱ در لیست محاسبه می‌شه.
+# برای خوانایی بهتر، کنار هر اسم با «مقام X» نمایش داده می‌شه.
 PIGEON_RANK_STAGES = [
     {"name": "🐣 جوجه‌کبوتر",       "cap": 5,  "rank_up_cost": 800},
     {"name": "🕊️ کبوتر مهربون",     "cap": 10, "rank_up_cost": 3000},
@@ -259,12 +262,17 @@ def pigeon_stage_info(global_level: int) -> dict:
     """بر اساسِ global_level (تجمعی)، مقامِ فعلی + سطحِ نمایشیِ داخلِ مقام
     (sub_level، از ۱ شروع می‌شه) + سقفِ اون مقام رو برمی‌گردونه. اگه از
     آخرین مقام هم رد شده باشه، همون مقامِ آخر با سطحِ پر (سقفِ کامل)
-    برگردونده می‌شه."""
+    برگردونده می‌شه.
+    
+    شماره‌ی مقام (stage_number) هم به صورت ۱-۵ برمی‌گرده تا تو کارت وضعیت
+    کنار اسم مقام نمایش داده بشه.
+    """
     remaining = global_level
     for i, stage in enumerate(PIGEON_RANK_STAGES):
         if remaining <= stage["cap"]:
             return {
                 "stage_index": i,
+                "stage_number": i + 1,  # شماره‌ی مقام (۱ تا ۵)
                 "name": stage["name"],
                 "sub_level": remaining,
                 "cap": stage["cap"],
@@ -277,6 +285,7 @@ def pigeon_stage_info(global_level: int) -> dict:
     last = PIGEON_RANK_STAGES[last_index]
     return {
         "stage_index": last_index,
+        "stage_number": last_index + 1,
         "name": last["name"],
         "sub_level": last["cap"],
         "cap": last["cap"],
@@ -302,6 +311,3 @@ def pigeon_fuel_capacity(global_level: int) -> int:
 
 # هر واحد دون، این‌قدر ثانیه تولید رو تغذیه می‌کنه (۳۰ دقیقه به‌ازای هر واحد)
 PIGEON_FUEL_SECONDS_PER_UNIT = 1800
-
-
-
