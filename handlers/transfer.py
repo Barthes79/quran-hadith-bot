@@ -3,12 +3,12 @@
 هندلرهای انتقال صلوات پوینت بین کاربران.
 
 قابلیت‌ها:
-  - دریافت صلوات پوینت: فقط کاربران سطح ۱ به بالا می‌توانند از دیگران دریافت کنند.
-  - ارسال صلوات پوینت: فقط کاربران سطح ۲ به بالا می‌توانند به دیگران انتقال دهند.
+  - فقط کاربران سطح ۲ به بالا می‌توانند انتقال انجام دهند.
   - حداقل انتقال ۱۰۰ صلوات پوینت، حداکثر نامحدود (تا موجودی اجازه دهد).
   - دو مرحله تایید: پس از درخواست، ربات از کاربر می‌پرسد که آیا مطمئن است.
   - کسر واقعی از موجودی مبدا و اضافه به موجودی مقصد.
   - تشخیص کاربر مقصد از طریق ریپلای روی پیام آن کاربر.
+  - فقط خود کاربر درخواست‌دهنده می‌تواند روی دکمه‌ها کلیک کند.
 """
 
 import re
@@ -197,15 +197,20 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 # ============================================================
-# کالبک تایید/لغو انتقال
+# کالبک تایید/لغو انتقال (با محدودیت دسترسی فقط برای درخواست‌دهنده)
 # ============================================================
 
 async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پاسخ به دکمه‌های تایید/لغو انتقال."""
+    """پاسخ به دکمه‌های تایید/لغو انتقال.
+    
+    فقط کاربری که درخواست انتقال را ایجاد کرده (from_user_id) می‌تواند
+    روی دکمه‌ها کلیک کند. سایر کاربران پیام خطا دریافت می‌کنند.
+    """
     query = update.callback_query
     if not query:
         return
     
+    # ابتدا به کاربر اطلاع می‌دهیم که درخواستش دریافت شده
     await query.answer()
     
     pending = context.user_data.get(_TRANSFER_PENDING_KEY)
@@ -213,11 +218,13 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ درخواست انتقال منقضی شده است. دوباره امتحان کنید.")
         return
     
-    # بررسی اینکه کاربری که دکمه را زده، همان درخواست‌دهنده است
+    # 🔒 بررسی اینکه کاربر کلیک‌کننده، همان درخواست‌دهنده است
     if query.from_user.id != pending["from_user_id"]:
-        await query.answer("🚫 این دکمه مال شما نیست.", show_alert=True)
+        # فقط یک اخطار به کاربر نشان بده و هیچ تغییری در پیام ایجاد نکن
+        await query.answer("🚫 این دکمه مال شما نیست. فقط شخص درخواست‌کننده می‌تواند روی آن کلیک کند.", show_alert=True)
         return
     
+    # از اینجا به بعد فقط خود درخواست‌دهنده می‌تواند ادامه دهد
     if query.data == "transfer_cancel":
         context.user_data.pop(_TRANSFER_PENDING_KEY, None)
         await query.edit_message_text("❌ انتقال لغو شد.")
@@ -231,13 +238,10 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         to_username = pending["to_username"]
         to_first_name = pending.get("to_first_name", "کاربر")
         
-        # ============================================================
         # 🔒 بررسی سطح گیرنده برای دریافت (نیاز به سطح ۱)
-        # ============================================================
         receiver_progress = get_pigeon_feature_progress(to_user_id)
         if receiver_progress["level"] < 1:
             context.user_data.pop(_TRANSFER_PENDING_KEY, None)
-            # پیام خطا به فرستنده
             await query.edit_message_text(
                 f"⚠️ کاربر مقصد ({to_first_name}) نمی‌تواند صلوات دریافت کند.\n\n"
                 f"او هم‌اکنون در سطح {_code(to_persian_digits(receiver_progress['level']))} است.\n"
