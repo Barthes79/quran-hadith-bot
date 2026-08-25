@@ -164,7 +164,7 @@ def get_pigeon_name(user_id: int) -> str:
 
 
 def get_pigeon_feature_level(user_id: int) -> int:
-    """سطح فعلی «پیشرفت قابلیت‌ها» رو برمی‌گردونه (۱ تا ۸)."""
+    """سطح فعلی «پیشرفت قابلیت‌ها» رو برمی‌گردونه (۰ تا ۸)."""
     state = db.get_pigeon_state(user_id)
     count = state.get("pigeon_salavat_count") or 0
     return pigeon_feature_level_for_count(count)
@@ -174,7 +174,7 @@ def get_pigeon_feature_progress(user_id: int) -> dict:
     """
     اطلاعات کامل پیشرفت قابلیت‌ها رو برمی‌گردونه:
       - count: تعداد صلوات کامل گفته‌شده
-      - level: سطح فعلی
+      - level: سطح فعلی (۰ تا ۸)
       - next_threshold: آستانه‌ی سطح بعد (یا None اگه به سقف رسیده)
       - remaining: تعداد صلوات باقی‌مونده تا سطح بعد
     """
@@ -247,7 +247,7 @@ def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dic
             f"💰 صلوات پوینت‌هات: {_code(total_str)} 🪙",
             f"⏳ بعد از {_code(_format_cooldown(remaining))} می‌تونی دوباره صلوات پوینت بگیری.",
         ]
-        # خط مربوط به سطح کلی حساب (XP) حذف شد تا کاربران فقط پیام صلوات رو ببینند.
+        # 🔄 خط مربوط به سطح کلی حساب (XP) حذف شد تا کاربران فقط پیام صلوات رو ببینند.
         # if result["leveled_up"]:
         #     lines.append(f"🌟 سطح کلیِ حسابت هم رفت {_code(to_persian_digits(result['new_level']))}!")
         if leveled_up_line:
@@ -431,7 +431,7 @@ def harvest_points(user_id: int) -> str:
 
     amount_str = to_persian_digits(f"{harvest_amount:,}")
     lines = [f"📥 {_code(amount_str)} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
-    # خط مربوط به سطح کلی حساب (XP) حذف شد.
+    # 🔄 خط مربوط به سطح کلی حساب (XP) حذف شد.
     # if result["leveled_up"]:
     #     lines.append(f"🌟 سطح کلیِ حسابت رفت {_code(to_persian_digits(result['new_level']))}!")
     return "\n".join(lines)

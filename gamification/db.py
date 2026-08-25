@@ -155,6 +155,67 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
 
 
 # ---------------------------------------------------------------------------
+# کیف پول و موجودی (عملیات اتمیک)
+# ---------------------------------------------------------------------------
+
+def spend_points(user_id: int, amount: int) -> bool:
+    """
+    اگه کیف‌پول (ستون xp) کافی باشه، amount رو ازش کم می‌کنه و True
+    برمی‌گردونه؛ وگرنه بدون هیچ تغییری False. چک‌کردنِ موجودی و کم‌کردن
+    هر دو تو یه تراکنش انجام می‌شه تا race condition (مثلاً دو تا خرید
+    همزمان) باعث نشه موجودی منفی بشه.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        row = cur.execute(
+            "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        current = row["xp"] if row else 0
+        if current < amount:
+            conn.rollback()
+            return False
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def add_points(user_id: int, amount: int) -> bool:
+    """
+    مقدار amount رو به کیف‌پول کاربر اضافه می‌کند (اتمیک).
+    برای انتقال صلوات پوینت بین کاربران استفاده می‌شود.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
 # ---------------------------------------------------------------------------
 
@@ -254,39 +315,6 @@ def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
     ).fetchone()
     conn.close()
     return row["pigeon_salavat_count"] if row else amount
-
-
-def spend_points(user_id: int, amount: int) -> bool:
-    """
-    اگه کیف‌پول (ستون xp) کافی باشه، amount رو ازش کم می‌کنه و True
-    برمی‌گردونه؛ وگرنه بدون هیچ تغییری False. چک‌کردنِ موجودی و کم‌کردن
-    هر دو تو یه تراکنش انجام می‌شه تا race condition (مثلاً دو تا خرید
-    همزمان) باعث نشه موجودی منفی بشه.
-    """
-    if amount <= 0:
-        return False
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        _ensure_profile(cur, user_id)
-        row = cur.execute(
-            "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        current = row["xp"] if row else 0
-        if current < amount:
-            conn.rollback()
-            return False
-        cur.execute(
-            "UPDATE gamification_profile SET xp = xp - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
-            (amount, user_id),
-        )
-        conn.commit()
-        return True
-    except Exception:
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
 
 
 # ---------------------------------------------------------------------------

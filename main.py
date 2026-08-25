@@ -119,6 +119,10 @@ from handlers.fridge import (
     nazri_item_callback,
     fridge_upgrade_callback,
 )
+# ============================================
+# اضافه کردن هندلر انتقال صلوات
+# ============================================
+from handlers.transfer import transfer_text_handler, transfer_callback
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -190,6 +194,15 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             return
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در یخچال/نذری: {e}")
+
+    # ============================================
+    # اضافه کردن هندلر انتقال صلوات
+    # ============================================
+    try:
+        if await transfer_text_handler(update, context, text):
+            return
+    except Exception as e:
+        logger.error(f"خطای مدیریت‌نشده در انتقال صلوات: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:
@@ -423,6 +436,11 @@ def main():
     app.add_handler(CallbackQueryHandler(nazri_offer_callback, pattern=r"^nzoffer:"))
     app.add_handler(CallbackQueryHandler(nazri_item_callback, pattern=r"^nzitem:"))
     app.add_handler(CallbackQueryHandler(fridge_upgrade_callback, pattern=r"^nzupgrade:\d+$"))
+
+    # ==========================================
+    # انتقال صلوات پوینت بین کاربران
+    # ==========================================
+    app.add_handler(CallbackQueryHandler(transfer_callback, pattern="^transfer_(confirm|cancel)$"))
 
     # ==========================================
     # هندلر مسابقه سرعتی و معمولی
