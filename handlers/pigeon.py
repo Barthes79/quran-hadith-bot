@@ -10,7 +10,8 @@ award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار �
 توجه: «نذری» و «یخچالم» دیگه اینجا نیستن؛ رفتن تو handlers/fridge.py.
 
 تغییر جدید: تا زمانی که کاربر به سطح ۳ «پیشرفت قابلیت‌ها» نرسیده باشد،
-هیچ‌کدام از قابلیت‌های کبوتر (حتی «کبوترم») در دسترس نیستند.
+هیچ‌کدام از قابلیت‌های کبوتر (حتی «کبوترم») در دسترس نیستند و کاربر
+پیام توضیحی دریافت می‌کند.
 """
 
 import re
@@ -43,16 +44,8 @@ HARVEST_CALLBACK_PREFIX = "pigeon_harvest"
 LEVELUP_CALLBACK_PREFIX = "pigeon_levelup"
 RENAME_CALLBACK_PREFIX = "pigeon_rename"
 
-# owner_id همیشه تو خودِ callback_data قایم می‌شه (نه فقط تو حافظه‌ی
-# چت)، چون تو گروه ممکنه چندین نفر همزمان پنل‌های جدا داشته باشن و پیام
-# ربات هم بین ری‌استارت‌ها می‌مونه؛ این تنها راهِ قابل‌اعتماد برای اینه که
-# بفهمیم این پنل مال کدوم کاربره.
 _CALLBACK_PATTERN = re.compile(r"^(pigeon_harvest|pigeon_levelup|pigeon_rename):(\d+)$")
 
-# کلیدِ context.user_data برای اینکه بدونیم کاربر تازه دکمه‌ی «✏️ تغییر
-# نام» رو زده و پیامِ بعدیش باید به‌عنوانِ اسمِ جدید تفسیر بشه (نه صلوات/
-# «کبوترم»/چیزِ دیگه). این حافظه فقط تو RAMه (بین ری‌استارت‌های ربات
-# پاک می‌شه)، که برای یه پرامپتِ کوتاه‌مدت مشکلی نداره.
 _AWAITING_RENAME_KEY = "pigeon_awaiting_rename"
 
 
@@ -69,8 +62,6 @@ def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
 
 
 async def reject_if_not_owner(query, owner_id: int) -> bool:
-    """اگه کلیک‌کننده صاحبِ این پنل نباشه، یه alert نشونش می‌ده و True
-    برمی‌گردونه (یعنی باید متوقف بشیم). صاحبِ پنل با False ادامه می‌ده."""
     if query.from_user.id != owner_id:
         await query.answer("🚫 این پنل مال شما نیست؛ خودت با «کبوترم» پنل خودتو باز کن.", show_alert=True)
         return True
@@ -78,10 +69,6 @@ async def reject_if_not_owner(query, owner_id: int) -> bool:
 
 
 def _check_feature_level(user_id: int) -> tuple[bool, dict]:
-    """
-    بررسی می‌کنه که آیا کاربر به سطح ۳ «پیشرفت قابلیت‌ها» رسیده یا نه.
-    برمی‌گردونه: (آیا مجاز است؟, اطلاعات پیشرفت)
-    """
     progress = get_pigeon_feature_progress(user_id)
     return progress["level"] >= 3, progress
 
@@ -110,20 +97,6 @@ async def _reply_feature_locked(update: Update, progress: dict) -> None:
 
 
 async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
-    """
-    اگه متنِ پیام یکی از کلیدواژه‌های کبوتر («صلوات کامل»، «کبوترم»، یا
-    «اسم کبوترم ...») باشه، پاسخ مناسب رو می‌فرسته و True برمی‌گردونه تا
-    general_text_handler دیگه مسیرهای بعدی (آیه/سرچ) رو امتحان نکنه.
-    اگه هیچ‌کدوم نبود، هیچ کاری نمی‌کنه و False برمی‌گردونه.
-
-    توجه: پیام‌هایی که عدد توشونه با parse_mode=Markdown فرستاده می‌شن تا
-    بک‌تیک‌های دورِ عدد (تو gamification/pigeon.py) به‌شکل کدِ آبیِ
-    قابل‌کپی تلگرام نمایش داده بشن، نه به‌شکل خام با علامتِ ` .
-
-    تغییر جدید: تا سطح ۳، هیچ‌کدام از قابلیت‌های کبوتر (حتی «کبوترم») در
-    دسترس نیستند. تنها استثنا: خودِ عبارت صلوات (که شمارش رو بالا می‌بره)
-    باید کار کنه تا کاربر بتونه به سطح ۳ برسه.
-    """
     if not update.message:
         return False
 
@@ -132,17 +105,15 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     normalized = text.strip()
     is_private = chat.type == "private"
 
-    # اگه کاربر تازه دکمه‌ی «✏️ تغییر نام» رو زده، این پیام (هرچی باشه،
-    # حتی اگه شبیهِ «کبوترم» یا صلوات باشه) به‌عنوانِ اسمِ جدید تفسیر
-    # می‌شه -- نه هیچ مسیرِ دیگه‌ای.
-    # اما برای تغییر نام هم باید سطح ۳ رو چک کنیم.
+    # ============================================================
+    # حالت تغییر نام (دکمه‌ی «✏️ تغییر نام»)
+    # ============================================================
     if context.user_data.get(_AWAITING_RENAME_KEY):
         if normalized in _RENAME_CANCEL_WORDS:
             context.user_data[_AWAITING_RENAME_KEY] = False
             await update.message.reply_text("باشه، تغییرِ اسم لغو شد.")
             return True
 
-        # حتی برای تغییر اسم هم باید سطح ۳ رو چک کنیم
         is_allowed, progress = _check_feature_level(user.id)
         if not is_allowed:
             context.user_data[_AWAITING_RENAME_KEY] = False
@@ -170,20 +141,12 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     # از اینجا به بعد، همه‌ی قابلیت‌های کبوتر نیاز به سطح ۳ دارند
     # ============================================================
     is_allowed, progress = _check_feature_level(user.id)
-    if not is_allowed:
-        # اگه کاربر سعی کنه «کبوترم» یا «اسم کبوترم ...» یا اسم سفارشی رو
-        # بنویسه، پیام قفل رو نشون می‌دیم.
-        if normalized in _STATUS_TRIGGERS or _RENAME_PATTERN.match(normalized):
+
+    # اگر کاربر «کبوترم» نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
+    if normalized in _STATUS_TRIGGERS:
+        if not is_allowed:
             await _reply_feature_locked(update, progress)
             return True
-        # اگه هیچ‌کدوم نبود، False برگردون تا هندلرهای دیگه بررسی کنن
-        return False
-
-    # ============================================================
-    # کاربر به سطح ۳ رسیده → همه‌چیز فعال
-    # ============================================================
-
-    if normalized in _STATUS_TRIGGERS:
         register_user(user.id, user.username)
         status_text = build_pigeon_status_text(user.id, _display_name(user))
         await update.message.reply_text(
@@ -191,7 +154,29 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    # چک کردن اسم سفارشی کبوتر
+    # اگر کاربر «اسم کبوترم ...» نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
+    rename_match = _RENAME_PATTERN.match(normalized)
+    if rename_match:
+        if not is_allowed:
+            await _reply_feature_locked(update, progress)
+            return True
+        register_user(user.id, user.username)
+        await update.message.reply_text(set_pigeon_name(user.id, rename_match.group(1)))
+        return True
+
+    # اگر کاربر اسم سفارشی کبوتر رو نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
+    if not is_allowed:
+        pigeon_name = get_pigeon_name(user.id)
+        if normalized == pigeon_name:
+            await _reply_feature_locked(update, progress)
+            return True
+        return False
+
+    # ============================================================
+    # کاربر به سطح ۳ رسیده → همه‌چیز فعال
+    # ============================================================
+
+    # چک کردن اسم سفارشی کبوتر (برای کاربران سطح ۳)
     pigeon_name = get_pigeon_name(user.id)
     if normalized == pigeon_name:
         register_user(user.id, user.username)
@@ -201,17 +186,10 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    rename_match = _RENAME_PATTERN.match(normalized)
-    if rename_match:
-        register_user(user.id, user.username)
-        await update.message.reply_text(set_pigeon_name(user.id, rename_match.group(1)))
-        return True
-
     return False
 
 
 async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «📥 برداشت صلوات پوینت» -- فقط صاحبِ پنل می‌تونه بزنه."""
     query = update.callback_query
     if not query:
         return
@@ -225,7 +203,6 @@ async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_
     if await reject_if_not_owner(query, owner_id):
         return
 
-    # حتی کالبک‌ها هم باید سطح ۳ رو چک کنن (امنیت بیشتر)
     is_allowed, _ = _check_feature_level(owner_id)
     if not is_allowed:
         await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۳ به بالا فعال است.", show_alert=True)
@@ -244,7 +221,6 @@ async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «⬆️ ارتقا» -- فقط صاحبِ پنل می‌تونه بزنه."""
     query = update.callback_query
     if not query:
         return
@@ -276,10 +252,6 @@ async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def pigeon_rename_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «✏️ تغییر نام» -- فقط صاحبِ پنل می‌تونه بزنه. با زدنِ این
-    دکمه فقط یه پرامپت می‌فرسته و منتظرِ پیامِ بعدیِ همون کاربر می‌مونه؛
-    خرج و اعمالِ اسم تو pigeon_text_handler (بالای همین فایل) انجام
-    می‌شه."""
     query = update.callback_query
     if not query:
         return
