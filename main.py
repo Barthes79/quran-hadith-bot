@@ -112,7 +112,7 @@ from handlers.salavat import (
     salavat_count_command,
     salavat_home_callback,
 )
-from handlers.pigeon import pigeon_text_handler, pigeon_harvest_callback, pigeon_levelup_callback
+from handlers.pigeon import pigeon_text_handler, pigeon_harvest_callback, pigeon_levelup_callback, pigeon_rename_callback
 from handlers.fridge import (
     fridge_text_handler,
     nazri_offer_callback,
@@ -415,6 +415,7 @@ def main():
     # ==========================================
     app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern=r"^pigeon_harvest:\d+$"))
     app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern=r"^pigeon_levelup:\d+$"))
+    app.add_handler(CallbackQueryHandler(pigeon_rename_callback, pattern=r"^pigeon_rename:\d+$"))
 
     # ==========================================
     # یخچال صلواتی و آیتم‌های نذری

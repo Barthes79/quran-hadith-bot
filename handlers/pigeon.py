@@ -24,21 +24,31 @@ from gamification.pigeon import (
     level_up_pigeon,
     set_pigeon_name,
     is_full_salavat_phrase,
+    PIGEON_RENAME_COST,
 )
+from text_utils import to_persian_digits
 
 # «اسم کبوترم رستم» -> گروه ۱ = "رستم"
 _RENAME_PATTERN = re.compile(r"^اسم\s+کبوترم\s+(.+)$")
 
 _STATUS_TRIGGERS = ("کبوترم", "پروفایل کبوترم", "وضعیت کبوترم")
+_RENAME_CANCEL_WORDS = {"بیخیال", "انصراف", "لغو"}
 
 HARVEST_CALLBACK_PREFIX = "pigeon_harvest"
 LEVELUP_CALLBACK_PREFIX = "pigeon_levelup"
+RENAME_CALLBACK_PREFIX = "pigeon_rename"
 
 # owner_id همیشه تو خودِ callback_data قایم می‌شه (نه فقط تو حافظه‌ی
 # چت)، چون تو گروه ممکنه چندین نفر همزمان پنل‌های جدا داشته باشن و پیام
 # ربات هم بین ری‌استارت‌ها می‌مونه؛ این تنها راهِ قابل‌اعتماد برای اینه که
 # بفهمیم این پنل مال کدوم کاربره.
-_CALLBACK_PATTERN = re.compile(r"^(pigeon_harvest|pigeon_levelup):(\d+)$")
+_CALLBACK_PATTERN = re.compile(r"^(pigeon_harvest|pigeon_levelup|pigeon_rename):(\d+)$")
+
+# کلیدِ context.user_data برای اینکه بدونیم کاربر تازه دکمه‌ی «✏️ تغییر
+# نام» رو زده و پیامِ بعدیش باید به‌عنوانِ اسمِ جدید تفسیر بشه (نه صلوات/
+# «کبوترم»/چیزِ دیگه). این حافظه فقط تو RAMه (بین ری‌استارت‌های ربات
+# پاک می‌شه)، که برای یه پرامپتِ کوتاه‌مدت مشکلی نداره.
+_AWAITING_RENAME_KEY = "pigeon_awaiting_rename"
 
 
 def _display_name(user) -> str:
@@ -49,6 +59,7 @@ def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=f"{HARVEST_CALLBACK_PREFIX}:{owner_id}")],
         [InlineKeyboardButton("⬆️ ارتقا", callback_data=f"{LEVELUP_CALLBACK_PREFIX}:{owner_id}")],
+        [InlineKeyboardButton("✏️ تغییر نام", callback_data=f"{RENAME_CALLBACK_PREFIX}:{owner_id}")],
     ])
 
 
@@ -79,6 +90,24 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat = update.effective_chat
     normalized = text.strip()
     is_private = chat.type == "private"
+
+    # اگه کاربر تازه دکمه‌ی «✏️ تغییر نام» رو زده، این پیام (هرچی باشه،
+    # حتی اگه شبیهِ «کبوترم» یا صلوات باشه) به‌عنوانِ اسمِ جدید تفسیر
+    # می‌شه -- نه هیچ مسیرِ دیگه‌ای.
+    if context.user_data.get(_AWAITING_RENAME_KEY):
+        if normalized in _RENAME_CANCEL_WORDS:
+            context.user_data[_AWAITING_RENAME_KEY] = False
+            await update.message.reply_text("باشه، تغییرِ اسم لغو شد.")
+            return True
+        register_user(user.id, user.username)
+        result_text = set_pigeon_name(user.id, normalized)
+        # فقط با موفقیت یا کمبودِ موجودی از حالتِ انتظار خارج می‌شیم؛
+        # اگه فقط فرمتِ اسم غلط بود (طول/کاراکترهای غیرمجاز)، بذار بدونِ
+        # نیاز به زدنِ دوبارهٔ دکمه، همینجا دوباره امتحان کنه.
+        if result_text.startswith("🕊️") or result_text.startswith("💰"):
+            context.user_data[_AWAITING_RENAME_KEY] = False
+        await update.message.reply_text(result_text)
+        return True
 
     if is_full_salavat_phrase(normalized):
         if not is_private:
@@ -154,3 +183,33 @@ async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text(combined, reply_markup=_status_keyboard(owner_id), parse_mode=ParseMode.MARKDOWN)
     except Exception:
         await query.message.reply_text(levelup_message, parse_mode=ParseMode.MARKDOWN)
+
+
+async def pigeon_rename_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «✏️ تغییر نام» -- فقط صاحبِ پنل می‌تونه بزنه. با زدنِ این
+    دکمه فقط یه پرامپت می‌فرسته و منتظرِ پیامِ بعدیِ همون کاربر می‌مونه؛
+    خرج و اعمالِ اسم تو pigeon_text_handler (بالای همین فایل) انجام
+    می‌شه."""
+    query = update.callback_query
+    if not query:
+        return
+
+    match = _CALLBACK_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
+    owner_id = int(match.group(2))
+
+    if await reject_if_not_owner(query, owner_id):
+        return
+    await query.answer()
+
+    context.user_data[_AWAITING_RENAME_KEY] = True
+    cost_str = to_persian_digits(PIGEON_RENAME_COST)
+    prompt = (
+        "✏️ اسمِ جدیدِ کبوترت رو تو یه پیام بنویس.\n"
+        "۳ تا ۲۲ حرف، فقط حروف و فاصله (بدون عدد، ایموجی، یا علامتِ نگارشی).\n"
+        f"هزینه‌ش {cost_str} صلوات پوینته.\n"
+        "برای انصراف، بنویس «بیخیال»."
+    )
+    await query.message.reply_text(prompt)

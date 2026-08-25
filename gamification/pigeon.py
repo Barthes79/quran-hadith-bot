@@ -37,6 +37,11 @@ from text_utils import to_persian_digits, normalize_for_search
 
 DEFAULT_PIGEON_NAME = "کبوتر"
 
+# هزینه‌ی تغییرِ اسمِ کبوتر (چه از دکمه‌ی «✏️ تغییر نام» چه با نوشتنِ
+# مستقیمِ «اسم کبوترم ...») -- هر دو راه از همین یه هزینه/اعتبارسنجی رد
+# می‌شن تا یکی‌شون راهِ دورزدنِ اون یکی نشه.
+PIGEON_RENAME_COST = 114
+
 # صلوات پوینت (چه پیوی چه گروه) فقط وقتی داده می‌شه که کاربر *عین کامل*
 # عبارت صلوات رو نوشته باشه، نه فقط کلمه‌ی «صلوات» یا «N صلوات». از
 # normalize_for_search استفاده می‌کنیم تا «آل»/«ال»، فاصله‌های اضافه، و
@@ -249,10 +254,40 @@ def handle_salavat_points(user_id: int) -> str:
     return _build_salavat_card(user_id, result, progress_result)
 
 
+def _is_valid_pigeon_name(name: str) -> bool:
+    """۳ تا ۲۲ کاراکتر، فقط حروف (فارسی/عربی/انگلیسی و...) و فاصله‌ی
+    تکی بینشون؛ بدون عدد، ایموجی، یا هر علامتِ نگارشیِ دیگه."""
+    name = name.strip()
+    if not (3 <= len(name) <= 22):
+        return False
+    if "  " in name:  # چند فاصله‌ی پشت‌سرهم مجاز نیست
+        return False
+    return all(ch.isalpha() for ch in name if ch != " ")
+
+
 def set_pigeon_name(user_id: int, name: str) -> str:
-    name = name.strip()[:30]
-    if not name:
-        return "⚠️ اسم نمی‌تونه خالی باشه."
+    """با پرداختِ PIGEON_RENAME_COST صلوات‌پوینت از کیف‌پول، اسمِ کبوتر
+    رو عوض می‌کنه. اسم باید ۳ تا ۲۲ کاراکتر، فقط حروف و فاصله باشه
+    (بدون عدد، ایموجی، یا علامتِ نگارشی)."""
+    name = name.strip()
+    if not _is_valid_pigeon_name(name):
+        return (
+            "⚠️ اسم باید بینِ ۳ تا ۲۲ کاراکتر و فقط از حروف و فاصله تشکیل شده باشه "
+            "(بدون عدد، ایموجی، یا علامتِ نگارشی)."
+        )
+
+    profile = db.get_profile(user_id)
+    wallet = profile["xp"] if profile else 0
+    if wallet < PIGEON_RENAME_COST:
+        missing = PIGEON_RENAME_COST - wallet
+        return (
+            f"💰 برای تغییرِ اسم به {_code(to_persian_digits(PIGEON_RENAME_COST))} صلوات پوینت نیاز داری.\n"
+            f"هنوز {_code(to_persian_digits(missing))} پوینت کم داری."
+        )
+
+    if not db.spend_points(user_id, PIGEON_RENAME_COST):
+        return "⚠️ مشکلی پیش اومد (شاید موجودیت تغییر کرده)، دوباره امتحان کن."
+
     db.set_pigeon_name(user_id, name)
     return f"🕊️ از این به بعد کبوترت «{name}» صدا زده می‌شه."
 
