@@ -25,7 +25,7 @@ from telegram.ext import ContextTypes
 
 from database import register_user
 from handlers.pigeon import reject_if_not_owner, _display_name
-from gamification import db  # ✅ ایمپورت درست
+from gamification import db  # ✅ ایمپورت صحیح
 from gamification.fridge import (
     roll_nazri,
     build_offer_text,
