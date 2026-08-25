@@ -24,6 +24,7 @@ from gamification.pigeon import (
     level_up_pigeon,
     set_pigeon_name,
     is_full_salavat_phrase,
+    get_pigeon_name,
     PIGEON_RENAME_COST,
 )
 from text_utils import to_persian_digits
@@ -123,6 +124,19 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             status_text, reply_markup=_status_keyboard(user.id), parse_mode=ParseMode.MARKDOWN
         )
         return True
+
+    # چک کردن اسم سفارشی کبوتر (کاربر می‌تونه با نوشتن اسم کبوترش، پنل رو باز کنه)
+    # این چک باید بعد از _STATUS_TRIGGERS باشه تا «کبوترم» اولویت داشته باشه،
+    # و قبل از _RENAME_PATTERN باشه تا با «اسم کبوترم ...» تداخل نکنه.
+    if not context.user_data.get(_AWAITING_RENAME_KEY):
+        pigeon_name = get_pigeon_name(user.id)
+        if normalized == pigeon_name:
+            register_user(user.id, user.username)
+            status_text = build_pigeon_status_text(user.id, _display_name(user))
+            await update.message.reply_text(
+                status_text, reply_markup=_status_keyboard(user.id), parse_mode=ParseMode.MARKDOWN
+            )
+            return True
 
     rename_match = _RENAME_PATTERN.match(normalized)
     if rename_match:

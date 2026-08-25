@@ -157,6 +157,12 @@ def add_seed_to_pigeon(user_id: int, amount: float) -> dict:
     return {"new_seed": new_seed, "capacity": synced["capacity"]}
 
 
+def get_pigeon_name(user_id: int) -> str:
+    """اسم فعلی کبوتر رو برمی‌گردونه."""
+    state = db.get_pigeon_state(user_id)
+    return state.get("pigeon_name") or DEFAULT_PIGEON_NAME
+
+
 def register_pigeon_feature_progress(user_id: int) -> dict:
     """
     هر بار که کاربر *عینِ کاملِ* عبارتِ صلوات رو می‌نویسه (چه پیوی چه
@@ -293,7 +299,7 @@ def set_pigeon_name(user_id: int, name: str) -> str:
 
 
 def build_pigeon_status_text(user_id: int, display_name: str) -> str:
-    """کارت وضعیت کبوتر رو می‌سازه: نام، دون، مقام/سطح (پولی)، تولید،
+    """کارت وضعیت کبوتر رو می‌سازه: نام، شکم، مقام/سطح (پولی)، تولید،
     آماده‌ی برداشت، کیف‌پول، هزینه‌ی اقدامِ بعدی، و پیشرفتِ قابلیت‌ها
     (شمارشِ صلوات، کاملاً جدا از مقام)."""
     synced = _sync_production(user_id)
@@ -314,12 +320,13 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
     fridge_count = db.count_fridge_items(user_id)
     fridge_cap = fridge_capacity(fridge_level)
 
+    # وضعیت شکم (قبلاً: دون)
     if seed >= capacity:
-        seed_status = "😋 سیره"
+        seed_status = "😋 سیر"
     elif seed >= capacity / 2:
-        seed_status = "😐 نیمه‌گرسنه"
+        seed_status = "😐 نیمه‌سیر"
     else:
-        seed_status = "😟 گرسنه‌ست"
+        seed_status = "😟 گرسنه"
 
     at_cap = stage["sub_level"] >= stage["cap"]
     if at_cap and not stage["is_last_stage"]:
@@ -344,7 +351,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
         f"🕊️ کبوتر {display_name}",
         "",
         f"💕 نام: {pigeon_name}",
-        f"🌾 دون: {seed_status} ({_code(seed_str)} / {_code(to_persian_digits(capacity))})",
+        f"🍽️ شکم: {seed_status} ({_code(seed_str)} / {_code(to_persian_digits(capacity))})",
         "",
         f"🌟 مقام: {stage['name']}",
         f"⭐️ سطح: {_code(to_persian_digits(stage['sub_level']))} / {_code(to_persian_digits(stage['cap']))}",
