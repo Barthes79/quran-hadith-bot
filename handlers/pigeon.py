@@ -3,7 +3,7 @@
 هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر): صلوات، کارتِ وضعیت،
 برداشت، ارتقا، تغییرِ اسم.
 
-نسخه‌ی دیباگ: لاگ‌های دقیق برای پیدا کردن مشکل نمایش پیام توضیحی.
+نسخه‌ی نهایی با پیام پویا برای سطح بعدی.
 """
 
 import re
@@ -71,16 +71,19 @@ def _check_feature_level(user_id: int) -> tuple[bool, dict]:
 
 
 async def _reply_feature_locked(update: Update, progress: dict) -> None:
-    """پیام قفل بودن قابلیت‌های کبوتر رو با توضیح کامل می‌فرسته."""
+    """پیام قفل بودن قابلیت‌های کبوتر رو با توضیح کامل و پویا می‌فرسته."""
     remaining = progress["remaining"]
-    logger.info(f"[DEBUG] Sending locked message for level={progress['level']}, remaining={remaining}")
+    current_level = progress["level"]
+    next_level = current_level + 1
+    # اگر سطح فعلی ۰ باشه، سطح بعدی ۱ هست؛ اگر ۱ باشه، سطح بعدی ۲ و ...
+    
     if remaining > 0:
         msg = (
             f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۳ "
             f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
-            f"شما هم‌اکنون در سطح {_code(to_persian_digits(progress['level']))} هستید.\n"
-            f"برای رسیدن به سطح ۳، باید {_code(to_persian_digits(remaining))} صلوات کامل "
-            f"دیگه بفرستید.\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای رسیدن به سطح بعدی (سطح {_code(to_persian_digits(next_level))})، باید "
+            f"{_code(to_persian_digits(remaining))} صلوات کامل دیگه بفرستید.\n"
             f"(اللهم صل علی محمد و آل محمد)\n\n"
             f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
         )
@@ -88,8 +91,8 @@ async def _reply_feature_locked(update: Update, progress: dict) -> None:
         msg = (
             f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۳ "
             f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
-            f"شما هم‌اکنون در سطح {_code(to_persian_digits(progress['level']))} هستید.\n"
-            f"برای فعال شدن این قابلیت، به سطح ۳ برسید."
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای فعال شدن این قابلیت، باید به سطح ۳ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
     logger.info("[DEBUG] Locked message sent.")
