@@ -20,10 +20,19 @@ def _ensure_profile(cur, user_id: int):
     )
 
 
+def _ensure_fridge_column(cur):
+    """اطمینان از وجود ستون has_fridge در جدول gamification_profile."""
+    cur.execute("PRAGMA table_info(gamification_profile)")
+    columns = [row[1] for row in cur.fetchall()]
+    if "has_fridge" not in columns:
+        cur.execute("ALTER TABLE gamification_profile ADD COLUMN has_fridge INTEGER DEFAULT 0")
+
+
 def get_profile(user_id: int) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     conn.commit()
     row = cur.execute(
         "SELECT * FROM gamification_profile WHERE user_id = ?", (user_id,)
@@ -77,6 +86,7 @@ def insert_xp_transaction(user_id: int, event_type: str, xp: int,
     cur = conn.cursor()
     try:
         _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
         cur.execute(
             """INSERT INTO xp_transactions (user_id, event_type, xp, reference_id, idempotency_key)
                VALUES (?, ?, ?, ?, ?)""",
@@ -100,7 +110,10 @@ def insert_xp_transaction(user_id: int, event_type: str, xp: int,
 
 def set_level(user_id: int, level: int):
     conn = get_connection()
-    conn.execute(
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
         "UPDATE gamification_profile SET level = ? WHERE user_id = ?",
         (level, user_id),
     )
@@ -113,6 +126,7 @@ def update_streak(user_id: int, current_streak: int, longest_streak: int,
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     if first_activity_date:
         cur.execute(
             """UPDATE gamification_profile
@@ -146,6 +160,7 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         f"UPDATE gamification_profile SET {column} = {column} + ? WHERE user_id = ?",
         (amount, user_id),
@@ -171,6 +186,7 @@ def spend_points(user_id: int, amount: int) -> bool:
     cur = conn.cursor()
     try:
         _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
         row = cur.execute(
             "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -202,6 +218,7 @@ def add_points(user_id: int, amount: int) -> bool:
     cur = conn.cursor()
     try:
         _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
         cur.execute(
             "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
             (amount, user_id),
@@ -225,6 +242,7 @@ def get_pigeon_state(user_id: int) -> dict:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     conn.commit()
     row = cur.execute(
         """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
@@ -246,6 +264,7 @@ def set_pigeon_name(user_id: int, name: str):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET pigeon_name = ? WHERE user_id = ?",
         (name, user_id),
@@ -260,6 +279,7 @@ def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, sy
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         """UPDATE gamification_profile
            SET pigeon_seed = ?, pigeon_pending_points = ?, pigeon_last_synced_at = ?
@@ -276,6 +296,7 @@ def set_pigeon_pending(user_id: int, pending: float):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET pigeon_pending_points = ? WHERE user_id = ?",
         (pending, user_id),
@@ -288,6 +309,7 @@ def set_pigeon_level(user_id: int, level: int):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET pigeon_global_level = ? WHERE user_id = ?",
         (level, user_id),
@@ -305,6 +327,7 @@ def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET pigeon_salavat_count = pigeon_salavat_count + ? WHERE user_id = ?",
         (amount, user_id),
@@ -327,6 +350,7 @@ def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET pigeon_salavat_count = ? WHERE user_id = ?",
         (new_count, user_id),
@@ -340,13 +364,14 @@ def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده)
+# یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده + خرید یخچال)
 # ---------------------------------------------------------------------------
 
 def get_fridge_level(user_id: int) -> int:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     conn.commit()
     row = cur.execute(
         "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
@@ -359,9 +384,38 @@ def set_fridge_level(user_id: int, level: int):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
     cur.execute(
         "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
         (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_has_fridge(user_id: int) -> bool:
+    """بررسی می‌کند که آیا کاربر یخچال خریداری کرده است یا نه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT has_fridge FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return bool(row["has_fridge"]) if row else False
+
+
+def set_has_fridge(user_id: int, value: bool) -> None:
+    """تنظیم وضعیت خرید یخچال برای کاربر."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET has_fridge = ? WHERE user_id = ?",
+        (1 if value else 0, user_id),
     )
     conn.commit()
     conn.close()
