@@ -18,6 +18,7 @@ from .config import (
     WARM_NUTRITION_MULTIPLIER,
     fridge_capacity, fridge_upgrade_cost,
     GAMIFICATION_TIMEZONE,
+    FRIDGE_BUY_COST,  # ✅ هزینه خرید یخچال
 )
 from .events import dispatch_event
 from .xp import seconds_until_next
@@ -140,10 +141,14 @@ def feed_offered_item(user_id: int, food_key: str) -> str:
 
 
 def store_offered_item(user_id: int, food_key: str, weight: float) -> str:
-    """ذخیره‌ی آیتم پیشنهادی در یخچال."""
+    """ذخیره‌ی آیتم پیشنهادی در یخچال (فقط اگر کاربر یخچال داشته باشد)."""
     template = NAZRI_ITEMS_BY_KEY.get(food_key)
     if not template:
         return "⚠️ آیتم نامعتبر است."
+
+    # ❌ بررسی اینکه کاربر یخچال دارد یا نه
+    if not db.get_has_fridge(user_id):
+        return "❌ شما یخچال ندارید! ابتدا با نوشتن «یخچالم» یخچال را خریداری کنید."
 
     fridge_level = db.get_fridge_level(user_id)
     cap = fridge_capacity(fridge_level)
@@ -154,6 +159,29 @@ def store_offered_item(user_id: int, food_key: str, weight: float) -> str:
     dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
     item_id = db.insert_fridge_item(user_id, food_key, weight)
     return f"❄️ {template['emoji']} {template['name']} با وزن {_code(to_persian_digits(f'{weight:.2f}'))} کیلو در یخچال ذخیره شد."
+
+
+def buy_fridge(user_id: int) -> str:
+    """
+    خرید یخچال با هزینه‌ی FRIDGE_BUY_COST.
+    اگر کاربر قبلاً یخچال داشته باشد یا پولش کافی نباشد، پیام خطا برمی‌گرداند.
+    """
+    if db.get_has_fridge(user_id):
+        return "❄️ شما قبلاً یخچال خریداری کرده‌اید!"
+
+    profile = db.get_profile(user_id)
+    wallet = profile["xp"] if profile else 0
+    cost = FRIDGE_BUY_COST
+
+    if wallet < cost:
+        missing = cost - wallet
+        return f"💰 برای خرید یخچال به {_code(to_persian_digits(cost))} صلوات پوینت نیاز داری.\nهنوز {_code(to_persian_digits(missing))} پوینت کم داری."
+
+    if not db.spend_points(user_id, cost):
+        return "⚠️ خطا در انجام خرید. دوباره امتحان کن."
+
+    db.set_has_fridge(user_id, True)
+    return f"🎉 یخچال صلواتی با موفقیت خریداری شد! هزینه: {_code(to_persian_digits(cost))} صلوات پوینت.\n\nحالا می‌تونی نذری‌هات رو توی یخچال ذخیره کنی و از قابلیت‌های یخچال استفاده کنی! ❄️"
 
 
 def build_fridge_text(user_id: int, display_name: str) -> str:

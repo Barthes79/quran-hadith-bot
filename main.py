@@ -119,6 +119,8 @@ from handlers.fridge import (
     nazri_offer_callback,
     nazri_item_callback,
     fridge_upgrade_callback,
+    buy_fridge_callback,
+    fridge_cancel_callback,
 )
 # ============================================
 # اضافه کردن هندلر انتقال صلوات
@@ -196,9 +198,7 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در یخچال/نذری: {e}")
 
-    # ============================================
-    # اضافه کردن هندلر انتقال صلوات
-    # ============================================
+    # انتقال صلوات پوینت بین کاربران (با ریپلای و تایید دو مرحله‌ای)
     try:
         if await transfer_text_handler(update, context, text):
             return
@@ -442,6 +442,8 @@ def main():
     app.add_handler(CallbackQueryHandler(nazri_offer_callback, pattern=r"^nzoffer:"))
     app.add_handler(CallbackQueryHandler(nazri_item_callback, pattern=r"^nzitem:"))
     app.add_handler(CallbackQueryHandler(fridge_upgrade_callback, pattern=r"^nzupgrade:\d+$"))
+    app.add_handler(CallbackQueryHandler(buy_fridge_callback, pattern=r"^buy_fridge:\d+$"))
+    app.add_handler(CallbackQueryHandler(fridge_cancel_callback, pattern=r"^fridge_cancel$"))
 
     # ==========================================
     # انتقال صلوات پوینت بین کاربران

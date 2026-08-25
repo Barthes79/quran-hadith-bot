@@ -1,412 +1,500 @@
 # -*- coding: utf-8 -*-
 """
-تنظیمات مرکزی سیستم گیمیفیکیشن.
+لایه‌ی دسترسی به دیتابیس برای گیمیفیکیشن.
 
-همه‌ی مقادیر قابل‌تنظیم (XP، سطح‌ها، کول‌داون‌ها، سقف‌های روزانه) اینجا
-تعریف می‌شوند تا هیچ‌جای دیگر کد hard-code نشوند. تغییر مقدار XP یک
-فعالیت فقط با ویرایش همین فایل انجام می‌شود.
+عمداً از همان الگوی پروژه (sqlite3 خام، get_connection از database.py)
+استفاده می‌شود تا سبک کد با بقیه‌ی پروژه یکدست بماند و وابستگی جدیدی
+اضافه نشود.
 """
 
-from zoneinfo import ZoneInfo
+import datetime
 
-# منطقه‌ی زمانی مرجع برای محاسبه‌ی «روز» (streak، ریست مأموریت‌های روزانه).
-# با بقیه‌ی جاهای پروژه (مثل schedule_daily_prayer_reminders) هماهنگ است.
-GAMIFICATION_TIMEZONE = ZoneInfo("Asia/Tehran")
+from database import get_connection
 
 
-# ---------------------------------------------------------------------------
-# انواع رویداد (Event Types)
-# ---------------------------------------------------------------------------
-# این‌ها به‌عنوان رشته ثابت نگه داشته می‌شوند (نه Enum) تا هم در دیتابیس
-# (ستون event_type) خوانا باشند و هم افزودن رویداد جدید نیازی به تغییر
-# import در جاهای مختلف نداشته باشد.
-
-EVENT_DAILY_LOGIN = "daily_login"
-EVENT_HADITH_VIEWED = "hadith_viewed"
-EVENT_QURAN_VIEWED = "quran_viewed"
-EVENT_NAHJ_VIEWED = "nahj_viewed"
-EVENT_MAFATIH_VIEWED = "mafatih_viewed"
-EVENT_QUIZ_STARTED = "quiz_started"
-EVENT_QUIZ_CORRECT = "quiz_correct"
-EVENT_MISSION_COMPLETE = "mission_complete"
-EVENT_SALAVAT_SENT = "salavat_sent"
-# محرک شخصیِ «صلوات پوینت» در پیوی (شبیه میو در Meowie) هم از همین
-# EVENT_SALAVAT_SENT استفاده می‌کند؛ صلوات‌شمار گروهی و صلوات پیوی هر دو
-# روی یک کول‌داون/سقف روزانه‌ی مشترک حساب می‌شوند تا یک کاربر با رفتن بین
-# گروه و پیوی XP دوبرابر نگیرد.
-EVENT_NAZRI_RECEIVED = "nazri_received"
-
-
-# ---------------------------------------------------------------------------
-# مقدار XP هر فعالیت
-# ---------------------------------------------------------------------------
-XP_REWARDS = {
-    EVENT_DAILY_LOGIN: 10,
-    EVENT_HADITH_VIEWED: 5,
-    EVENT_QURAN_VIEWED: 5,
-    EVENT_NAHJ_VIEWED: 5,
-    EVENT_MAFATIH_VIEWED: 5,
-    EVENT_QUIZ_STARTED: 3,
-    EVENT_QUIZ_CORRECT: 15,
-    EVENT_MISSION_COMPLETE: 30,
-    # صلوات با بقیه‌ی رویدادها فرق دارد؛ یک پیام می‌تواند عدد دلخواهی
-    # (مثلاً «۱۰۰ صلوات») را به شمارنده‌ی واقعیِ صلوات اضافه کند. اگر XP
-    # متناسب با آن عدد داده شود، هر کاربر می‌تواند با نوشتن یک عدد بزرگ
-    # در یک پیام XP نامحدود بگیرد. خودِ شمارنده‌ی واقعی صلوات (برای
-    # اهداف مذهبی/ختم‌ها) هرگز محدود یا دستکاری نمی‌شود؛ فقط لایه‌ی XP
-    # این سیستم محدود است.
-    # مقدار XP این رویداد دیگه از این دیکشنری خونده نمی‌شه -- صلوات‌پوینت
-    # حالا تصادفیه (بین SALAVAT_POINT_MIN و SALAVAT_POINT_MAX)، از طریق
-    # award_variable_xp/dispatch_event(xp_override=...) داده می‌شه. این
-    # عدد اینجا فقط برای مستندسازی نگه داشته شده.
-    EVENT_SALAVAT_SENT: 3,
-    # نذری برخلاف بقیه‌ی رویدادها XP ثابت ندارد -- هر آیتم نذری (قیمه،
-    # حلیم، ...) مقدار «دون» خودش را دارد که همان مقدار XP هم می‌شود.
-    # به همین دلیل award_variable_xp صدا زده می‌شود، نه award_xp؛ این عدد
-    # اینجا فقط برای مستندسازی است و در کد خوانده نمی‌شود.
-    EVENT_NAZRI_RECEIVED: 0,
-}
-
-
-# ---------------------------------------------------------------------------
-# Anti-Abuse: کول‌داون و سقف روزانه به‌ازای هر نوع رویداد
-# ---------------------------------------------------------------------------
-# cooldown_seconds: حداقل فاصله‌ی زمانی بین دو بار XP گرفتن برای همون کاربر
-#                    و همون نوع رویداد (نه لزوماً همون آیتم).
-# daily_cap:         حداکثر تعداد باری که این رویداد در یک شبانه‌روز (به وقت
-#                    GAMIFICATION_TIMEZONE) برای یک کاربر XP می‌دهد.
-# per_item_cooldown: اگر True باشد، کول‌داون به‌ازای هر آیتم (reference_id)
-#                    جداگانه اعمال می‌شود، نه کل نوع رویداد. مثلاً باز کردن
-#                    حدیث شماره‌ی ۵ نباید جلوی گرفتن XP از حدیث شماره‌ی ۶ را
-#                    بگیرد؛ ولی باز کردن دوباره‌ی همان حدیث ۵ در بازه‌ی کوتاه
-#                    نباید XP تکراری بدهد.
-ANTI_ABUSE_RULES = {
-    EVENT_DAILY_LOGIN: {"cooldown_seconds": 0, "daily_cap": 1, "per_item_cooldown": False},
-    EVENT_HADITH_VIEWED: {"cooldown_seconds": 20, "daily_cap": 30, "per_item_cooldown": True},
-    EVENT_QURAN_VIEWED: {"cooldown_seconds": 20, "daily_cap": 30, "per_item_cooldown": True},
-    EVENT_NAHJ_VIEWED: {"cooldown_seconds": 20, "daily_cap": 20, "per_item_cooldown": True},
-    EVENT_MAFATIH_VIEWED: {"cooldown_seconds": 20, "daily_cap": 20, "per_item_cooldown": True},
-    EVENT_QUIZ_STARTED: {"cooldown_seconds": 5, "daily_cap": 20, "per_item_cooldown": False},
-    EVENT_QUIZ_CORRECT: {"cooldown_seconds": 0, "daily_cap": 50, "per_item_cooldown": False},
-    EVENT_MISSION_COMPLETE: {"cooldown_seconds": 0, "daily_cap": 10, "per_item_cooldown": False},
-    # صلوات ذاتاً «کلیک تکراری مشروع» است (شمارش صلوات)؛ برخلاف حدیث/آیه که
-    # باز کردن مکررش مصنوعی است. پس اینجا per_item_cooldown بی‌معناست (آیتم
-    # مشخصی وجود ندارد). کول‌داون ۵ دقیقه‌ست تا هم صلوات‌شمار گروهی و هم
-    # محرک شخصیِ پیوی («صلوات») منطقی و بدون امکان اسپم باشند.
-    EVENT_SALAVAT_SENT: {"cooldown_seconds": 300, "daily_cap": 999999, "per_item_cooldown": False},    # نذری: کول‌داون ۱ ساعته، سقف روزانه‌ی معقول تا کسی همه‌ی روز رو صرف
-    # جمع‌کردن نذری برای یخچال نکنه.
-    EVENT_NAZRI_RECEIVED: {"cooldown_seconds": 3600, "daily_cap": 10, "per_item_cooldown": False},
-}
-
-
-# ---------------------------------------------------------------------------
-# سیستم Level
-# ---------------------------------------------------------------------------
-# فرمول: XP لازم برای رسیدن به سطح n = BASE_XP * n^EXPONENT
-# این فرمول (توان ۱.۵) نسبت به خطی (کسل‌کننده در سطوح بالا) و نمایی/توان ۲
-# (خیلی سریع غیرقابل‌دسترس می‌شود) تعادل بهتری بین «پیشرفت اولیه‌ی سریع
-# و انگیزه‌بخش» و «چالش‌برانگیز بودن سطوح بالا» ایجاد می‌کند.
-LEVEL_BASE_XP = 50
-LEVEL_EXPONENT = 1.5
-MAX_LEVEL = 100
-
-# عنوان‌های سطح — با احترام و بدون ادعای مقام معنوی واقعی
-LEVEL_TITLES = {
-    1: "🌱 آغازگر",
-    5: "📖 همراه قرآن",
-    10: "📚 جوینده معرفت",
-    15: "🕯️ اهل مطالعه",
-    20: "🌙 اهل ذکر",
-    30: "📿 پویای مسیر",
-    40: "🌿 راهجوی معرفت",
-    50: "🏛️ طالب معرفت",
-    65: "🕌 همراه همیشگی",
-    80: "🌟 ستاره‌ی پیشرفت",
-    100: "🏆 نمونه‌ی استمرار",
-}
-
-
-def get_level_title(level: int) -> str:
-    """عنوان مناسب‌ترین سطحِ کمتر یا مساوی level را برمی‌گرداند."""
-    applicable = [lvl for lvl in LEVEL_TITLES if lvl <= level]
-    if not applicable:
-        return LEVEL_TITLES[1]
-    return LEVEL_TITLES[max(applicable)]
-
-
-# ---------------------------------------------------------------------------
-# نقاط عطف Streak (فقط برای نمایش/اعلان، نه محدودیت)
-# ---------------------------------------------------------------------------
-STREAK_MILESTONES = [1, 3, 7, 14, 30, 60, 100, 365]
-
-
-# ---------------------------------------------------------------------------
-# شخصیت همراه: کبوتر 🕊️
-# ---------------------------------------------------------------------------
-
-# صلوات پوینت دیگه فلت نیست؛ هر بار «صلوات» یه عدد تصادفی توی این بازه
-# می‌ده (شبیه میو در Meowie که هر بار بین ~۱۴ تا ۸۰ پوینت می‌داد).
-SALAVAT_POINT_MIN = 14
-SALAVAT_POINT_MAX = 80
-
-# نام‌گذاری رویدادِ برداشتِ پوینتِ تولیدشده (idle harvest). چون از
-# grant_bonus_xp استفاده می‌شه (نه award_xp)، نیازی نیست تو XP_REWARDS یا
-# ANTI_ABUSE_RULES ثبت بشه؛ این ثابت فقط برای خوانایی/یکدستی کده.
-EVENT_PIGEON_HARVEST = "pigeon_harvest"
-
-# آیتم‌های نذری که با نوشتن «نذری» (کول‌داون ۱ ساعته) به‌صورت رندوم به
-# کاربر پیشنهاد می‌شه. هر بار وزن (weight) به‌صورت رندوم بین min_kg و
-# max_kg تعیین می‌شه؛ ارزش (برای فروش) متناسب با وزنه، ولی ارزش غذایی
-# (برای تغذیه‌ی کبوتر) ثابت و مستقل از وزنه.
-NAZRI_ITEMS = [
-    {"key": "gheimeh",     "name": "قیمه",             "emoji": "🍛", "min_kg": 0.3, "max_kg": 1.2, "value_per_kg": 1500, "nutrition": 6},
-    {"key": "halim",       "name": "حلیم",              "emoji": "🥣", "min_kg": 0.5, "max_kg": 2.0, "value_per_kg": 1200, "nutrition": 8},
-    {"key": "sholezard",   "name": "شله‌زرد",           "emoji": "🍮", "min_kg": 0.3, "max_kg": 1.5, "value_per_kg": 900,  "nutrition": 4},
-    {"key": "ashreshteh",  "name": "آش رشته",           "emoji": "🍜", "min_kg": 0.4, "max_kg": 1.8, "value_per_kg": 1100, "nutrition": 7},
-    {"key": "zereshkpolo", "name": "زرشک‌پلو با مرغ",   "emoji": "🍗", "min_kg": 0.5, "max_kg": 2.5, "value_per_kg": 2200, "nutrition": 10},
-    {"key": "sammanu",     "name": "سمنو",              "emoji": "🍯", "min_kg": 0.2, "max_kg": 1.0, "value_per_kg": 800,  "nutrition": 3},
-    {"key": "chaynabat",   "name": "چای و نبات",        "emoji": "☕", "min_kg": 0.1, "max_kg": 0.5, "value_per_kg": 400,  "nutrition": 1},
-    {"key": "ablimoo",     "name": "شربت آبلیمو",       "emoji": "🥤", "min_kg": 0.2, "max_kg": 0.8, "value_per_kg": 500,  "nutrition": 2},
-]
-NAZRI_ITEMS_BY_KEY = {item["key"]: item for item in NAZRI_ITEMS}
-
-# گرم‌کردن یه آیتمِ تو یخچال، بعد از این‌مدت آماده می‌شه و ارزش/ارزش
-# غذاییش چند برابر می‌شه (طبق ضرایب زیر).
-WARM_DURATION_SECONDS = 600  # ۱۰ دقیقه
-WARM_VALUE_MULTIPLIER = 2.0
-WARM_NUTRITION_MULTIPLIER = 2.0
-
-# یخچال صلواتی: هر سطح ظرفیت بیشتری داره؛ ارتقاش با خرج از کیف‌پول
-# صلوات‌پوینته (رشد نمایی‌گونه، شبیه هزینه‌ی ارتقای کبوتر).
-FRIDGE_BASE_CAPACITY = 2
-FRIDGE_CAPACITY_PER_LEVEL = 1
-FRIDGE_UPGRADE_BASE_COST = 200000
-FRIDGE_UPGRADE_GROWTH = 2.0
-
-
-def fridge_capacity(level: int) -> int:
-    """ظرفیت یخچال (چند تا آیتم هم‌زمان جا می‌شه) بر اساس سطح یخچال."""
-    return FRIDGE_BASE_CAPACITY + (level - 1) * FRIDGE_CAPACITY_PER_LEVEL
-
-
-def fridge_upgrade_cost(level: int) -> int:
-    """هزینه‌ی ارتقا از این سطح به سطح بعد. سطح ۱→۲ دقیقاً همون ۲۰۰,۰۰۰ست."""
-    return int(round(FRIDGE_UPGRADE_BASE_COST * (FRIDGE_UPGRADE_GROWTH ** (level - 1))))
-
-# ---------------------------------------------------------------------------
-# مسیرِ «پیشرفتِ قابلیت‌ها» (کاملاً جدا از مقام/سطحِ پولیِ کبوتر پایین‌تر!)
-# ---------------------------------------------------------------------------
-# 🔄 آستانه‌های جدید بر اساس درخواست کاربر:
-#
-# سطح ۰ = ۰ تا ۹ بار (پیش‌فرض)
-# سطح ۱ = ۱۰ تا ۲۴ بار
-# سطح ۲ = ۲۵ تا ۴۴ بار
-# سطح ۳ = ۴۵ تا ۶۹ بار
-# سطح ۴ = ۷۰ تا ۹۹ بار
-# سطح ۵ = ۱۰۰ تا ۱۲۹ بار
-# سطح ۶ = ۱۳۰ تا ۱۵۹ بار
-# سطح ۷ = ۱۶۰ تا ۱۸۹ بار
-# سطح ۸ = ۱۹۰ به بالا (سقف)
-#
-# آستانه‌های تجمعی (تعداد کل صلوات برای رسیدن به هر سطح):
-PIGEON_FEATURE_THRESHOLDS = [10, 25, 45, 70, 100, 130, 160, 190]
-PIGEON_MAX_FEATURE_LEVEL = len(PIGEON_FEATURE_THRESHOLDS)  # ۸ (سطح ۱ تا ۸)
-
-
-def pigeon_feature_level_for_count(salavat_count: int) -> int:
-    """
-    سطحِ قابلیت‌ها رو از روی تعدادِ تجمعیِ صلواتِ کاملِ گفته‌شده حساب می‌کنه.
-    
-    🔄 سطح‌بندی جدید:
-    - ۰ تا ۹ بار = سطح ۰
-    - ۱۰ تا ۲۴ بار = سطح ۱
-    - ۲۵ تا ۴۴ بار = سطح ۲
-    - ۴۵ تا ۶۹ بار = سطح ۳
-    - ۷۰ تا ۹۹ بار = سطح ۴
-    - ۱۰۰ تا ۱۲۹ بار = سطح ۵
-    - ۱۳۰ تا ۱۵۹ بار = سطح ۶
-    - ۱۶۰ تا ۱۸۹ بار = سطح ۷
-    - ۱۹۰ به بالا = سطح ۸ (سقف)
-    """
-    level = 0
-    for i, threshold in enumerate(PIGEON_FEATURE_THRESHOLDS, start=1):
-        if salavat_count >= threshold:
-            level = i
-        else:
-            break
-    return level
-
-
-def pigeon_count_for_next_feature_level(feature_level: int):
-    """آستانه‌ی تجمعیِ لازم برای سطحِ بعدیِ قابلیت‌ها؛ اگه به سقف
-    (PIGEON_MAX_FEATURE_LEVEL) رسیده باشه None برمی‌گردونه.
-    
-    با سطح‌بندی جدید:
-    - سطح ۰ → آستانه‌ی ۱۰ (سطح ۱)
-    - سطح ۱ → آستانه‌ی ۲۵ (سطح ۲)
-    - سطح ۲ → آستانه‌ی ۴۵ (سطح ۳)
-    - سطح ۳ → آستانه‌ی ۷۰ (سطح ۴)
-    - سطح ۴ → آستانه‌ی ۱۰۰ (سطح ۵)
-    - سطح ۵ → آستانه‌ی ۱۳۰ (سطح ۶)
-    - سطح ۶ → آستانه‌ی ۱۶۰ (سطح ۷)
-    - سطح ۷ → آستانه‌ی ۱۹۰ (سطح ۸)
-    - سطح ۸ → None (سقف)
-    """
-    if feature_level >= PIGEON_MAX_FEATURE_LEVEL:
-        return None
-    return PIGEON_FEATURE_THRESHOLDS[feature_level]
-
-
-# ============================================================
-# پیام‌های تبریک برای هر سطح (اصلاح‌شده)
-# ============================================================
-PIGEON_LEVEL_UP_MESSAGES = {
-    1: (
-        "🎉 *تبریک! به سطح ۱ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ دریافت صلوات پوینت از دیگران\n"
-        "✅ نذری گرفتن (با نوشتن «نذری»)\n\n"
-        "به مسیرت ادامه بده تا قابلیت‌های بیشتری باز بشه! 🚀"
-    ),
-    2: (
-        "🎉 *تبریک! به سطح ۲ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ انتقال صلوات پوینت به دیگران (با دستور «انتقال صلواتی X» روی ریپلای)\n"
-        "✅ پنل کبوتر (با نوشتن «کبوترم»)\n\n"
-        "حالا می‌تونی پنل کبوترت رو ببینی و مدیریت کنی! 🕊️"
-    ),
-    3: (
-        "🎉 *تبریک! به سطح ۳ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ (به‌زودی اضافه می‌شه)\n\n"
-        "به رشدت ادامه بده! 🌱"
-    ),
-    4: (
-        "🎉 *تبریک! به سطح ۴ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ (به‌زودی اضافه می‌شه)\n\n"
-        "عالی پیش می‌ری! 💪"
-    ),
-    5: (
-        "🎉 *تبریک! به سطح ۵ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ یخچالم (با نوشتن «یخچالم»)\n\n"
-        "حالا می‌تونی آیتم‌های نذری ذخیره‌شده‌ات رو مدیریت کنی! ❄️"
-    ),
-    6: (
-        "🎉 *تبریک! به سطح ۶ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ (به‌زودی اضافه می‌شه)\n\n"
-        "به راهت ادامه بده! 🌟"
-    ),
-    7: (
-        "🎉 *تبریک! به سطح ۷ رسیدی!*\n\n"
-        "🔓 قابلیت‌های جدید:\n"
-        "✅ (به‌زودی اضافه می‌شه)\n\n"
-        "چقدر خوب پیش می‌ری! ✨"
-    ),
-    8: (
-        "🎉 *تبریک بزرگ! به سطح ۸ (نهایی) رسیدی!*\n\n"
-        "🔓 تمام قابلیت‌ها برات باز شد!\n"
-        "✅ نذری\n"
-        "✅ دریافت صلوات پوینت\n"
-        "✅ انتقال صلوات پوینت\n"
-        "✅ پنل کبوتر\n"
-        "✅ یخچالم\n\n"
-        "تو به اوج رسیدی! به خودت افتخار کن! 👑🏆"
-    ),
-}
-
-
-def get_pigeon_level_up_message(level: int) -> str:
-    """پیام تبریک برای سطح مورد نظر را برمی‌گرداند."""
-    return PIGEON_LEVEL_UP_MESSAGES.get(
-        level,
-        f"🎉 *تبریک! به سطح {level} رسیدی!*\n\nبه راهت ادامه بده! 🚀"
+def _ensure_profile(cur, user_id: int):
+    """اگر پروفایل گیمیفیکیشن کاربر وجود نداشت، با مقادیر پیش‌فرض می‌سازد."""
+    cur.execute(
+        "INSERT OR IGNORE INTO gamification_profile (user_id) VALUES (?)",
+        (user_id,),
     )
 
 
-# ---------------------------------------------------------------------------
-# مقام/سطحِ پولیِ کبوتر: با خرجِ صلوات‌پوینتِ کیف‌پول لول‌آپ می‌شه، نرخِ
-# تولیدِ خودکار رو تعیین می‌کنه، و کاملاً مستقل از «پیشرفتِ قابلیت‌ها»‌ی
-# بالاست.
-# ---------------------------------------------------------------------------
-# هر «مقام» یه سقفِ سطح (cap) داره؛ کاربر با خرجِ صلوات‌پوینت از کیف‌پولش
-# سطح‌به‌سطح می‌ره بالا (۱ تا cap، تولیدِ خودکار هر بار ۰.۱ به‌ازای هر سطح
-# زیاد می‌شه). وقتی به سقفِ مقام رسید، به‌جای «ارتقا سطح»، یه اقدامِ
-# سنگین‌ترِ «ارتقا کبوتر» میاد: اسمِ مقام عوض می‌شه، سطح از ۱ ریست می‌شه،
-# و تولیدِ خودکار هم دوباره از ۰.۱ شروع می‌شه. آخرین آیتمِ لیست مقامِ
-# نهاییه (rank_up_cost=None).
-#
-# شماره‌ی هر مقام (۱ تا ۵) به صورت خودکار از اندیس+۱ در لیست محاسبه می‌شه.
-# برای خوانایی بهتر، کنار هر اسم با «مقام X» نمایش داده می‌شه.
-PIGEON_RANK_STAGES = [
-    {"name": "🐣 جوجه‌کبوتر",       "cap": 5,  "rank_up_cost": 800},
-    {"name": "🕊️ کبوتر مهربون",     "cap": 10, "rank_up_cost": 3000},
-    {"name": "☁️ کبوتر نورانی",     "cap": 15, "rank_up_cost": 9000},
-    {"name": "🌟 کبوتر پرافتخار",   "cap": 20, "rank_up_cost": 20000},
-    {"name": "👑 کبوتر ملکوتی",     "cap": 25, "rank_up_cost": None},
-]
+def _ensure_fridge_column(cur):
+    """اطمینان از وجود ستون has_fridge در جدول gamification_profile."""
+    cur.execute("PRAGMA table_info(gamification_profile)")
+    columns = [row[1] for row in cur.fetchall()]
+    if "has_fridge" not in columns:
+        cur.execute("ALTER TABLE gamification_profile ADD COLUMN has_fridge INTEGER DEFAULT 0")
 
 
-def pigeon_level_up_cost(global_level: int) -> int:
-    """هزینه‌ی خرجِ صلوات‌پوینت برای رفتن یه سطحِ بالاتر (داخلِ همون مقام،
-    نه ارتقا مقام). global_level تجمعیه (هیچ‌وقت با عوض‌شدنِ مقام ریست
-    نمی‌شه، فقط sub_level نمایشی ریست می‌شه) تا هزینه پیوسته رشد کنه.
-    رشد نمایی‌گونه: سطح ۱→۲ حدود ۱۰۰، ۲→۳ حدود ۴۵۰، ..."""
-    return int(round(100 * (global_level ** 2.17)))
+def get_profile(user_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT * FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
-def pigeon_stage_info(global_level: int) -> dict:
-    """بر اساسِ global_level (تجمعی)، مقامِ فعلی + سطحِ نمایشیِ داخلِ مقام
-    (sub_level، از ۱ شروع می‌شه) + سقفِ اون مقام رو برمی‌گردونه. اگه از
-    آخرین مقام هم رد شده باشه، همون مقامِ آخر با سطحِ پر (سقفِ کامل)
-    برگردونده می‌شه.
-    
-    شماره‌ی مقام (stage_number) هم به صورت ۱-۵ برمی‌گرده تا تو کارت وضعیت
-    کنار اسم مقام نمایش داده بشه.
+def last_event_time(user_id: int, event_type: str, reference_id: str | None, per_item: bool):
+    """آخرین زمانی که این کاربر برای این نوع رویداد (یا این آیتم مشخص،
+    اگر per_item باشد) XP گرفته را برمی‌گرداند، یا None."""
+    conn = get_connection()
+    if per_item and reference_id is not None:
+        row = conn.execute(
+            """SELECT created_at FROM xp_transactions
+               WHERE user_id = ? AND event_type = ? AND reference_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, event_type, str(reference_id)),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """SELECT created_at FROM xp_transactions
+               WHERE user_id = ? AND event_type = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, event_type),
+        ).fetchone()
+    conn.close()
+    return row["created_at"] if row else None
+
+
+def count_events_today(user_id: int, event_type: str, day_key: str) -> int:
+    """تعداد رویدادهای این نوع که امروز (day_key) برای این کاربر XP داده‌اند."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT COUNT(*) AS c FROM xp_transactions
+           WHERE user_id = ? AND event_type = ? AND date(created_at) = date(?)""",
+        (user_id, event_type, day_key),
+    ).fetchone()
+    conn.close()
+    return row["c"] if row else 0
+
+
+def insert_xp_transaction(user_id: int, event_type: str, xp: int,
+                           reference_id: str | None, idempotency_key: str) -> bool:
     """
-    remaining = global_level
-    for i, stage in enumerate(PIGEON_RANK_STAGES):
-        if remaining <= stage["cap"]:
-            return {
-                "stage_index": i,
-                "stage_number": i + 1,  # شماره‌ی مقام (۱ تا ۵)
-                "name": stage["name"],
-                "sub_level": remaining,
-                "cap": stage["cap"],
-                "rank_up_cost": stage["rank_up_cost"],
-                "is_last_stage": i == len(PIGEON_RANK_STAGES) - 1,
-            }
-        remaining -= stage["cap"]
+    یک تراکنش XP ثبت می‌کند و XP کل پروفایل را atomic آپدیت می‌کند.
+    اگر idempotency_key از قبل ثبت شده باشد (رویداد تکراری)، هیچ کاری
+    نمی‌کند و False برمی‌گرداند.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            """INSERT INTO xp_transactions (user_id, event_type, xp, reference_id, idempotency_key)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, event_type, xp, str(reference_id) if reference_id is not None else None,
+             idempotency_key),
+        )
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (xp, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        # idempotency_key تکراری → UNIQUE constraint خطا می‌دهد؛ یعنی این
+        # رویداد قبلاً ثبت شده، پس به‌درستی نادیده گرفته می‌شود.
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
-    last_index = len(PIGEON_RANK_STAGES) - 1
-    last = PIGEON_RANK_STAGES[last_index]
-    return {
-        "stage_index": last_index,
-        "stage_number": last_index + 1,
-        "name": last["name"],
-        "sub_level": last["cap"],
-        "cap": last["cap"],
-        "rank_up_cost": None,
-        "is_last_stage": True,
+
+def set_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_streak(user_id: int, current_streak: int, longest_streak: int,
+                   last_activity_date: str, first_activity_date: str = None):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    if first_activity_date:
+        cur.execute(
+            """UPDATE gamification_profile
+               SET current_streak = ?, longest_streak = ?, last_activity_date = ?,
+                   first_activity_date = COALESCE(first_activity_date, ?)
+               WHERE user_id = ?""",
+            (current_streak, longest_streak, last_activity_date, first_activity_date, user_id),
+        )
+    else:
+        cur.execute(
+            """UPDATE gamification_profile
+               SET current_streak = ?, longest_streak = ?, last_activity_date = ?
+               WHERE user_id = ?""",
+            (current_streak, longest_streak, last_activity_date, user_id),
+        )
+    conn.commit()
+    conn.close()
+
+
+def increment_activity_counter(user_id: int, column: str, amount: int = 1):
+    """ستون‌های شمارنده‌ی total_hadith_read/total_quran_read/... را افزایش می‌دهد.
+    نام ستون از یک لیست سفید داخلی گرفته می‌شود تا هیچ‌گاه ورودی خام کاربر
+    مستقیم وارد SQL نشود."""
+    allowed = {
+        "total_hadith_read", "total_quran_read",
+        "total_quiz_played", "total_missions_completed",
+        "total_salavat_sent",
     }
+    if column not in allowed:
+        raise ValueError(f"ستون غیرمجاز: {column}")
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        f"UPDATE gamification_profile SET {column} = {column} + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    conn.close()
 
 
-def pigeon_production_rate(sub_level: int) -> float:
-    """صلوات پوینتِ تولیدی در ثانیه، وقتی سوخت (دون) داره. بر اساسِ
-    sub_level (سطحِ نمایشیِ *داخلِ مقامِ فعلی*، نه سطحِ تجمعی) محاسبه
-    می‌شه، پس با هر بار عوض‌شدنِ مقام دوباره از ۰.۱ شروع می‌شه: سطح ۱ =
-    ۰.۱، سطح ۲ = ۰.۲، ..."""
-    return round(0.1 * sub_level, 2)
+# ---------------------------------------------------------------------------
+# کیف پول و موجودی (عملیات اتمیک)
+# ---------------------------------------------------------------------------
+
+def spend_points(user_id: int, amount: int) -> bool:
+    """
+    اگه کیف‌پول (ستون xp) کافی باشه، amount رو ازش کم می‌کنه و True
+    برمی‌گردونه؛ وگرنه بدون هیچ تغییری False. چک‌کردنِ موجودی و کم‌کردن
+    هر دو تو یه تراکنش انجام می‌شه تا race condition (مثلاً دو تا خرید
+    همزمان) باعث نشه موجودی منفی بشه.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        row = cur.execute(
+            "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        current = row["xp"] if row else 0
+        if current < amount:
+            conn.rollback()
+            return False
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
-def pigeon_fuel_capacity(global_level: int) -> int:
-    """ظرفیت سوخت (دون) کبوتر بر اساس سطحِ تجمعیِ کلی خودش (نه سطح xp
-    عمومی، نه sub_level) -- این یکی عمداً ریست نمی‌شه تا ظرفیت پیوسته
-    بزرگ‌تر بشه."""
-    return 5 + (global_level // 2)
+def add_points(user_id: int, amount: int) -> bool:
+    """
+    مقدار amount رو به کیف‌پول کاربر اضافه می‌کند (اتمیک).
+    برای انتقال صلوات پوینت بین کاربران استفاده می‌شود.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
-# هر واحد دون، این‌قدر ثانیه تولید رو تغذیه می‌کنه (۳۰ دقیقه به‌ازای هر واحد)
-PIGEON_FUEL_SECONDS_PER_UNIT = 1800
+# ---------------------------------------------------------------------------
+# شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
+# ---------------------------------------------------------------------------
+
+def get_pigeon_state(user_id: int) -> dict:
+    """نام، سطح کلی، سوخت فعلی، پوینتِ آماده‌ی برداشت، و آخرین زمان
+    سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
+                  pigeon_pending_points, pigeon_last_synced_at, pigeon_salavat_count
+           FROM gamification_profile WHERE user_id = ?""",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {
+            "pigeon_name": None, "pigeon_seed": 0,
+            "pigeon_global_level": 1, "pigeon_pending_points": 0,
+            "pigeon_last_synced_at": None, "pigeon_salavat_count": 0,
+        }
+    return dict(row)
+
+
+def set_pigeon_name(user_id: int, name: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_name = ? WHERE user_id = ?",
+        (name, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, synced_at: str):
+    """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، پوینتِ
+    اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        """UPDATE gamification_profile
+           SET pigeon_seed = ?, pigeon_pending_points = ?, pigeon_last_synced_at = ?
+           WHERE user_id = ?""",
+        (seed, pending, synced_at, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_pigeon_pending(user_id: int, pending: float):
+    """بعد از برداشت، باقی‌مانده‌ی اعشاریِ pending (بخشی که هنوز به
+    عددِ صحیح نرسیده) رو ذخیره می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_pending_points = ? WHERE user_id = ?",
+        (pending, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_pigeon_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_global_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
+    """شمارنده‌ی دفعاتی که کاربر *عینِ کاملِ* عبارتِ صلوات رو نوشته
+    (چه پیوی چه گروه) رو +amount می‌کنه و مقدارِ جدید رو برمی‌گردونه.
+    این شمارنده کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ
+    کیف‌پوله (EVENT_SALAVAT_SENT) -- هیچ‌وقت محدود نمی‌شه، چون منبعِ
+    تنهای لول‌آپِ کبوتره، نه یه ارزِ قابل‌فارم‌کردن."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = pigeon_salavat_count + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else amount
+
+
+def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
+    """
+    تنظیم مستقیم تعداد صلوات کامل کاربر به مقدار new_count.
+    فقط برای استفاده‌ی ادمین (تست) در نظر گرفته شده است.
+    """
+    if new_count < 0:
+        new_count = 0
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = ? WHERE user_id = ?",
+        (new_count, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده + خرید یخچال)
+# ---------------------------------------------------------------------------
+
+def get_fridge_level(user_id: int) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["fridge_level"] if row and row["fridge_level"] else 1
+
+
+def set_fridge_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_has_fridge(user_id: int) -> bool:
+    """بررسی می‌کند که آیا کاربر یخچال خریداری کرده است یا نه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT has_fridge FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return bool(row["has_fridge"]) if row else False
+
+
+def set_has_fridge(user_id: int, value: bool) -> None:
+    """تنظیم وضعیت خرید یخچال برای کاربر."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET has_fridge = ? WHERE user_id = ?",
+        (1 if value else 0, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def count_fridge_items(user_id: int) -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM nazri_items WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["c"] if row else 0
+
+
+def get_fridge_items(user_id: int) -> list:
+    """همه‌ی آیتم‌های تو یخچالِ این کاربر، قدیمی‌ترین اول."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM nazri_items WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_fridge_item(user_id: int, item_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def insert_fridge_item(user_id: int, food_key: str, weight: float) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO nazri_items (user_id, food_key, weight) VALUES (?, ?, ?)",
+        (user_id, food_key, weight),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+
+def delete_fridge_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def start_warming_item(user_id: int, item_id: int, started_at: str, ready_at: str) -> bool:
+    """فقط اگه آیتم قبلاً رو گرم‌کن گذاشته نشده باشه، تایمرش رو شروع می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE nazri_items SET warm_started_at = ?, warm_ready_at = ?
+           WHERE id = ? AND user_id = ? AND warm_started_at IS NULL AND is_warmed = 0""",
+        (started_at, ready_at, item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
+def finalize_warm_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE nazri_items SET is_warmed = 1 WHERE id = ? AND user_id = ? AND is_warmed = 0",
+        (item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
