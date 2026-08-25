@@ -3,7 +3,7 @@ import re
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from telegram.constants import ChatType, ParseMode  # ✅ ParseMode اضافه شد
+from telegram.constants import ChatType, ParseMode
 from database import (
     get_group_settings, update_group_settings, get_all_active_daily_groups,
     get_random_hadith, get_random_nahj_item, get_random_mafatih_item, get_connection,
@@ -45,7 +45,7 @@ def _code(value) -> str:
     return f"`{value}`"
 
 # ============================================================
-# دستورات ادمین برای تست
+# دستورات ادمین برای تست (با پیام تبریک کامل)
 # ============================================================
 
 async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,20 +74,36 @@ async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("⚠️ مقدار وارد شده باید یک عدد صحیح باشد.")
         return
 
-    # تنظیم تعداد برای خود کاربر
     user_id = user.id
+
+    # دریافت سطح قبلی قبل از تغییر
+    old_progress = get_pigeon_feature_progress(user_id)
+    old_level = old_progress["level"]
+
+    # تنظیم تعداد جدید
     set_pigeon_salavat_count(user_id, new_count)
 
     # محاسبه سطح جدید
     new_level = pigeon_feature_level_for_count(new_count)
-    progress = get_pigeon_feature_progress(user_id)
+    new_progress = get_pigeon_feature_progress(user_id)
 
-    msg = (
-        f"✅ تعداد صلوات کامل شما به {_code(to_persian_digits(new_count))} تنظیم شد.\n"
-        f"سطح فعلی «پیشرفت قابلیت‌ها»: {_code(to_persian_digits(new_level))}\n"
-        f"تعداد صلوات تا سطح بعدی: {_code(to_persian_digits(progress['remaining'])) if progress['remaining'] > 0 else 'به سقف رسیده‌اید'}\n\n"
-        f"برای مشاهده‌ی کارت کبوتر، «کبوترم» را بفرستید."
-    )
+    # ساخت پیام اصلی
+    msg_lines = [
+        f"✅ تعداد صلوات کامل شما به {_code(to_persian_digits(new_count))} تنظیم شد.",
+        f"سطح فعلی «پیشرفت قابلیت‌ها»: {_code(to_persian_digits(new_level))}",
+        f"تعداد صلوات تا سطح بعدی: {_code(to_persian_digits(new_progress['remaining'])) if new_progress['remaining'] > 0 else 'به سقف رسیده‌اید'}",
+    ]
+
+    # اگر سطح بالا رفته، پیام تبریک اضافه کن
+    if new_level > old_level:
+        level_up_message = get_pigeon_level_up_message(new_level)
+        msg_lines.append("\n" + level_up_message)
+
+    # اگر سطح پایین رفته، اطلاع بده
+    elif new_level < old_level:
+        msg_lines.append(f"\n⚠️ سطح شما از {old_level} به {new_level} کاهش یافت.")
+
+    msg = "\n".join(msg_lines)
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
