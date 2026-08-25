@@ -32,6 +32,7 @@ from .config import (
     pigeon_fuel_capacity, pigeon_stage_info, pigeon_level_up_cost, pigeon_production_rate,
     pigeon_feature_level_for_count, pigeon_count_for_next_feature_level,
     fridge_capacity,
+    get_pigeon_level_up_message,
 )
 from text_utils import to_persian_digits, normalize_for_search
 
@@ -217,10 +218,12 @@ def register_pigeon_feature_progress(user_id: int) -> dict:
 
 
 def _pigeon_feature_levelup_line(level_result: dict) -> str:
-    return (
-        f"🔓 پیشرفتِ قابلیت‌هات رفت سطح {_code(to_persian_digits(level_result['new_level']))}! "
-        f"(قابلیت‌های هر سطح به‌زودی اضافه می‌شن)"
-    )
+    """
+    پیام تبریک کامل برای وقتی که کاربر به سطح جدیدی می‌رسد.
+    اگر سطح ۱، ۲، ۵ یا ۸ باشد، پیام اختصاصی با توضیح قابلیت‌ها نشان داده می‌شود.
+    """
+    new_level = level_result['new_level']
+    return get_pigeon_level_up_message(new_level)
 
 
 def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dict | None = None) -> str:
@@ -233,9 +236,9 @@ def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dic
     مستقل از این‌که کیف‌پول award شده باشه یا نه (کول‌داون/سقفِ روزانه
     خورده باشه هم فرقی نداره)، پیامِ پیشرفتِ قابلیت‌ها رو اضافه می‌کنه.
     """
-    leveled_up_line = None
+    leveled_up_message = None
     if feature_progress_result and feature_progress_result.get("leveled_up"):
-        leveled_up_line = _pigeon_feature_levelup_line(feature_progress_result)
+        leveled_up_message = _pigeon_feature_levelup_line(feature_progress_result)
 
     if result["awarded"]:
         profile = db.get_profile(user_id)
@@ -247,24 +250,30 @@ def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dic
             f"💰 صلوات پوینت‌هات: {_code(total_str)} 🪙",
             f"⏳ بعد از {_code(_format_cooldown(remaining))} می‌تونی دوباره صلوات پوینت بگیری.",
         ]
-        # 🔄 خط مربوط به سطح کلی حساب (XP) حذف شد تا کاربران فقط پیام صلوات رو ببینند.
+        # 🔄 خط مربوط به سطح کلی حساب (XP) حذف شد.
         # if result["leveled_up"]:
         #     lines.append(f"🌟 سطح کلیِ حسابت هم رفت {_code(to_persian_digits(result['new_level']))}!")
-        if leveled_up_line:
-            lines.append(leveled_up_line)
+        if leveled_up_message:
+            lines.append("\n" + leveled_up_message)
         return "\n".join(lines)
 
     if result["reason"] == "cooldown":
         remaining = seconds_until_next(user_id, EVENT_SALAVAT_SENT)
         base = f"⏳ صلوات پوینتِ بعدیت {_code(_format_cooldown(remaining))} دیگه آماده می‌شه 🌹"
-        return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+        if leveled_up_message:
+            return f"{base}\n\n{leveled_up_message}"
+        return base
 
     if result["reason"] == "daily_cap":
         base = "🌙 امروز به سقف صلوات پوینت رسیدی؛ فردا دوباره تلاش کن 🌹"
-        return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+        if leveled_up_message:
+            return f"{base}\n\n{leveled_up_message}"
+        return base
 
     base = "🌹 صلوات قبول باشه."
-    return f"{base}\n\n{leveled_up_line}" if leveled_up_line else base
+    if leveled_up_message:
+        return f"{base}\n\n{leveled_up_message}"
+    return base
 
 
 def build_salavat_card_from_dispatch(user_id: int, dispatch_result: dict) -> str:
