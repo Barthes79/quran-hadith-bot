@@ -3,7 +3,7 @@ import re
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from telegram.constants import ChatType
+from telegram.constants import ChatType, ParseMode  # ✅ ParseMode اضافه شد
 from database import (
     get_group_settings, update_group_settings, get_all_active_daily_groups,
     get_random_hadith, get_random_nahj_item, get_random_mafatih_item, get_connection,
@@ -15,10 +15,9 @@ from handlers.hadith import format_hadith
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 from services.quran_api import get_ayah, get_surah_list
 from gamification.events import dispatch_event
-from gamification.config import EVENT_DAILY_LOGIN
+from gamification.config import EVENT_DAILY_LOGIN, pigeon_feature_level_for_count, get_pigeon_level_up_message
 from gamification.pigeon import get_pigeon_feature_progress
 from gamification.db import set_pigeon_salavat_count
-from gamification.config import pigeon_feature_level_for_count, get_pigeon_level_up_message
 from text_utils import to_persian_digits
 
 MAFATIH_CATEGORY_FA = {
@@ -98,7 +97,7 @@ async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAUL
 
 async def is_group_admin(update: Update) -> bool:
     if update.effective_chat.type == ChatType.PRIVATE:
-        return True  # در چت خصوصی محدودیتی نیست
+        return True
     member = await update.effective_chat.get_member(update.effective_user.id)
     return member.status in ("administrator", "creator")
 
@@ -260,7 +259,6 @@ async def group_settings_router(update: Update, context: ContextTypes.DEFAULT_TY
         settings = get_group_settings(chat_id)
         col = f"content_{ctype}"
         new_val = 0 if settings[col] else 1
-        # اجازه نده هر ۴ نوع محتوا هم‌زمان خاموش بشه (چون دیگه چیزی برای ارسال نمی‌مونه)
         others_on = any(settings[f"content_{t}"] for t in CONTENT_TYPES if t != ctype)
         if new_val == 0 and not others_on:
             await query.answer("باید حداقل یک نوع محتوا فعال بماند.", show_alert=True)
@@ -450,9 +448,6 @@ def _format_nahj_post(row):
     preview = body if len(body) <= 500 else body[:500].rstrip() + "…"
     text = f"{cat_label} — {item_label} {number}{title_suffix}\n\n{preview}"
 
-    # دکمه‌ی «مشاهده کامل» فقط وقتی نشان داده شود که واقعاً چیزی فراتر از همین
-    # پیش‌نمایش هست: یا متن ترجمه بریده شده، یا متن عربی/شرح جداگانه‌ای وجود
-    # دارد که در پست گروه نیامده. اگر همین متن، کل محتواست، دکمه اضافی است.
     truncated = len(body) > 500
     has_arabic = bool(row["arabic_text"])
     has_tafsir = bool(row["tafsir_text"])
@@ -475,9 +470,6 @@ def _format_mafatih_post(row):
     preview = body if len(body) <= 500 else body[:500].rstrip() + "…"
     text = f"{cat_label} — {row['title']}\n\n{preview}"
 
-    # همان منطق: فقط وقتی دکمه بگذار که چیزی بیشتر از پیش‌نمایش وجود دارد
-    # (متن بریده شده، یا وقتی ترجمه نشان داده شده ولی متن عربی جداگانه‌ای هم
-    # هست که دیده نشده، یا شرح/توضیح اضافه‌ای ثبت شده).
     truncated = len(body) > 500
     hidden_arabic = bool(translation) and bool(arabic)
     has_tafsir = bool(tafsir)
@@ -493,7 +485,6 @@ def _format_mafatih_post(row):
 
 
 async def _build_random_content(enabled_types):
-    """یکی از انواع محتوای فعال را به‌صورت تصادفی انتخاب و متن/دکمه‌ی آن را می‌سازد."""
     random.shuffle(enabled_types)
     for content_type in enabled_types:
         text, markup = None, None
@@ -529,7 +520,6 @@ async def _send_random_content(context: ContextTypes.DEFAULT_TYPE, chat_id: int)
 
 
 async def group_send_now_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """نگه‌داشته‌شده برای سازگاری با کالبک قدیمی؛ منطق جدید از طریق gset_send_now هم در دسترس است."""
     query = update.callback_query
     await query.answer()
     await _send_random_content(context, update.effective_chat.id)
@@ -544,7 +534,6 @@ def _in_quiet_hours(hour: int, start, end) -> bool:
         return False
     if start < end:
         return start <= hour < end
-    # بازه‌ای که از نیمه‌شب رد می‌شود (مثلاً ۲۳ تا ۷)
     return hour >= start or hour < end
 
 
@@ -579,16 +568,6 @@ def _set_last_sent_key(conn, chat_id, key):
 
 
 async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    این تابع هر ساعت توسط JobQueue اجرا می‌شود و بررسی می‌کند کدام گروه‌ها
-    باید در این ساعت پست دریافت کنند (با توجه به ساعت شروع + فاصله‌ی زمانی،
-    بازه‌ی سکوت شبانه، و نوع محتوای انتخابی هر گروه).
-
-    برای جلوگیری از ارسال تکراری بعد از هر ری‌استارت ربات (مثلاً موقع دیپلوی
-    فایل جدید)، کلید «تاریخ-ساعت» آخرین ارسالِ هر گروه در دیتابیس ذخیره
-    می‌شود و اگر همین ساعت قبلاً برای آن گروه پست فرستاده شده باشد، دوباره
-    فرستاده نمی‌شود.
-    """
     now = datetime.datetime.now()
 
     conn = get_connection()
@@ -606,7 +585,7 @@ async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
 
         send_key = now.strftime("%Y-%m-%d-%H")
         if _get_last_sent_key(conn, g["chat_id"]) == send_key:
-            continue  # این ساعت قبلاً برای این گروه پست فرستاده شده
+            continue
 
         enabled_types = [t for t in CONTENT_TYPES if g[f"content_{t}"]]
         if not enabled_types:
@@ -620,14 +599,13 @@ async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(g["chat_id"], text, reply_markup=markup)
             _set_last_sent_key(conn, g["chat_id"], send_key)
         except Exception:
-            # ربات ممکن است از گروه حذف شده باشد؛ می‌توان اینجا لاگ گرفت
             pass
 
     conn.close()
 
 
 # =====================================================================
-# مدیریت اعضای جدید/خارج‌شده (خوش‌آمدگویی سفارشی + پاک‌سازی پیام سرویس)
+# مدیریت اعضای جدید/خارج‌شده
 # =====================================================================
 
 async def member_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -668,22 +646,13 @@ async def member_update_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 # =====================================================================
-# ردیابی گروه‌هایی که ربات توشونه + آمار کلی برای ادمین‌ها
+# ردیابی گروه‌ها و آمار
 # =====================================================================
-# member_update_handler بالا فقط پیام سرویسِ «فلان کاربر اضافه/حذف شد» رو
-# می‌گیره که همیشه قابل‌اعتماد نیست (مثلاً اگه ربات از طریق لینک به گروه
-# اضافه بشه، یا از گروه بلاک/حذف بشه، ممکنه این پیام اصلاً ارسال نشه).
-# my_chat_member رسمی‌ترین و مطمئن‌ترین راهیه که تلگرام برای فهمیدنِ تغییر
-# وضعیت *خودِ ربات* (اضافه شدن/حذف شدن/بلاک شدن/ارتقا) در یک چت می‌ده، پس
-# جدول chats رو همیشه از همین‌جا به‌روز نگه می‌داریم.
 
 _ACTIVE_STATUSES = ("member", "administrator", "creator", "restricted")
 
 
 async def bot_chat_member_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """هر بار وضعیت عضویت خودِ ربات در یک چت تغییر کنه (اضافه شدن به گروه،
-    حذف/ترک/بلاک شدن، ارتقا به ادمین و ...)، این هندلر صدا زده می‌شه و جدول
-    chats رو به‌روز می‌کنه؛ پایه‌ی دستور /botstats همینه."""
     result = update.my_chat_member
     if not result:
         return
@@ -706,24 +675,14 @@ async def bot_chat_member_update_handler(update: Update, context: ContextTypes.D
 
 
 async def track_user_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """با هر آپدیتی که از یک کاربر واقعی میاد (پیام، دکمه، اینلاین‌کوئری و
-    ...) همون کاربر رو (اگه قبلاً نبوده) توی جدول users ثبت می‌کنه؛ مبنای
-    شمارش «چند نفر از ربات استفاده می‌کنن» توی /botstats همینه. چون
-    register_user با INSERT OR IGNORE کار می‌کنه، اجرای مکررش هزینه‌ای نداره
-    و نیازی به شرط اضافه نیست."""
     user = update.effective_user
     if not user or user.is_bot:
         return
     register_user(user.id, user.username)
-    # daily_cap=1 در تنظیمات Anti-Abuse تضمین می‌کند که حتی با اجرای این
-    # تابع روی هر آپدیت، XP و streak فقط یک‌بار در روز ثبت شود.
     await dispatch_event(EVENT_DAILY_LOGIN, user.id)
 
 
 async def bot_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دستور ادمین: /botstats — تعداد کاربرهای پیوی + لیست گروه‌هایی که ربات
-    الان توشونه. فقط برای ADMIN_IDS کار می‌کنه؛ برای بقیه اصلاً پاسخی داده
-    نمی‌شه، تا حتی وجود این دستور هم برای کاربر عادی لو نره."""
     if update.effective_user.id not in ADMIN_IDS:
         return
 
@@ -751,14 +710,11 @@ async def bot_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text(text, parse_mode="Markdown")
     except Exception:
-        # اسم بعضی گروه‌ها ممکنه کاراکترهای خاص مارک‌داون (مثل _ یا *) داشته
-        # باشه و parse رو خراب کنه؛ در این حالت بدون parse_mode می‌فرستیم تا
-        # حداقل خودِ آمار از دست نره.
         await update.message.reply_text(text)
 
 
 # =====================================================================
-# ضداسپم ساده: حذف خودکار لینک از پیام‌های غیرادمین (در صورت فعال بودن)
+# ضداسپم لینک
 # =====================================================================
 
 _LINK_PATTERN = re.compile(r"(https?://|t\.me/|telegram\.me/|www\.)\S+", re.IGNORECASE)
@@ -809,27 +765,13 @@ async def link_guard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ==========================================
-# اصلاح دستیِ audio_file_id یک دعا (وقتی file_id قبلی نامعتبر شده، مثلاً
-# چون مال بات دیگری بوده و تلگرام آن را رد می‌کند: «Wrong file identifier»)
+# اصلاح دستیِ audio_file_id یک دعا
 # ==========================================
 
-# (user_id, chat_id) ادمین -> شناسه‌ی (slug یا id) دعایی که منتظر آپلود صدای
-# جدیدش هستیم. chat_id هم عمداً توی کلید هست تا اگه همون ادمین توی یه چت
-# دیگه (نامرتبط با این عملیات) یه صوت/ویس بفرسته، اشتباهی به‌عنوان صدای این
-# دعا ذخیره نشه؛ فقط صوتی که *در همون مکالمه‌ی /setmafaudio* می‌رسه گرفته می‌شه.
 _PENDING_MAFATIH_AUDIO: dict[tuple[int, int], str] = {}
 
 
 async def set_mafatih_audio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    دستور /setmafaudio <شناسه>
-    شناسه همان چیزی است که در دکمه‌ی منو بعد از mafitem_ می‌آید (مثلاً برای
-    دعای کمیل: kumayl). بعد از این دستور، اولین فایل صوتی/ویسی که همین
-    ادمین در پیوی ربات بفرستد، به‌عنوان audio_file_id همان دعا ذخیره می‌شود
-    — چون این فایل مستقیماً توسط همین بات دریافت شده، file_id آن برای همین
-    بات همیشه معتبر خواهد بود (برخلاف file_id هایی که از یک بات دیگر کپی
-    شده باشند).
-    """
     if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("شما اجازه‌ی این دستور را ندارید.")
         return
@@ -858,14 +800,10 @@ async def set_mafatih_audio_command(update: Update, context: ContextTypes.DEFAUL
 
 
 async def mafatih_audio_upload_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    وقتی ادمینی که قبلاً /setmafaudio زده، یک فایل صوتی یا ویس بفرستد، این
-    هندلر آن را می‌گیرد و audio_file_id را در دیتابیس به‌روزرسانی می‌کند.
-    """
     key = (update.effective_user.id, update.effective_chat.id)
     identifier = _PENDING_MAFATIH_AUDIO.get(key)
     if not identifier:
-        return  # این ادمین توی این چت منتظر آپلود صدایی نیست؛ به هندلرهای دیگر بسپار
+        return
 
     message = update.message
     file_id = None
