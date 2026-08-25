@@ -10,8 +10,9 @@
 owner_id همیشه تو خودِ callback_data قایمه (دقیقاً همون الگوی
 handlers/pigeon.py) تا فقط صاحبِ پنل بتونه روی دکمه‌هاش بزنه.
 
-🔒 تغییر جدید: دسترسی به «نذری» فقط برای کاربرانی که به سطح ۱ (۱۰ صلوات کامل)
-رسیده‌اند فعال است. کاربران زیر سطح ۱ پیام توضیحی دریافت می‌کنند.
+🔒 تغییرات جدید:
+  - دسترسی به «نذری» فقط برای کاربران سطح ۱ به بالا.
+  - دسترسی به «یخچالم» فقط برای کاربران سطح ۵ به بالا.
 """
 
 import re
@@ -79,13 +80,44 @@ def _code(value) -> str:
     return f"`{value}`"
 
 
-async def _reply_feature_locked(update: Update, progress: dict) -> None:
-    """پیام قفل بودن نذری برای کاربران زیر سطح ۱.
-    عبارت صلوات داخل بک‌تیک قرار می‌گیرد تا کاربر بتواند کپی کند."""
+# ============================================================
+# توابع کمکی برای پیام‌های قفل
+# ============================================================
+
+async def _reply_fridge_locked(update: Update, progress: dict) -> None:
+    """پیام قفل برای «یخچالم» (سطح ۵)."""
     remaining = progress["remaining"]
     current_level = progress["level"]
     next_level = current_level + 1
-    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"  # 🔄 قابل کپی با بک‌تیک
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
+    
+    if remaining > 0:
+        msg = (
+            f"🔒 قابلیت «یخچالم» فقط برای کاربرانی که به سطح ۵ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای رسیدن به سطح بعدی (سطح {_code(to_persian_digits(next_level))})، باید "
+            f"{_code(to_persian_digits(remaining))} صلوات کامل دیگه بفرستید.\n"
+            f"{salavat_phrase}\n\n"
+            f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
+        )
+    else:
+        msg = (
+            f"🔒 قابلیت «یخچالم» فقط برای کاربرانی که به سطح ۵ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای فعال شدن این قابلیت، باید به سطح ۵ برسید."
+        )
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    logger.info("[DEBUG] Fridge (view) locked message sent.")
+
+
+async def _reply_nazri_locked(update: Update, progress: dict) -> None:
+    """پیام قفل برای «نذری» (سطح ۱)."""
+    remaining = progress["remaining"]
+    current_level = progress["level"]
+    next_level = current_level + 1
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
     
     if remaining > 0:
         msg = (
@@ -105,16 +137,21 @@ async def _reply_feature_locked(update: Update, progress: dict) -> None:
             f"برای فعال شدن این قابلیت، باید به سطح ۱ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-    logger.info("[DEBUG] Fridge locked message sent.")
+    logger.info("[DEBUG] Nazri locked message sent.")
 
+
+# ============================================================
+# هندلر اصلی متن
+# ============================================================
 
 async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     """
     اگه پیام «نذری» یا «یخچالم» باشه، پنل مربوطه رو می‌فرسته و True
     برمی‌گردونه؛ وگرنه False (هم پیوی هم گروه فعاله).
     
-    🔒 تغییر: «نذری» فقط برای کاربران سطح ۱ به بالا فعال است.
-    «یخچالم» بدون قفل و همیشه در دسترس است (برای مشاهده‌ی آیتم‌های موجود).
+    🔒 قفل‌ها:
+      - «نذری» -> سطح ۱ به بالا
+      - «یخچالم» -> سطح ۵ به بالا
     """
     if not update.message:
         return False
@@ -128,10 +165,9 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if normalized == "نذری":
         register_user(user.id, user.username)
         
-        # بررسی سطح کاربر
         progress = get_pigeon_feature_progress(user.id)
         if progress["level"] < 1:
-            await _reply_feature_locked(update, progress)
+            await _reply_nazri_locked(update, progress)
             return True
         
         rolled = roll_nazri(user.id)
@@ -146,10 +182,16 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return True
 
     # ============================================================
-    # «یخچالم» → بدون قفل (همیشه قابل مشاهده)
+    # «یخچالم» → نیاز به سطح ۵
     # ============================================================
     if normalized in _FRIDGE_TRIGGERS:
         register_user(user.id, user.username)
+        
+        progress = get_pigeon_feature_progress(user.id)
+        if progress["level"] < 5:
+            await _reply_fridge_locked(update, progress)
+            return True
+        
         from gamification import db
         fridge_text = build_fridge_text(user.id, _display_name(user))
         items = db.get_fridge_items(user.id)
@@ -160,6 +202,10 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     return False
 
+
+# ============================================================
+# کالبک‌های مربوط به آیتم‌های نذری (بدون تغییر)
+# ============================================================
 
 async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """دکمه‌های پنلِ پیشنهادِ نذری: فروش / تغذیه / یخچال."""
