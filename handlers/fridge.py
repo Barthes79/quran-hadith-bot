@@ -13,6 +13,7 @@ handlers/pigeon.py) تا فقط صاحبِ پنل بتونه روی دکمه‌�
 🔒 تغییرات جدید:
   - دسترسی به «نذری» فقط برای کاربران سطح ۱ به بالا.
   - دسترسی به «یخچالم» فقط برای کاربران سطح ۵ به بالا.
+  - دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
 """
 
 import re
@@ -52,13 +53,20 @@ _ITEM_PATTERN = re.compile(r"^nzitem:(sell|feed|warm):(\d+):(\d+)$")
 _UPGRADE_PATTERN = re.compile(r"^nzupgrade:(\d+)$")
 
 
-def _offer_keyboard(owner_id: int, food_key: str, weight: float) -> InlineKeyboardMarkup:
+def _offer_keyboard(owner_id: int, food_key: str, weight: float, user_level: int) -> InlineKeyboardMarkup:
+    """
+    ساخت کیبورد برای نذری پیشنهادی.
+    دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
+    """
     weight_str = f"{weight:.2f}"
-    return InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton("💰 فروش نذری", callback_data=f"nzoffer:sell:{owner_id}:{food_key}:{weight_str}")],
         [InlineKeyboardButton("🕊️ بده کبوترت بخوره", callback_data=f"nzoffer:feed:{owner_id}:{food_key}:{weight_str}")],
-        [InlineKeyboardButton("❄️ بندازش تو یخچال", callback_data=f"nzoffer:store:{owner_id}:{food_key}:{weight_str}")],
-    ])
+    ]
+    # فقط اگر کاربر سطح ۵ یا بالاتر باشد، دکمه‌ی یخچال را نشان بده
+    if user_level >= 5:
+        buttons.append([InlineKeyboardButton("❄️ بندازش تو یخچال", callback_data=f"nzoffer:store:{owner_id}:{food_key}:{weight_str}")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def _fridge_keyboard(owner_id: int, items: list) -> InlineKeyboardMarkup:
@@ -177,7 +185,8 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         item = rolled["item"]
         offer_text = build_offer_text(item)
-        keyboard = _offer_keyboard(user.id, item["food_key"], item["weight"])
+        # ارسال سطح کاربر به تابع سازنده کیبورد
+        keyboard = _offer_keyboard(user.id, item["food_key"], item["weight"], progress["level"])
         await update.message.reply_text(offer_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
         return True
 
@@ -204,7 +213,7 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ============================================================
-# کالبک‌های مربوط به آیتم‌های نذری (بدون تغییر)
+# کالبک‌های مربوط به آیتم‌های نذری (با چک سطح برای عملیات store)
 # ============================================================
 
 async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -225,6 +234,13 @@ async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
+
+    # اگر عمل «store» (یخچال) باشد، سطح کاربر را چک کن
+    if action == "store":
+        progress = get_pigeon_feature_progress(owner_id)
+        if progress["level"] < 5:
+            await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۵ به بالا فعال است.", show_alert=True)
+            return
 
     if action == "sell":
         message = sell_offered_item(owner_id, food_key, weight)
