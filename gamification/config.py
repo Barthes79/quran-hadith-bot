@@ -194,33 +194,24 @@ def fridge_upgrade_cost(level: int) -> int:
     """هزینه‌ی ارتقا از این سطح به سطح بعد. سطح ۱→۲ دقیقاً همون ۲۰۰,۰۰۰ست."""
     return int(round(FRIDGE_UPGRADE_BASE_COST * (FRIDGE_UPGRADE_GROWTH ** (level - 1))))
 
-# پیشرفت کبوتر دیگه با خرجِ پول نیست -- فقط با گفتنِ *عینِ کاملِ* عبارتِ
-# صلوات («اللهم صل علی محمد و آل محمد») بالا می‌ره. لیستِ زیر آستانه‌ی
-# *تجمعیِ* شمارش برای رسیدن به هر سطحه (نه تعدادِ افزایشی): سطح ۱ با ۱۰
-# بار صلواتِ کامل، سطح ۲ با ۳۰ بارِ مجموع (یعنی ۲۰ بارِ دیگه)، سطح ۳ با
-# ۷۰ بار (۴۰ بارِ دیگه)، و به همین ترتیب تا سطح ۸ (سقفِ نهایی) با ۴۶۰ بار
-# مجموع. بعد از سطح ۸ دیگه لول‌آپی در کار نیست.
-PIGEON_LEVEL_THRESHOLDS = [10, 30, 70, 120, 190, 270, 360, 460]
-PIGEON_MAX_LEVEL = len(PIGEON_LEVEL_THRESHOLDS)
-
-# هر سطح دقیقاً یه «مقام» جداگونه داره (۸ سطح = ۸ مقام، یک‌به‌یک).
-PIGEON_RANK_NAMES = [
-    "🐣 جوجه‌کبوتر",
-    "🕊️ بال سفید",
-    "☁️ بال نور",
-    "🌙 کبوتر حرم",
-    "✨ کبوتر نورانی",
-    "🌟 کبوتر پرافتخار",
-    "💫 کبوتر ملکوتی",
-    "👑 کبوتر جاودان",
-]
+# ---------------------------------------------------------------------------
+# مسیرِ «پیشرفتِ قابلیت‌ها» (کاملاً جدا از مقام/سطحِ پولیِ کبوتر پایین‌تر!)
+# ---------------------------------------------------------------------------
+# این با پول/تولید هیچ ربطی نداره؛ فقط با گفتنِ *عینِ کاملِ* عبارتِ صلوات
+# («اللهم صل علی محمد و آل محمد») بالا می‌ره و قراره بعداً یه سری قابلیتِ
+# دیگه (که هنوز مشخص نشده) رو باز کنه. لیستِ زیر آستانه‌ی *تجمعیِ* شمارش
+# برای رسیدن به هر سطحه (نه تعدادِ افزایشی): سطح ۱ با ۱۰ بار صلواتِ کامل،
+# سطح ۲ با ۳۰ بارِ مجموع (یعنی ۲۰ بارِ دیگه)، سطح ۳ با ۷۰ بار (۴۰ بارِ
+# دیگه)، و به همین ترتیب تا سطح ۸ (سقفِ نهایی) با ۴۶۰ بار مجموع.
+PIGEON_FEATURE_THRESHOLDS = [10, 30, 70, 120, 190, 270, 360, 460]
+PIGEON_MAX_FEATURE_LEVEL = len(PIGEON_FEATURE_THRESHOLDS)
 
 
-def pigeon_level_for_count(salavat_count: int) -> int:
-    """سطحِ کبوتر رو از روی تعدادِ تجمعیِ صلواتِ کاملِ گفته‌شده حساب می‌کنه.
-    قبل از رسیدن به اولین آستانه هم سطحِ ۱ (حداقل) برمی‌گرده."""
+def pigeon_feature_level_for_count(salavat_count: int) -> int:
+    """سطحِ قابلیت‌ها رو از روی تعدادِ تجمعیِ صلواتِ کاملِ گفته‌شده حساب
+    می‌کنه. قبل از رسیدن به اولین آستانه هم سطحِ ۱ (حداقل) برمی‌گرده."""
     level = 1
-    for i, threshold in enumerate(PIGEON_LEVEL_THRESHOLDS, start=1):
+    for i, threshold in enumerate(PIGEON_FEATURE_THRESHOLDS, start=1):
         if salavat_count >= threshold:
             level = i
         else:
@@ -228,28 +219,84 @@ def pigeon_level_for_count(salavat_count: int) -> int:
     return level
 
 
-def pigeon_count_for_next_level(global_level: int):
-    """آستانه‌ی تجمعیِ لازم برای سطحِ بعدی؛ اگه به سقف (PIGEON_MAX_LEVEL)
-    رسیده باشه None برمی‌گردونه."""
-    if global_level >= PIGEON_MAX_LEVEL:
+def pigeon_count_for_next_feature_level(feature_level: int):
+    """آستانه‌ی تجمعیِ لازم برای سطحِ بعدیِ قابلیت‌ها؛ اگه به سقف
+    (PIGEON_MAX_FEATURE_LEVEL) رسیده باشه None برمی‌گردونه."""
+    if feature_level >= PIGEON_MAX_FEATURE_LEVEL:
         return None
-    return PIGEON_LEVEL_THRESHOLDS[global_level]
+    return PIGEON_FEATURE_THRESHOLDS[feature_level]
 
 
-def pigeon_rank_name(global_level: int) -> str:
-    """اسمِ مقامِ متناظر با سطحِ فعلی (۱ تا ۸، یک‌به‌یک با PIGEON_RANK_NAMES)."""
-    idx = max(1, min(global_level, PIGEON_MAX_LEVEL)) - 1
-    return PIGEON_RANK_NAMES[idx]
+# ---------------------------------------------------------------------------
+# مقام/سطحِ پولیِ کبوتر: با خرجِ صلوات‌پوینتِ کیف‌پول لول‌آپ می‌شه، نرخِ
+# تولیدِ خودکار رو تعیین می‌کنه، و کاملاً مستقل از «پیشرفتِ قابلیت‌ها»‌ی
+# بالاست.
+# ---------------------------------------------------------------------------
+# هر «مقام» یه سقفِ سطح (cap) داره؛ کاربر با خرجِ صلوات‌پوینت از کیف‌پولش
+# سطح‌به‌سطح می‌ره بالا (۱ تا cap، تولیدِ خودکار هر بار ۰.۱ به‌ازای هر سطح
+# زیاد می‌شه). وقتی به سقفِ مقام رسید، به‌جای «ارتقا سطح»، یه اقدامِ
+# سنگین‌ترِ «ارتقا کبوتر» میاد: اسمِ مقام عوض می‌شه، سطح از ۱ ریست می‌شه،
+# و تولیدِ خودکار هم دوباره از ۰.۱ شروع می‌شه. آخرین آیتمِ لیست مقامِ
+# نهاییه (rank_up_cost=None).
+PIGEON_RANK_STAGES = [
+    {"name": "🐣 جوجه‌کبوتر",       "cap": 5,  "rank_up_cost": 800},
+    {"name": "🕊️ کبوتر مهربون",     "cap": 10, "rank_up_cost": 3000},
+    {"name": "☁️ کبوتر نورانی",     "cap": 15, "rank_up_cost": 9000},
+    {"name": "🌟 کبوتر پرافتخار",   "cap": 20, "rank_up_cost": 20000},
+    {"name": "👑 کبوتر ملکوتی",     "cap": 25, "rank_up_cost": None},
+]
 
 
-def pigeon_production_rate(global_level: int) -> float:
-    """صلوات پوینتِ تولیدی در ثانیه، وقتی سوخت (دون) داره. خطی و ساده:
-    سطح ۱ = ۰.۱، سطح ۲ = ۰.۲، ... (دقیقاً مثل فرمول Meowie)."""
-    return round(0.1 * global_level, 2)
+def pigeon_level_up_cost(global_level: int) -> int:
+    """هزینه‌ی خرجِ صلوات‌پوینت برای رفتن یه سطحِ بالاتر (داخلِ همون مقام،
+    نه ارتقا مقام). global_level تجمعیه (هیچ‌وقت با عوض‌شدنِ مقام ریست
+    نمی‌شه، فقط sub_level نمایشی ریست می‌شه) تا هزینه پیوسته رشد کنه.
+    رشد نمایی‌گونه: سطح ۱→۲ حدود ۱۰۰، ۲→۳ حدود ۴۵۰، ..."""
+    return int(round(100 * (global_level ** 2.17)))
+
+
+def pigeon_stage_info(global_level: int) -> dict:
+    """بر اساسِ global_level (تجمعی)، مقامِ فعلی + سطحِ نمایشیِ داخلِ مقام
+    (sub_level، از ۱ شروع می‌شه) + سقفِ اون مقام رو برمی‌گردونه. اگه از
+    آخرین مقام هم رد شده باشه، همون مقامِ آخر با سطحِ پر (سقفِ کامل)
+    برگردونده می‌شه."""
+    remaining = global_level
+    for i, stage in enumerate(PIGEON_RANK_STAGES):
+        if remaining <= stage["cap"]:
+            return {
+                "stage_index": i,
+                "name": stage["name"],
+                "sub_level": remaining,
+                "cap": stage["cap"],
+                "rank_up_cost": stage["rank_up_cost"],
+                "is_last_stage": i == len(PIGEON_RANK_STAGES) - 1,
+            }
+        remaining -= stage["cap"]
+
+    last_index = len(PIGEON_RANK_STAGES) - 1
+    last = PIGEON_RANK_STAGES[last_index]
+    return {
+        "stage_index": last_index,
+        "name": last["name"],
+        "sub_level": last["cap"],
+        "cap": last["cap"],
+        "rank_up_cost": None,
+        "is_last_stage": True,
+    }
+
+
+def pigeon_production_rate(sub_level: int) -> float:
+    """صلوات پوینتِ تولیدی در ثانیه، وقتی سوخت (دون) داره. بر اساسِ
+    sub_level (سطحِ نمایشیِ *داخلِ مقامِ فعلی*، نه سطحِ تجمعی) محاسبه
+    می‌شه، پس با هر بار عوض‌شدنِ مقام دوباره از ۰.۱ شروع می‌شه: سطح ۱ =
+    ۰.۱، سطح ۲ = ۰.۲، ..."""
+    return round(0.1 * sub_level, 2)
 
 
 def pigeon_fuel_capacity(global_level: int) -> int:
-    """ظرفیت سوخت (دون) کبوتر بر اساس سطح کلی خودش (نه سطح xp عمومی)."""
+    """ظرفیت سوخت (دون) کبوتر بر اساس سطحِ تجمعیِ کلی خودش (نه سطح xp
+    عمومی، نه sub_level) -- این یکی عمداً ریست نمی‌شه تا ظرفیت پیوسته
+    بزرگ‌تر بشه."""
     return 5 + (global_level // 2)
 
 

@@ -46,12 +46,9 @@ def _display_name(user) -> str:
 
 
 def _status_keyboard(owner_id: int) -> InlineKeyboardMarkup:
-    # دکمه‌ی «⬆️ ارتقا» عمداً حذف شده: سطحِ کبوتر دیگه با خرجِ کیف‌پول
-    # بالا نمی‌ره، فقط با گفتنِ عینِ صلوات. pigeon_levelup_callback هنوز
-    # تعریفه (پایینِ همین فایل) تا اگه دکمه‌ی قدیمی‌ای رو یه پیامِ کهنه
-    # کسی زد، خطا نده -- فقط دیگه از هیچ کیبوردِ جدیدی ساخته نمی‌شه.
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📥 برداشت صلوات پوینت", callback_data=f"{HARVEST_CALLBACK_PREFIX}:{owner_id}")],
+        [InlineKeyboardButton("⬆️ ارتقا", callback_data=f"{LEVELUP_CALLBACK_PREFIX}:{owner_id}")],
     ])
 
 
