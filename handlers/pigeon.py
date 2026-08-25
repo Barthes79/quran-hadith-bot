@@ -25,6 +25,7 @@ from gamification.pigeon import (
     set_pigeon_name,
     is_full_salavat_phrase,
     get_pigeon_name,
+    get_pigeon_feature_progress,
     PIGEON_RENAME_COST,
 )
 from text_utils import to_persian_digits
@@ -125,12 +126,37 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    # چک کردن اسم سفارشی کبوتر (کاربر می‌تونه با نوشتن اسم کبوترش، پنل رو باز کنه)
+    # چک کردن اسم سفارشی کبوتر (فقط برای کاربرانی که به سطح ۳ قابلیت‌ها رسیده‌اند)
     # این چک باید بعد از _STATUS_TRIGGERS باشه تا «کبوترم» اولویت داشته باشه،
     # و قبل از _RENAME_PATTERN باشه تا با «اسم کبوترم ...» تداخل نکنه.
     if not context.user_data.get(_AWAITING_RENAME_KEY):
         pigeon_name = get_pigeon_name(user.id)
         if normalized == pigeon_name:
+            # بررسی سطح قابلیت‌ها
+            progress = get_pigeon_feature_progress(user.id)
+            if progress["level"] < 3:
+                # کاربر هنوز به سطح ۳ نرسیده
+                remaining = progress["remaining"]
+                if remaining > 0:
+                    msg = (
+                        f"🔒 قابلیت صدا زدن کبوتر با اسم جدید، فقط برای کاربرانی که به سطح ۳ "
+                        f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n"
+                        f"شما هم‌اکنون در سطح {_code(to_persian_digits(progress['level']))} هستید.\n"
+                        f"برای رسیدن به سطح ۳، باید {_code(to_persian_digits(remaining))} صلوات کامل "
+                        f"دیگه بفرستید.\n"
+                        f"(اللهم صل علی محمد و آل محمد)"
+                    )
+                else:
+                    msg = (
+                        f"🔒 قابلیت صدا زدن کبوتر با اسم جدید، فقط برای کاربرانی که به سطح ۳ "
+                        f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n"
+                        f"شما هم‌اکنون در سطح {_code(to_persian_digits(progress['level']))} هستید.\n"
+                        f"برای فعال شدن این قابلیت، به سطح ۳ برسید."
+                    )
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                return True
+
+            # کاربر به سطح ۳ رسیده، پنل رو نشون بده
             register_user(user.id, user.username)
             status_text = build_pigeon_status_text(user.id, _display_name(user))
             await update.message.reply_text(

@@ -163,6 +163,33 @@ def get_pigeon_name(user_id: int) -> str:
     return state.get("pigeon_name") or DEFAULT_PIGEON_NAME
 
 
+def get_pigeon_feature_level(user_id: int) -> int:
+    """سطح فعلی «پیشرفت قابلیت‌ها» رو برمی‌گردونه (۱ تا ۸)."""
+    state = db.get_pigeon_state(user_id)
+    count = state.get("pigeon_salavat_count") or 0
+    return pigeon_feature_level_for_count(count)
+
+
+def get_pigeon_feature_progress(user_id: int) -> dict:
+    """
+    اطلاعات کامل پیشرفت قابلیت‌ها رو برمی‌گردونه:
+      - count: تعداد صلوات کامل گفته‌شده
+      - level: سطح فعلی
+      - next_threshold: آستانه‌ی سطح بعد (یا None اگه به سقف رسیده)
+      - remaining: تعداد صلوات باقی‌مونده تا سطح بعد
+    """
+    state = db.get_pigeon_state(user_id)
+    count = state.get("pigeon_salavat_count") or 0
+    current_level = pigeon_feature_level_for_count(count)
+    next_threshold = pigeon_count_for_next_feature_level(current_level)
+    return {
+        "count": count,
+        "level": current_level,
+        "next_threshold": next_threshold,
+        "remaining": next_threshold - count if next_threshold is not None else 0,
+    }
+
+
 def register_pigeon_feature_progress(user_id: int) -> dict:
     """
     هر بار که کاربر *عینِ کاملِ* عبارتِ صلوات رو می‌نویسه (چه پیوی چه
