@@ -61,6 +61,8 @@ from handlers.admin import (
     set_mafatih_audio_command, mafatih_audio_upload_handler,
     bot_chat_member_update_handler, bot_stats_command, track_user_activity,
     set_salavat_count_command,
+    remove_fridge_command,  # ✅ جدید
+    set_points_command,     # ✅ جدید
 )
 from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
@@ -122,9 +124,6 @@ from handlers.fridge import (
     buy_fridge_callback,
     fridge_cancel_callback,
 )
-# ============================================
-# اضافه کردن هندلر انتقال صلوات
-# ============================================
 from handlers.transfer import transfer_text_handler, transfer_callback
 
 logging.basicConfig(
@@ -135,70 +134,36 @@ logger = logging.getLogger(__name__)
 
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    فرمت‌های صریح آیه («2:255» یا «بقره 25») هم در چت خصوصی و هم در گروه‌ها
-    کار می‌کنند.
-
-    جستجوی آزاد حدیث (هر متن دلخواه) فقط وقتی فعال است که کاربر از منوی
-    اصلی دکمه‌ی «🔍 جستجو» را زده باشد (پرچم context.user_data["search_mode"]).
-    قبلاً هر پیام متنی در پیوی که آیه هم نبود، خودکار سرچ می‌شد؛ که باعث
-    می‌شد پیام‌های معمولی/گفتگوی عادی کاربر هم به‌اشتباه جستجو بشن.
-
-    نکته: بررسی «آیا این پیام همون عددیه که برای تنظیم یادآور اذان منتظرش
-    بودیم» باید همین‌جا و قبل از هر چیز دیگه انجام بشه (نه در یک
-    MessageHandler جدا)، وگرنه وقتی search_mode روشن باشه، همون عدد هم به
-    غلط به‌عنوان عبارت جستجو فرستاده می‌شه.
-    """
-    # پیام‌های ویرایش‌شده (edited_message) و بعضی آپدیت‌های خاص، update.message
-    # ندارن (None هست)؛ بدون این گارد، خط بعدی با AttributeError کرش می‌کنه.
     if not update.message or not update.message.text:
         return
 
-    # پیام inline «اعلام اذان» که تازه وارد یه گروه شده: باید پاک و با یه
-    # پیام واقعیِ ربات جایگزین بشه، وگرنه دکمه‌هاش کار نمی‌کنن (پیام‌های
-    # inline از دید تلگرام chat_id مشخصی روی callback نمی‌ذارن). این چک
-    # باید همین اول (قبل از هر پردازش دیگه) انجام بشه.
     if await handle_incoming_azan_panel_message(update, context):
         return
 
     text = update.message.text.strip()
     is_private = update.effective_chat.type == "private"
 
-    # «جستجو با شناسه حدیث»: وقتی کاربر در حالت id_search_mode باشه، پیام بعدیش
-    # باید اینجا گرفته بشه. این چک باید قبل از صلوات/آیه/سرچ باشه، چون هندلر
-    # ثبت‌شده‌ی id_search_handler (هم‌فیلتر با general_text_handler) هرگز
-    # اجرا نمی‌شه — PTB بعد از اولین هندلرِ match شده متوقف می‌شه.
     if is_private and context.user_data.get("id_search_mode"):
         await id_search_handler(update, context)
         return
 
-    # صلوات‌شمار گروهی: مستقل از بقیه‌ی جریان‌ها، چون با آیه/سرچ تداخلی نداره.
-    # توی try/except چون اگه اینجا یه خطای پیش‌بینی‌نشده بیفته (مثلاً توی
-    # فرستادن پیام تبریک رکورد)، نباید جلوی رسیدن به بخش یادآور/سرچ رو بگیره.
     try:
         await salavat_text_handler(update, context)
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
 
-    # شخصیت همراه (کبوتر): صلوات/کبوترم -- «کبوترم» هم تو پیوی هم تو
-    # گروه کار می‌کنه. «صلوات» رو خودِ pigeon_text_handler فقط تو پیوی
-    # award می‌کنه؛ تو گروه، صلوات‌شمار بالا (salavat_text_handler) خودش
-    # هم award کرده هم کارت رو فرستاده، پس اینجا برای «صلوات» تو گروه
-    # کاری انجام نمی‌شه (داخل خود تابع این تفکیک انجام می‌شه).
     try:
         if await pigeon_text_handler(update, context, text):
             return
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
 
-    # یخچال صلواتی و آیتم‌های نذری: «نذری» و «یخچالم» -- هم پیوی هم گروه.
     try:
         if await fridge_text_handler(update, context, text):
             return
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در یخچال/نذری: {e}")
 
-    # انتقال صلوات پوینت بین کاربران (با ریپلای و تایید دو مرحله‌ای)
     try:
         if await transfer_text_handler(update, context, text):
             return
@@ -220,24 +185,14 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def debug_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تابع کمکی موقت برای استخراج custom_emoji_id از پیام‌های ادمین.
-    فقط برای ADMIN_IDS کار می‌کنه تا کاربرهای عادی چیزی نبینن. توی یه
-    group مستقل (-5) ثبت شده، پس مستقل از بقیه‌ی هندلرها اجرا می‌شه.
-    از parse_entities استفاده می‌کنیم (نه اسلایس دستی روی update.message.text)
-    چون آفست/طول entities بر اساس UTF-16 حساب می‌شه و اسلایس دستی پایتون
-    وقتی چند ایموجی سفارشی پشت‌سرهم باشن، غلط از آب درمیاد.
-    کار تمام شد؟ کافیه دو خط ثبتش (پایین‌تر در main()) رو کامنت/حذف کنی."""
     if not update.message or update.effective_user.id not in ADMIN_IDS:
         return
-
     entities = update.message.parse_entities(types=["custom_emoji"])
     if not entities:
         return
-
     lines = []
     for entity, emoji_slice in entities.items():
         lines.append(f"{emoji_slice} → `{entity.custom_emoji_id}`")
-
     await update.message.reply_text(
         "🔎 *custom_emoji_id پیدا شده:*\n" + "\n".join(lines),
         parse_mode="Markdown",
@@ -245,13 +200,10 @@ async def debug_custom_emoji(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def get_file_id_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تابع کمکی برای دیباگ و استخراج راحتِ file_id فایل‌های صوتی، صوتی شخصی، ویدیو و اسناد.
-    فقط برای ادمین‌ها کار می‌کنه تا file_id فایل‌ها به کاربرهای عادی لو نره."""
     if not update.message:
         return
     if update.effective_user.id not in ADMIN_IDS:
         return
-
     if update.message.audio:
         await update.message.reply_text(f"🎧 *Audio file_id:*\n`{update.message.audio.file_id}`", parse_mode="Markdown")
     elif update.message.voice:
@@ -292,8 +244,6 @@ def main():
     builder = builder.request(default_request).get_updates_request(get_updates_request)
 
     if PROXY_URL:
-        # آدرس کامل پروکسی لاگ نمی‌شود چون ممکن است شامل user:pass باشد؛
-        # روی سرور مشترک این می‌تواند در فایل لاگ لو برود.
         logger.info("پروکسی برای اتصال به تلگرام فعال است.")
 
     app = builder.build()
@@ -304,11 +254,6 @@ def main():
     app.add_error_handler(_global_error_handler)
 
     app.add_handler(CallbackQueryHandler(ownership_guard_callback), group=-10)
-
-    # هندلر موقت دیباگ: پیدا کردن custom_emoji_id برای ایموجی‌های سفارشی
-    # (فقط برای ادمین‌ها جواب می‌ده). توی group=-5 مستقل از بقیه‌ی
-    # هندلرهای متنی ثبت شده تا هیچ تداخلی با general_text_handler و بقیه
-    # نداشته باشه. بعد از اینکه آی‌دی‌های لازم رو گرفتی، این خط رو حذف کن.
     app.add_handler(MessageHandler(filters.ALL, debug_custom_emoji), group=-5)
 
     # ==========================================
@@ -325,7 +270,7 @@ def main():
     app.add_handler(CallbackQueryHandler(achievements_callback, pattern="^gami_achievements$"))
     app.add_handler(CallbackQueryHandler(leaderboard_gamification_callback, pattern="^gami_leaderboard$"))
 
-    # پنل ادمین گیمیفیکیشن (فقط ADMIN_IDS؛ هر کدام از دستورها خودشان چک می‌کنند)
+    # پنل ادمین گیمیفیکیشن
     app.add_handler(CommandHandler("gamixp", gami_xp_command))
     app.add_handler(CommandHandler("gamitop", gami_top_command))
     app.add_handler(CommandHandler("gamimissions", gami_missions_list_command))
@@ -364,17 +309,9 @@ def main():
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
     app.add_handler(CommandHandler("setmafaudio", set_mafatih_audio_command))
-    # باید قبل از هندلر عمومی زیر ثبت بشه: توی PTB اولین هندلرِ هم‌گروهی که
-    # فیلترش match کنه انتخاب می‌شه، پس وقتی ادمینی وسط ویزارد افزودن مداحی
-    # و منتظر فایل صوتیه، این یکی جلوی mafatih_audio_upload_handler رو
-    # می‌گیره؛ در غیر این صورت (فیلترش False باشه) هندلر بعدی طبق روال قبل کار می‌کنه.
     app.add_handler(MessageHandler((filters.AUDIO | filters.VOICE) & madahi_pending_audio_filter, madahi_add_audio_handler))
     app.add_handler(MessageHandler((filters.AUDIO | filters.VOICE) & azan_audio_pending_filter, azan_audio_upload_handler))
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, mafatih_audio_upload_handler))
-
-    # ثبت توی یه group جدا (group=1) تا با هندلر بالا (که برای آپلود صوت
-    # مفاتیح‌الجنانه) تداخل نکنه؛ توی PTB هر group مستقل از بقیه پردازش
-    # می‌شه، پس همون فایل هم به مافاتیح می‌ره هم دیباگش (فقط برای ادمین) چاپ می‌شه.
     app.add_handler(
         MessageHandler(filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, get_file_id_debug),
         group=1,
@@ -384,6 +321,8 @@ def main():
     # دستورات ادمین برای تست
     # ==========================================
     app.add_handler(CommandHandler("setsalavat", set_salavat_count_command))
+    app.add_handler(CommandHandler("removefridge", remove_fridge_command))  # ✅ جدید
+    app.add_handler(CommandHandler("setpoints", set_points_command))        # ✅ جدید
 
     # ==========================================
     # دستورات اوقات شرعی
@@ -399,18 +338,11 @@ def main():
     app.add_handler(CommandHandler("addmadahi", add_madahi_command))
     app.add_handler(CommandHandler("delmadahi", delete_madahi_command))
     app.add_handler(CommandHandler("madahistats", madahi_stats_command))
-
-    # ویزارد افزودن سریع مداحی از توی خودِ منو (دکمه‌ی «➕ افزودن مداحی به
-    # این مناسبت»). هندلر متنی‌اش پایین‌تر، کنار general_text_handler ثبت شده.
     app.add_handler(CallbackQueryHandler(madahi_add_start_callback, pattern="^madahi_addstart_"))
-
-    # پاسخ به پیام "مداحی"/"مولودی" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
         filters.Regex("^(مداحی|مولودی|🎙 مداحی و مولودی)$") & filters.ChatType.PRIVATE,
         madahi_command
     ))
-
-    # پاسخ به پیام "اذان" در چت خصوصی (بدون اسلش)
     app.add_handler(MessageHandler(
         filters.Regex("^(اذان|وقت نماز|اوقات شرعی)$") & filters.ChatType.PRIVATE, 
         prayer_command
@@ -480,16 +412,12 @@ def main():
     app.add_handler(CallbackQueryHandler(quran_search_info_callback, pattern="^quran_search_info$"))
 
     # ==========================================
-    # کالبکهای احادیث - سیستم جدید دسته‌بندی
+    # کالبکهای احادیث
     # ==========================================
     app.add_handler(CallbackQueryHandler(show_categories, pattern="^menu_hadith_categories$"))
     app.add_handler(CallbackQueryHandler(category_selected_callback, pattern="^category_[a-f0-9]{12}$"))
     app.add_handler(CallbackQueryHandler(category_nav_callback, pattern="^catnav_"))
     app.add_handler(CallbackQueryHandler(category_menu_callback, pattern="^cat_menu_"))
-
-    # ==========================================
-    # کالبکهای احادیث - سیستم قدیمی (سازگاری)
-    # ==========================================
     app.add_handler(CallbackQueryHandler(topic_selected_callback, pattern="^topic_[a-f0-9]{12}$"))
     app.add_handler(CallbackQueryHandler(topic_nav_callback, pattern="^topicnav_"))
     app.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop$"))
@@ -577,16 +505,7 @@ def main():
         filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER,
         member_update_handler,
     ))
-
-    # ردیابی مطمئنِ اضافه/حذف شدن خودِ ربات از هر چت (گروه/سوپرگروه/کانال)؛
-    # پایه‌ی دستور ادمین /botstats. برخلاف هندلر بالا (که فقط پیام سرویسِ
-    # داخل گروه رو می‌بینه)، my_chat_member رو تلگرام همیشه و مستقیم برای
-    # خودِ ربات می‌فرسته، حتی اگه اضافه/حذف شدن از طریق لینک یا بلاک باشه.
     app.add_handler(ChatMemberHandler(bot_chat_member_update_handler, ChatMemberHandler.MY_CHAT_MEMBER))
-
-    # ثبت خاموشِ کاربرهای واقعی (برای شمارش «چند نفر از ربات استفاده
-    # می‌کنن» در /botstats). group=-1 یعنی مستقل و قبل از بقیه‌ی هندلرها
-    # اجرا می‌شه و جلوی هیچ‌کدوم از هندلرهای دیگه رو نمی‌گیره.
     app.add_handler(TypeHandler(Update, track_user_activity), group=-1)
 
     # ==========================================
@@ -605,13 +524,9 @@ def main():
     # ==========================================
     # هندلر پیامهای متنی
     # ==========================================
-    # باید قبل از general_text_handler ثبت بشه؛ فیلترش فقط وقتی True میشه که
-    # فرستنده وسط ویزارد افزودن مداحی باشه (مرحلهی عنوان یا اسم مداح)، پس
-    # برای بقیهی کاربران هیچ تغییری توی رفتار general_text_handler ایجاد نمیشه.
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & madahi_pending_text_filter, madahi_add_text_handler))
     app.add_handler(MessageHandler(filters.Regex("^(مفاتیح الجنان|مفاتیح|📿 مفاتیح الجنان)$"), mafatih_menu_text_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, general_text_handler))
-    # هندلر جستجو با شناسه حدیث
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, id_search_handler))
 
     # ==========================================
@@ -619,23 +534,11 @@ def main():
     # ==========================================
     if app.job_queue:
         app.job_queue.run_repeating(daily_post_job, interval=3600, first=10)
-        # هر روز ساعت ۰۰:۰۵ به وقت تهران، اوقات شرعی امروز رو برای کاربرهایی
-        # که یادآور فعال دارن می‌گیره و جاب‌های اون روز رو زمان‌بندی می‌کنه
         app.job_queue.run_daily(
             schedule_daily_prayer_reminders,
             time=dtime(hour=0, minute=5, tzinfo=ZoneInfo("Asia/Tehran")),
         )
-        # جاب‌های یادآور اذان (run_once) فقط توی حافظه‌ی همین پروسه نگه داشته
-        # می‌شن، نه توی دیتابیس. یعنی هر بار که پروسه ری‌استارت بشه (مثلاً
-        # redeploy یا کرش روی هاست)، هر جابی که قبلاً برای امروز زمان‌بندی
-        # شده بود از بین می‌ره و تا ساعت ۰۰:۰۵ فردا شب دوباره ساخته نمی‌شه.
-        # برای همین همین لحظه‌ی استارت‌آپ هم یه بار زمان‌بندیِ باقی‌مونده‌ی
-        # امروز رو از نو می‌سازیم تا این وسط چیزی از دست نره.
         app.job_queue.run_once(schedule_daily_prayer_reminders, when=5)
-
-        # اعلام اذان گروهی: هر روز ساعت ۰۰:۱۰ به وقت تهران، زمان‌بندی امروز رو
-        # برای همه‌ی گروه‌هایی که این قابلیت را فعال کرده‌اند می‌سازد؛ و یک بار
-        # هم موقع استارت‌آپ (برای جبران ری‌استارت وسط روز)، شبیه یادآور اذان.
         app.job_queue.run_daily(
             schedule_daily_azan_announcements,
             time=dtime(hour=0, minute=10, tzinfo=ZoneInfo("Asia/Tehran")),

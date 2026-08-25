@@ -232,6 +232,31 @@ def add_points(user_id: int, amount: int) -> bool:
         conn.close()
 
 
+def set_points(user_id: int, amount: int) -> bool:
+    """
+    تنظیم مستقیم مقدار صلوات پوینت کاربر به amount (مثبت یا صفر).
+    فقط برای استفاده‌ی ادمین در نظر گرفته شده است.
+    """
+    if amount < 0:
+        amount = 0
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            "UPDATE gamification_profile SET xp = ? WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
 # ---------------------------------------------------------------------------
@@ -364,34 +389,8 @@ def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده + خرید یخچال)
+# یخچال صلواتی 🧊
 # ---------------------------------------------------------------------------
-
-def get_fridge_level(user_id: int) -> int:
-    conn = get_connection()
-    cur = conn.cursor()
-    _ensure_profile(cur, user_id)
-    _ensure_fridge_column(cur)
-    conn.commit()
-    row = cur.execute(
-        "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
-    ).fetchone()
-    conn.close()
-    return row["fridge_level"] if row and row["fridge_level"] else 1
-
-
-def set_fridge_level(user_id: int, level: int):
-    conn = get_connection()
-    cur = conn.cursor()
-    _ensure_profile(cur, user_id)
-    _ensure_fridge_column(cur)
-    cur.execute(
-        "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
-        (level, user_id),
-    )
-    conn.commit()
-    conn.close()
-
 
 def get_has_fridge(user_id: int) -> bool:
     """بررسی می‌کند که آیا کاربر یخچال خریداری کرده است یا نه."""
@@ -416,6 +415,32 @@ def set_has_fridge(user_id: int, value: bool) -> None:
     cur.execute(
         "UPDATE gamification_profile SET has_fridge = ? WHERE user_id = ?",
         (1 if value else 0, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_fridge_level(user_id: int) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["fridge_level"] if row and row["fridge_level"] else 1
+
+
+def set_fridge_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
+        (level, user_id),
     )
     conn.commit()
     conn.close()
@@ -466,6 +491,17 @@ def delete_fridge_item(user_id: int, item_id: int) -> bool:
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def delete_all_fridge_items(user_id: int) -> bool:
+    """حذف همه‌ی آیتم‌های یخچال یک کاربر."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM nazri_items WHERE user_id = ?", (user_id,))
     conn.commit()
     deleted = cur.rowcount > 0
     conn.close()
