@@ -20,6 +20,9 @@ from gamification.pigeon import get_pigeon_feature_progress
 from gamification.db import set_pigeon_salavat_count
 from text_utils import to_persian_digits
 
+# ✅ ایمپورت db برای دستورات جدید ادمین
+import gamification.db as db
+
 MAFATIH_CATEGORY_FA = {
     "daily": "🕋 اعمال روزانه",
     "ziyarat": "🕌 زیارت",
@@ -45,7 +48,7 @@ def _code(value) -> str:
     return f"`{value}`"
 
 # ============================================================
-# دستورات ادمین برای تست (با پیام تبریک کامل)
+# دستورات ادمین برای تست
 # ============================================================
 
 async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,35 +79,166 @@ async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAUL
 
     user_id = user.id
 
-    # دریافت سطح قبلی قبل از تغییر
     old_progress = get_pigeon_feature_progress(user_id)
     old_level = old_progress["level"]
 
-    # تنظیم تعداد جدید
     set_pigeon_salavat_count(user_id, new_count)
 
-    # محاسبه سطح جدید
     new_level = pigeon_feature_level_for_count(new_count)
     new_progress = get_pigeon_feature_progress(user_id)
 
-    # ساخت پیام اصلی
     msg_lines = [
         f"✅ تعداد صلوات کامل شما به {_code(to_persian_digits(new_count))} تنظیم شد.",
         f"سطح فعلی «پیشرفت قابلیت‌ها»: {_code(to_persian_digits(new_level))}",
         f"تعداد صلوات تا سطح بعدی: {_code(to_persian_digits(new_progress['remaining'])) if new_progress['remaining'] > 0 else 'به سقف رسیده‌اید'}",
     ]
 
-    # اگر سطح بالا رفته، پیام تبریک اضافه کن
     if new_level > old_level:
         level_up_message = get_pigeon_level_up_message(new_level)
         msg_lines.append("\n" + level_up_message)
-
-    # اگر سطح پایین رفته، اطلاع بده
     elif new_level < old_level:
         msg_lines.append(f"\n⚠️ سطح شما از {old_level} به {new_level} کاهش یافت.")
 
     msg = "\n".join(msg_lines)
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+
+# ============================================================
+# دستورات جدید ادمین: حذف یخچال و تنظیم صلوات پوینت
+# ============================================================
+
+def _get_target_user(update: Update) -> tuple[int, str] | None:
+    """
+    کاربر هدف را از ریپلای یا @username تشخیص می‌دهد.
+    برمی‌گرداند: (user_id, display_name) یا None
+    """
+    # اگر ریپلای شده
+    if update.message.reply_to_message:
+        target = update.message.reply_to_message.from_user
+        if target:
+            return target.id, target.first_name or target.username or "کاربر"
+    
+    # اگر در متن پیام @username وجود دارد
+    text = update.message.text
+    match = re.search(r"@(\w+)", text)
+    if match:
+        username = match.group(1)
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT user_id, username FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        conn.close()
+        if row:
+            return row["user_id"], f"@{row['username']}"
+    
+    return None
+
+
+async def remove_fridge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    دستور /removefridge  -- فقط برای ادمین‌ها
+    یخچال کاربر هدف را حذف می‌کند (همراه با تمام آیتم‌های داخل آن).
+    
+    روش استفاده:
+    - ریپلای روی پیام کاربر + /removefridge
+    - یا /removefridge @username
+    """
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌ها در دسترس است.")
+        return
+
+    target = _get_target_user(update)
+    if not target:
+        await update.message.reply_text(
+            "⚠️ کاربر هدف مشخص نشد.\n"
+            "روی پیام کاربر ریپلای بزنید یا از @username استفاده کنید.\n"
+            "مثال: `/removefridge @username`"
+        )
+        return
+
+    target_id, target_name = target
+
+    if not db.get_has_fridge(target_id):
+        await update.message.reply_text(f"⚠️ کاربر {target_name} یخچال ندارد.")
+        return
+
+    db.delete_all_fridge_items(target_id)
+    db.set_has_fridge(target_id, False)
+    db.set_fridge_level(target_id, 1)
+
+    await update.message.reply_text(
+        f"✅ یخچال کاربر {target_name} با موفقیت حذف شد.\n"
+        f"همه‌ی آیتم‌های داخل یخچال نیز پاک شدند."
+    )
+
+
+async def set_points_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    دستور /setpoints <مقدار>  -- فقط برای ادمین‌ها
+    تنظیم صلوات پوینت کاربر هدف به مقدار مشخص.
+    
+    روش استفاده:
+    - ریپلای روی پیام کاربر + /setpoints 1000
+    - یا /setpoints 1000 @username
+    - عدد مثبت = افزایش، عدد منفی = کاهش (مثلاً -500)
+    - عدد صفر = ریست کردن به صفر
+    """
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌ها در دسترس است.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ لطفاً مقدار را مشخص کنید.\n"
+            "مثال: `/setpoints 1000` (افزایش)\n"
+            "مثال: `/setpoints -500` (کاهش)\n"
+            "مثال: `/setpoints 0` (ریست به صفر)\n\n"
+            "برای کاربر دیگر، روی پیامش ریپلای بزنید یا @username را وارد کنید.\n"
+            "مثال: `/setpoints 1000 @username`"
+        )
+        return
+
+    try:
+        amount = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("⚠️ مقدار وارد شده باید یک عدد صحیح باشد.")
+        return
+
+    target = _get_target_user(update)
+    target_id = None
+    target_name = "خودتان"
+
+    if target:
+        target_id, target_name = target
+    else:
+        target_id = user.id
+        target_name = user.first_name or "خودتان"
+
+    profile = db.get_profile(target_id)
+    current_points = profile["xp"] if profile else 0
+
+    new_points = current_points + amount
+    if new_points < 0:
+        new_points = 0
+
+    if db.set_points(target_id, new_points):
+        if amount > 0:
+            action = f"+{amount}"
+        elif amount < 0:
+            action = str(amount)
+        else:
+            action = "۰ (ریست)"
+
+        await update.message.reply_text(
+            f"✅ صلوات پوینت کاربر {target_name} با موفقیت تغییر کرد.\n\n"
+            f"💰 تغییر: {action}\n"
+            f"💰 پوینت قبلی: {current_points:,}\n"
+            f"💰 پوینت جدید: {new_points:,}"
+        )
+    else:
+        await update.message.reply_text("⚠️ خطا در تغییر صلوات پوینت. دوباره امتحان کنید.")
 
 
 # ============================================================
@@ -228,7 +362,6 @@ async def group_settings_router(update: Update, context: ContextTypes.DEFAULT_TY
         await _show_leaderboard(query, chat_id)
         return
 
-    # از اینجا به بعد همه چیز نیازمند ادمین بودن است
     if not await _require_admin(update, query):
         return
 
@@ -441,7 +574,7 @@ async def set_welcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # =====================================================================
-# ارسال محتوای تصادفی (هم برای دکمه‌ی «ارسال الان» و هم برای جاب زمان‌بندی‌شده)
+# ارسال محتوای تصادفی
 # =====================================================================
 
 async def _format_ayah_post():
@@ -840,153 +973,3 @@ async def mafatih_audio_upload_handler(update: Update, context: ContextTypes.DEF
     update_mafatih_audio(item["id"], file_id)
     _PENDING_MAFATIH_AUDIO.pop(key, None)
     await message.reply_text(f"✅ فایل صوتی «{item['title']}» با موفقیت به‌روزرسانی شد.")
-
-    # ============================================================
-# دستورات جدید ادمین: حذف یخچال و تنظیم صلوات پوینت
-# ============================================================
-
-def _get_target_user(update: Update) -> tuple[int, str] | None:
-    """
-    کاربر هدف را از ریپلای یا @username تشخیص می‌دهد.
-    برمی‌گرداند: (user_id, display_name) یا None
-    """
-    # اگر ریپلای شده
-    if update.message.reply_to_message:
-        target = update.message.reply_to_message.from_user
-        if target:
-            return target.id, target.first_name or target.username or "کاربر"
-    
-    # اگر در متن پیام @username وجود دارد
-    text = update.message.text
-    import re
-    match = re.search(r"@(\w+)", text)
-    if match:
-        username = match.group(1)
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT user_id, username FROM users WHERE username = ?", (username,)
-        ).fetchone()
-        conn.close()
-        if row:
-            return row["user_id"], f"@{row['username']}"
-    
-    return None
-
-
-async def remove_fridge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    دستور /removefridge  -- فقط برای ادمین‌ها
-    یخچال کاربر هدف را حذف می‌کند (همراه با تمام آیتم‌های داخل آن).
-    
-    روش استفاده:
-    - ریپلای روی پیام کاربر + /removefridge
-    - یا /removefridge @username
-    """
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌ها در دسترس است.")
-        return
-
-    # تشخیص کاربر هدف
-    target = _get_target_user(update)
-    if not target:
-        await update.message.reply_text(
-            "⚠️ کاربر هدف مشخص نشد.\n"
-            "روی پیام کاربر ریپلای بزنید یا از @username استفاده کنید.\n"
-            "مثال: `/removefridge @username`"
-        )
-        return
-
-    target_id, target_name = target
-
-    # بررسی اینکه کاربر یخچال دارد یا نه
-    if not db.get_has_fridge(target_id):
-        await update.message.reply_text(f"⚠️ کاربر {target_name} یخچال ندارد.")
-        return
-
-    # حذف همه آیتم‌های یخچال
-    db.delete_all_fridge_items(target_id)
-    # ریست کردن has_fridge
-    db.set_has_fridge(target_id, False)
-    # ریست کردن سطح یخچال به ۱
-    db.set_fridge_level(target_id, 1)
-
-    await update.message.reply_text(
-        f"✅ یخچال کاربر {target_name} با موفقیت حذف شد.\n"
-        f"همه‌ی آیتم‌های داخل یخچال نیز پاک شدند."
-    )
-
-
-async def set_points_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    دستور /setpoints <مقدار>  -- فقط برای ادمین‌ها
-    تنظیم صلوات پوینت کاربر هدف به مقدار مشخص.
-    
-    روش استفاده:
-    - ریپلای روی پیام کاربر + /setpoints 1000
-    - یا /setpoints 1000 @username
-    - عدد مثبت = افزایش، عدد منفی = کاهش (مثلاً -500)
-    - عدد صفر = ریست کردن به صفر
-    """
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌ها در دسترس است.")
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "⚠️ لطفاً مقدار را مشخص کنید.\n"
-            "مثال: `/setpoints 1000` (افزایش)\n"
-            "مثال: `/setpoints -500` (کاهش)\n"
-            "مثال: `/setpoints 0` (ریست به صفر)\n\n"
-            "برای کاربر دیگر، روی پیامش ریپلای بزنید یا @username را وارد کنید.\n"
-            "مثال: `/setpoints 1000 @username`"
-        )
-        return
-
-    # تشخیص مقدار
-    try:
-        amount = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("⚠️ مقدار وارد شده باید یک عدد صحیح باشد.")
-        return
-
-    # تشخیص کاربر هدف
-    target = _get_target_user(update)
-    target_id = None
-    target_name = "خودتان"
-
-    # اگر ریپلای یا @username وجود داشت، از آن استفاده کن
-    if target:
-        target_id, target_name = target
-    else:
-        # در غیر این صورت، خود کاربر
-        target_id = user.id
-        target_name = user.first_name or "خودتان"
-
-    # دریافت پوینت فعلی
-    profile = db.get_profile(target_id)
-    current_points = profile["xp"] if profile else 0
-
-    # محاسبه مقدار جدید
-    new_points = current_points + amount
-    if new_points < 0:
-        new_points = 0
-
-    # اعمال تغییر
-    if db.set_points(target_id, new_points):
-        if amount > 0:
-            action = f"+{amount}"
-        elif amount < 0:
-            action = str(amount)
-        else:
-            action = "۰ (ریست)"
-
-        await update.message.reply_text(
-            f"✅ صلوات پوینت کاربر {target_name} با موفقیت تغییر کرد.\n\n"
-            f"💰 تغییر: {action}\n"
-            f"💰 پوینت قبلی: {current_points:,}\n"
-            f"💰 پوینت جدید: {new_points:,}"
-        )
-    else:
-        await update.message.reply_text("⚠️ خطا در تغییر صلوات پوینت. دوباره امتحان کنید.")
