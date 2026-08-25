@@ -317,6 +317,28 @@ def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
     return row["pigeon_salavat_count"] if row else amount
 
 
+def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
+    """
+    تنظیم مستقیم تعداد صلوات کامل کاربر به مقدار new_count.
+    فقط برای استفاده‌ی ادمین (تست) در نظر گرفته شده است.
+    """
+    if new_count < 0:
+        new_count = 0
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = ? WHERE user_id = ?",
+        (new_count, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else 0
+
+
 # ---------------------------------------------------------------------------
 # یخچال صلواتی 🧊 (سطح یخچال + آیتم‌های نذریِ ذخیره‌شده)
 # ---------------------------------------------------------------------------
