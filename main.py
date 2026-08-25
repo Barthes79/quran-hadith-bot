@@ -60,6 +60,7 @@ from handlers.admin import (
     daily_post_job, set_welcome_command, member_update_handler, link_guard_handler,
     set_mafatih_audio_command, mafatih_audio_upload_handler,
     bot_chat_member_update_handler, bot_stats_command, track_user_activity,
+    set_salavat_count_command,
 )
 from handlers.quiz import (
     quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
@@ -378,6 +379,11 @@ def main():
         MessageHandler(filters.AUDIO | filters.VOICE | filters.Document.ALL | filters.VIDEO, get_file_id_debug),
         group=1,
     )
+
+    # ==========================================
+    # دستورات ادمین برای تست
+    # ==========================================
+    app.add_handler(CommandHandler("setsalavat", set_salavat_count_command))
 
     # ==========================================
     # دستورات اوقات شرعی

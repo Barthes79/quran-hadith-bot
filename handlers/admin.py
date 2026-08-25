@@ -16,6 +16,10 @@ from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 from services.quran_api import get_ayah, get_surah_list
 from gamification.events import dispatch_event
 from gamification.config import EVENT_DAILY_LOGIN
+from gamification.pigeon import get_pigeon_feature_progress
+from gamification.db import set_pigeon_salavat_count
+from gamification.config import pigeon_feature_level_for_count, get_pigeon_level_up_message
+from text_utils import to_persian_digits
 
 MAFATIH_CATEGORY_FA = {
     "daily": "🕋 اعمال روزانه",
@@ -38,6 +42,59 @@ DEFAULT_WELCOME_TEXT = "سلام {name} عزیز 🌙\nخوش اومدی به ج
 DEFAULT_QUIET_START = 23
 DEFAULT_QUIET_END = 7
 
+def _code(value) -> str:
+    return f"`{value}`"
+
+# ============================================================
+# دستورات ادمین برای تست
+# ============================================================
+
+async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    دستور /setsalavat <تعداد>  -- فقط برای ادمین‌ها
+    تعداد صلوات کامل کاربر را به مقدار دلخواه تنظیم می‌کند (برای تست).
+    """
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ این دستور فقط برای ادمین‌ها در دسترس است.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ لطفاً تعداد را مشخص کنید.\n"
+            "مثال: `/setsalavat 25`\n"
+            "تعداد کل صلوات کامل را تنظیم می‌کند (سطح بر اساس آن محاسبه می‌شود)."
+        )
+        return
+
+    try:
+        new_count = int(context.args[0])
+        if new_count < 0:
+            new_count = 0
+    except ValueError:
+        await update.message.reply_text("⚠️ مقدار وارد شده باید یک عدد صحیح باشد.")
+        return
+
+    # تنظیم تعداد برای خود کاربر
+    user_id = user.id
+    set_pigeon_salavat_count(user_id, new_count)
+
+    # محاسبه سطح جدید
+    new_level = pigeon_feature_level_for_count(new_count)
+    progress = get_pigeon_feature_progress(user_id)
+
+    msg = (
+        f"✅ تعداد صلوات کامل شما به {_code(to_persian_digits(new_count))} تنظیم شد.\n"
+        f"سطح فعلی «پیشرفت قابلیت‌ها»: {_code(to_persian_digits(new_level))}\n"
+        f"تعداد صلوات تا سطح بعدی: {_code(to_persian_digits(progress['remaining'])) if progress['remaining'] > 0 else 'به سقف رسیده‌اید'}\n\n"
+        f"برای مشاهده‌ی کارت کبوتر، «کبوترم» را بفرستید."
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+
+# ============================================================
+# ادامه کدهای قبلی (بدون تغییر)
+# ============================================================
 
 async def is_group_admin(update: Update) -> bool:
     if update.effective_chat.type == ChatType.PRIVATE:
