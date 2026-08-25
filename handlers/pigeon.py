@@ -3,18 +3,11 @@
 هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر): صلوات، کارتِ وضعیت،
 برداشت، ارتقا، تغییرِ اسم.
 
-«کبوترم» هم پیوی هم گروه کار می‌کنه. «صلوات» فقط تو پیوی از همینجا
-award می‌شه؛ تو گروه، صلوات‌شمار گروهی (handlers/salavat.py) خودش هم
-award می‌کنه هم کارت رو می‌فرسته -- تا XP دوبار داده نشه.
-
-توجه: «نذری» و «یخچالم» دیگه اینجا نیستن؛ رفتن تو handlers/fridge.py.
-
-تغییر جدید: تا زمانی که کاربر به سطح ۳ «پیشرفت قابلیت‌ها» نرسیده باشد،
-هیچ‌کدام از قابلیت‌های کبوتر (حتی «کبوترم») در دسترس نیستند و کاربر
-پیام توضیحی دریافت می‌کند.
+نسخه‌ی دیباگ: لاگ‌های دقیق برای پیدا کردن مشکل نمایش پیام توضیحی.
 """
 
 import re
+import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -33,6 +26,8 @@ from gamification.pigeon import (
     PIGEON_RENAME_COST,
 )
 from text_utils import to_persian_digits
+
+logger = logging.getLogger(__name__)
 
 # «اسم کبوترم رستم» -> گروه ۱ = "رستم"
 _RENAME_PATTERN = re.compile(r"^اسم\s+کبوترم\s+(.+)$")
@@ -70,12 +65,15 @@ async def reject_if_not_owner(query, owner_id: int) -> bool:
 
 def _check_feature_level(user_id: int) -> tuple[bool, dict]:
     progress = get_pigeon_feature_progress(user_id)
-    return progress["level"] >= 3, progress
+    is_allowed = progress["level"] >= 3
+    logger.info(f"[DEBUG] user_id={user_id}, level={progress['level']}, is_allowed={is_allowed}, remaining={progress['remaining']}")
+    return is_allowed, progress
 
 
 async def _reply_feature_locked(update: Update, progress: dict) -> None:
     """پیام قفل بودن قابلیت‌های کبوتر رو با توضیح کامل می‌فرسته."""
     remaining = progress["remaining"]
+    logger.info(f"[DEBUG] Sending locked message for level={progress['level']}, remaining={remaining}")
     if remaining > 0:
         msg = (
             f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۳ "
@@ -94,10 +92,12 @@ async def _reply_feature_locked(update: Update, progress: dict) -> None:
             f"برای فعال شدن این قابلیت، به سطح ۳ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    logger.info("[DEBUG] Locked message sent.")
 
 
 async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     if not update.message:
+        logger.warning("[DEBUG] No message in update")
         return False
 
     user = update.effective_user
@@ -105,10 +105,13 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     normalized = text.strip()
     is_private = chat.type == "private"
 
+    logger.info(f"[DEBUG] pigeon_text_handler called: user_id={user.id}, text='{text}', normalized='{normalized}', is_private={is_private}")
+
     # ============================================================
     # حالت تغییر نام (دکمه‌ی «✏️ تغییر نام»)
     # ============================================================
     if context.user_data.get(_AWAITING_RENAME_KEY):
+        logger.info("[DEBUG] In rename mode")
         if normalized in _RENAME_CANCEL_WORDS:
             context.user_data[_AWAITING_RENAME_KEY] = False
             await update.message.reply_text("باشه، تغییرِ اسم لغو شد.")
@@ -132,7 +135,9 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     # ============================================================
     if is_full_salavat_phrase(normalized):
         if not is_private:
+            logger.info("[DEBUG] Salavat phrase in group, skipping")
             return False
+        logger.info("[DEBUG] Full salavat phrase detected, awarding points")
         register_user(user.id, user.username)
         await update.message.reply_text(handle_salavat_points(user.id), parse_mode=ParseMode.MARKDOWN)
         return True
@@ -142,8 +147,9 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     # ============================================================
     is_allowed, progress = _check_feature_level(user.id)
 
-    # اگر کاربر «کبوترم» نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
+    # اگر کاربر «کبوترم» نوشته
     if normalized in _STATUS_TRIGGERS:
+        logger.info(f"[DEBUG] User wrote status trigger: '{normalized}', is_allowed={is_allowed}")
         if not is_allowed:
             await _reply_feature_locked(update, progress)
             return True
@@ -154,9 +160,10 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
-    # اگر کاربر «اسم کبوترم ...» نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
+    # اگر کاربر «اسم کبوترم ...» نوشته
     rename_match = _RENAME_PATTERN.match(normalized)
     if rename_match:
+        logger.info(f"[DEBUG] Rename pattern matched: '{rename_match.group(1)}', is_allowed={is_allowed}")
         if not is_allowed:
             await _reply_feature_locked(update, progress)
             return True
@@ -164,21 +171,13 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(set_pigeon_name(user.id, rename_match.group(1)))
         return True
 
-    # اگر کاربر اسم سفارشی کبوتر رو نوشته و سطحش کمتر از ۳ هست → پیام توضیحی
-    if not is_allowed:
-        pigeon_name = get_pigeon_name(user.id)
-        if normalized == pigeon_name:
-            await _reply_feature_locked(update, progress)
-            return True
-        return False
-
-    # ============================================================
-    # کاربر به سطح ۳ رسیده → همه‌چیز فعال
-    # ============================================================
-
-    # چک کردن اسم سفارشی کبوتر (برای کاربران سطح ۳)
+    # اگر کاربر اسم سفارشی کبوتر رو نوشته
     pigeon_name = get_pigeon_name(user.id)
     if normalized == pigeon_name:
+        logger.info(f"[DEBUG] Custom pigeon name matched: '{pigeon_name}', is_allowed={is_allowed}")
+        if not is_allowed:
+            await _reply_feature_locked(update, progress)
+            return True
         register_user(user.id, user.username)
         status_text = build_pigeon_status_text(user.id, _display_name(user))
         await update.message.reply_text(
@@ -186,6 +185,7 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return True
 
+    logger.info("[DEBUG] No pigeon trigger matched, returning False")
     return False
 
 
@@ -281,3 +281,7 @@ async def pigeon_rename_callback(update: Update, context: ContextTypes.DEFAULT_T
         "برای انصراف، بنویس «بیخیال»."
     )
     await query.message.reply_text(prompt)
+
+
+def _code(value) -> str:
+    return f"`{value}`"
