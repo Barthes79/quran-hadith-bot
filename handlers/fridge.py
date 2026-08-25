@@ -1,291 +1,322 @@
 # -*- coding: utf-8 -*-
 """
-منطق یخچال صلواتی و آیتم‌های نذری.
+هندلرهای متنی/callback مربوط به یخچال صلواتی و آیتم‌های نذری.
 
-قابلیت‌ها:
-  - roll_nazri: تولید تصادفی یک آیتم نذری با در نظر گرفتن کول‌داون و سقف روزانه
-  - sell_offered_item: فروش فوری آیتم پیشنهادی
-  - feed_offered_item: تغذیه‌ی کبوتر با آیتم پیشنهادی
-  - store_offered_item: ذخیره‌ی آیتم در یخچال
-  - sell_fridge_item: فروش آیتم از یخچال
-  - feed_fridge_item: تغذیه‌ی کبوتر از یخچال
-  - warm_fridge_item: گرم کردن آیتم در یخچال
-  - upgrade_fridge: ارتقا سطح یخچال
-  - build_offer_text, build_fridge_text: ساخت متن‌های نمایشی
+جریان:
+  «نذری» -> پنلِ پیشنهاد (فروش فوری / بده کبوترت بخوره / بندازش تو یخچال)
+  «یخچالم» -> پنلِ کامل یخچال (لیست آیتم‌ها + دکمه‌ی فروش/تغذیه/گرم‌کردن
+              روی هرکدوم + دکمه‌ی ارتقا سطح یخچال)
 
-🔒 تغییر جدید: ادمین‌ها (ADMIN_IDS) محدودیت کول‌داون و سقف روزانه‌ی نذری را ندارند.
+owner_id همیشه تو خودِ callback_data قایمه (دقیقاً همون الگوی
+handlers/pigeon.py) تا فقط صاحبِ پنل بتونه روی دکمه‌هاش بزنه.
+
+🔒 تغییرات جدید:
+  - دسترسی به «نذری» فقط برای کاربران سطح ۱ به بالا.
+  - دسترسی به «یخچالم» فقط برای کاربران سطح ۵ به بالا.
+  - دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
 """
 
-import random
-import datetime
+import re
 import logging
 
-from . import db
-from .config import (
-    NAZRI_ITEMS, NAZRI_ITEMS_BY_KEY,
-    EVENT_NAZRI_RECEIVED,
-    WARM_DURATION_SECONDS,
-    WARM_VALUE_MULTIPLIER,
-    WARM_NUTRITION_MULTIPLIER,
-    fridge_capacity, fridge_upgrade_cost,
-    GAMIFICATION_TIMEZONE,
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
+
+from database import register_user
+from handlers.pigeon import reject_if_not_owner, _display_name
+from gamification import db  # ✅ اصلاح ایمپورت
+from gamification.fridge import (
+    roll_nazri,
+    build_offer_text,
+    sell_offered_item,
+    feed_offered_item,
+    store_offered_item,
+    build_fridge_text,
+    sell_fridge_item,
+    feed_fridge_item,
+    warm_fridge_item,
+    upgrade_fridge,
 )
-from .xp import dispatch_event, seconds_until_next
-from .pigeon import add_seed_to_pigeon
+from gamification.pigeon import get_pigeon_feature_progress
 from text_utils import to_persian_digits
-from config import ADMIN_IDS  # ✅ ایمپورت از فایل config اصلی ربات
 
 logger = logging.getLogger(__name__)
+
+_FRIDGE_TRIGGERS = ("یخچالم", "یخچال من", "یخچال صلواتی")
+
+# فرمت callback_data:
+#   nzoffer:<action>:<owner_id>:<food_key>:<weight>   -- پنلِ پیشنهاد (هنوز ذخیره نشده)
+#   nzitem:<action>:<owner_id>:<item_id>              -- آیتمِ واقعاً تو یخچال
+#   nzupgrade:<owner_id>                              -- ارتقای سطح یخچال
+_OFFER_PATTERN = re.compile(r"^nzoffer:(sell|feed|store):(\d+):([a-z]+):([\d.]+)$")
+_ITEM_PATTERN = re.compile(r"^nzitem:(sell|feed|warm):(\d+):(\d+)$")
+_UPGRADE_PATTERN = re.compile(r"^nzupgrade:(\d+)$")
+
+
+def _offer_keyboard(owner_id: int, food_key: str, weight: float, user_level: int) -> InlineKeyboardMarkup:
+    """
+    ساخت کیبورد برای نذری پیشنهادی.
+    دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
+    """
+    weight_str = f"{weight:.2f}"
+    buttons = [
+        [InlineKeyboardButton("💰 فروش نذری", callback_data=f"nzoffer:sell:{owner_id}:{food_key}:{weight_str}")],
+        [InlineKeyboardButton("🕊️ بده کبوترت بخوره", callback_data=f"nzoffer:feed:{owner_id}:{food_key}:{weight_str}")],
+    ]
+    # فقط اگر کاربر سطح ۵ یا بالاتر باشد، دکمه‌ی یخچال را نشان بده
+    if user_level >= 5:
+        buttons.append([InlineKeyboardButton("❄️ بندازش تو یخچال", callback_data=f"nzoffer:store:{owner_id}:{food_key}:{weight_str}")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def _fridge_keyboard(owner_id: int, items: list) -> InlineKeyboardMarkup:
+    rows = []
+    for it in items:
+        item_id = it["id"]
+        emoji = "🔥" if it["is_warmed"] else "🧊"
+        rows.append([
+            InlineKeyboardButton(f"💰 فروش {emoji}", callback_data=f"nzitem:sell:{owner_id}:{item_id}"),
+            InlineKeyboardButton("🕊️ تغذیه", callback_data=f"nzitem:feed:{owner_id}:{item_id}"),
+        ])
+        if not it["is_warmed"]:
+            rows.append([InlineKeyboardButton("🔥 گرم کردن", callback_data=f"nzitem:warm:{owner_id}:{item_id}")])
+    rows.append([InlineKeyboardButton("⬆️ ارتقا سطح یخچال", callback_data=f"nzupgrade:{owner_id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _code(value) -> str:
     return f"`{value}`"
 
 
-def _now() -> datetime.datetime:
-    return datetime.datetime.now(GAMIFICATION_TIMEZONE)
+# ============================================================
+# توابع کمکی برای پیام‌های قفل
+# ============================================================
 
-
-def _is_admin(user_id: int) -> bool:
-    """بررسی می‌کند که آیا کاربر در لیست ادمین‌ها است."""
-    return user_id in ADMIN_IDS
-
-
-def roll_nazri(user_id: int) -> dict:
-    """
-    یک آیتم نذری تصادفی با وزن تصادفی تولید می‌کند.
-    اگر کاربر به سقف روزانه رسیده باشد یا کول‌داون فعال باشد، پیام خطا برمی‌گرداند.
+async def _reply_fridge_locked(update: Update, progress: dict) -> None:
+    """پیام قفل برای «یخچالم» (سطح ۵)."""
+    remaining = progress["remaining"]
+    current_level = progress["level"]
+    next_level = current_level + 1
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
     
-    🔒 ادمین‌ها محدودیت کول‌داون و سقف روزانه را ندارند.
-    """
-    # 🔒 اگر کاربر ادمین است، محدودیت‌ها را نادیده بگیر
-    if _is_admin(user_id):
-        logger.info(f"ADMIN {user_id} is bypassing nazri cooldown")
+    if remaining > 0:
+        msg = (
+            f"🔒 قابلیت «یخچالم» فقط برای کاربرانی که به سطح ۵ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای رسیدن به سطح بعدی (سطح {_code(to_persian_digits(next_level))})، باید "
+            f"{_code(to_persian_digits(remaining))} صلوات کامل دیگه بفرستید.\n"
+            f"{salavat_phrase}\n\n"
+            f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
+        )
     else:
-        # بررسی کول‌داون (فقط برای غیرادمین‌ها)
-        remaining = seconds_until_next(user_id, EVENT_NAZRI_RECEIVED)
-        if remaining > 0:
-            minutes = int(remaining // 60)
-            secs = int(remaining % 60)
-            return {
-                "ok": False,
-                "message": f"⏳ تا نذری بعدی {_code(to_persian_digits(minutes))} دقیقه و {_code(to_persian_digits(secs))} ثانیه مونده."
-            }
-
-        # بررسی سقف روزانه (فقط برای غیرادمین‌ها)
-        today_key = _now().date().isoformat()
-        count_today = db.count_events_today(user_id, EVENT_NAZRI_RECEIVED, today_key)
-        daily_cap = 10  # از config خوانده شود
-        if count_today >= daily_cap:
-            return {
-                "ok": False,
-                "message": "🌙 امروز به سقف نذری‌ها رسیدی؛ فردا دوباره تلاش کن."
-            }
-
-    # انتخاب آیتم تصادفی
-    item_template = random.choice(NAZRI_ITEMS)
-    weight = round(random.uniform(item_template["min_kg"], item_template["max_kg"]), 2)
-    value = int(round(weight * item_template["value_per_kg"]))
-    nutrition = item_template["nutrition"]  # ارزش غذایی ثابت، مستقل از وزن
-
-    return {
-        "ok": True,
-        "item": {
-            "food_key": item_template["key"],
-            "name": item_template["name"],
-            "emoji": item_template["emoji"],
-            "weight": weight,
-            "value": value,
-            "nutrition": nutrition,
-        }
-    }
+        msg = (
+            f"🔒 قابلیت «یخچالم» فقط برای کاربرانی که به سطح ۵ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای فعال شدن این قابلیت، باید به سطح ۵ برسید."
+        )
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    logger.info("[DEBUG] Fridge (view) locked message sent.")
 
 
-def build_offer_text(item: dict) -> str:
-    """متن نمایشی برای آیتم پیشنهادی نذری."""
-    return (
-        f"{item['emoji']} *{item['name']}*\n"
-        f"وزن: {_code(to_persian_digits(f'{item['weight']:.2f}'))} کیلو\n"
-        f"💰 ارزش فروش: {_code(to_persian_digits(f'{item['value']:,}'))} صلوات پوینت\n"
-        f"🍽️ ارزش غذایی: {_code(to_persian_digits(item['nutrition']))} واحد دون\n\n"
-        "یکی از گزینه‌های زیر را انتخاب کن:"
-    )
+async def _reply_nazri_locked(update: Update, progress: dict) -> None:
+    """پیام قفل برای «نذری» (سطح ۱)."""
+    remaining = progress["remaining"]
+    current_level = progress["level"]
+    next_level = current_level + 1
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
+    
+    if remaining > 0:
+        msg = (
+            f"🔒 قابلیت «نذری» فقط برای کاربرانی که به سطح ۱ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای رسیدن به سطح ۱، باید {_code(to_persian_digits(remaining))} صلوات کامل "
+            f"دیگه بفرستید.\n"
+            f"{salavat_phrase}\n\n"
+            f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
+        )
+    else:
+        msg = (
+            f"🔒 قابلیت «نذری» فقط برای کاربرانی که به سطح ۱ "
+            f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
+            f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
+            f"برای فعال شدن این قابلیت، باید به سطح ۱ برسید."
+        )
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    logger.info("[DEBUG] Nazri locked message sent.")
 
 
 # ============================================================
-# عملیات روی آیتم پیشنهادی (هنوز ذخیره نشده)
+# هندلر اصلی متن
 # ============================================================
 
-def sell_offered_item(user_id: int, food_key: str, weight: float) -> str:
-    """فروش فوری آیتم پیشنهادی و دریافت صلوات پوینت."""
-    template = NAZRI_ITEMS_BY_KEY.get(food_key)
-    if not template:
-        return "⚠️ آیتم نامعتبر است."
+async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+    """
+    اگه پیام «نذری» یا «یخچالم» باشه، پنل مربوطه رو می‌فرسته و True
+    برمی‌گردونه؛ وگرنه False (هم پیوی هم گروه فعاله).
+    
+    🔒 قفل‌ها:
+      - «نذری» -> سطح ۱ به بالا
+      - «یخچالم» -> سطح ۵ به بالا
+    """
+    if not update.message:
+        return False
 
-    value = int(round(weight * template["value_per_kg"]))
-    if value <= 0:
-        return "⚠️ ارزش این نذری صفر است."
+    user = update.effective_user
+    normalized = text.strip()
 
-    # ثبت رویداد (برای ادمین‌ها هم محدودیت اعمال نمی‌شود چون قبلاً در roll_nazri چک شده)
-    result = dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=value)
-    if not result["awarded"]:
-        return "⚠️ خطا در دریافت پوینت. دوباره امتحان کن."
+    # ============================================================
+    # «نذری» → نیاز به سطح ۱
+    # ============================================================
+    if normalized == "نذری":
+        register_user(user.id, user.username)
+        
+        progress = get_pigeon_feature_progress(user.id)
+        if progress["level"] < 1:
+            await _reply_nazri_locked(update, progress)
+            return True
+        
+        rolled = roll_nazri(user.id)
+        if not rolled["ok"]:
+            await update.message.reply_text(rolled["message"], parse_mode=ParseMode.MARKDOWN)
+            return True
 
-    return (
-        f"💰 {_code(to_persian_digits(value))} صلوات پوینت از فروش نذری دریافت کردی!"
-        + (f" 🌟 سطح کلی حسابت رفت {_code(to_persian_digits(result['new_level']))}!" if result["leveled_up"] else "")
-    )
+        item = rolled["item"]
+        offer_text = build_offer_text(item)
+        keyboard = _offer_keyboard(user.id, item["food_key"], item["weight"], progress["level"])
+        await update.message.reply_text(offer_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+        return True
 
+    # ============================================================
+    # «یخچالم» → نیاز به سطح ۵
+    # ============================================================
+    if normalized in _FRIDGE_TRIGGERS:
+        register_user(user.id, user.username)
+        
+        progress = get_pigeon_feature_progress(user.id)
+        if progress["level"] < 5:
+            await _reply_fridge_locked(update, progress)
+            return True
+        
+        fridge_text = build_fridge_text(user.id, _display_name(user))
+        items = db.get_fridge_items(user.id)
+        await update.message.reply_text(
+            fridge_text, reply_markup=_fridge_keyboard(user.id, items), parse_mode=ParseMode.MARKDOWN
+        )
+        return True
 
-def feed_offered_item(user_id: int, food_key: str) -> str:
-    """تغذیه‌ی کبوتر با آیتم پیشنهادی (تبدیل به دون)."""
-    template = NAZRI_ITEMS_BY_KEY.get(food_key)
-    if not template:
-        return "⚠️ آیتم نامعتبر است."
-
-    nutrition = template["nutrition"]
-    if nutrition <= 0:
-        return "⚠️ این نذری ارزش غذایی ندارد."
-
-    # ثبت رویداد با XP=0 (چون پوینت نمی‌دهد، فقط دون می‌دهد)
-    dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-
-    result = add_seed_to_pigeon(user_id, nutrition)
-    return (
-        f"🕊️ کبوترت {_code(to_persian_digits(nutrition))} واحد دون خورد!\n"
-        f"دون فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
-    )
-
-
-def store_offered_item(user_id: int, food_key: str, weight: float) -> str:
-    """ذخیره‌ی آیتم پیشنهادی در یخچال."""
-    template = NAZRI_ITEMS_BY_KEY.get(food_key)
-    if not template:
-        return "⚠️ آیتم نامعتبر است."
-
-    fridge_level = db.get_fridge_level(user_id)
-    cap = fridge_capacity(fridge_level)
-    current_count = db.count_fridge_items(user_id)
-    if current_count >= cap:
-        return f"❄️ یخچال پر است! (ظرفیت {_code(to_persian_digits(cap))})"
-
-    # ثبت رویداد با XP=0 (چون پوینت نمی‌دهد، فقط ذخیره می‌شود)
-    dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-
-    item_id = db.insert_fridge_item(user_id, food_key, weight)
-    return f"❄️ {template['emoji']} {template['name']} با وزن {_code(to_persian_digits(f'{weight:.2f}'))} کیلو در یخچال ذخیره شد."
+    return False
 
 
 # ============================================================
-# عملیات روی آیتم‌های موجود در یخچال
+# کالبک‌های مربوط به آیتم‌های نذری (با چک سطح برای عملیات store)
 # ============================================================
 
-def build_fridge_text(user_id: int, display_name: str) -> str:
-    """متن نمایشی یخچال با لیست آیتم‌ها."""
-    items = db.get_fridge_items(user_id)
-    fridge_level = db.get_fridge_level(user_id)
-    cap = fridge_capacity(fridge_level)
+async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌های پنلِ پیشنهادِ نذری: فروش / تغذیه / یخچال."""
+    query = update.callback_query
+    if not query:
+        return
 
-    if not items:
-        return f"❄️ *یخچال {display_name}*\n\nهیچ آیتمی در یخچال نیست."
+    match = _OFFER_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
 
-    lines = [f"❄️ *یخچال {display_name}*  ({_code(to_persian_digits(len(items)))}/{_code(to_persian_digits(cap))})\n"]
-    for it in items:
-        template = NAZRI_ITEMS_BY_KEY.get(it["food_key"])
-        name = template["name"] if template else it["food_key"]
-        emoji = template["emoji"] if template else "🍽️"
-        status = "🔥 گرم‌شده" if it["is_warmed"] else "🧊 سرد"
-        lines.append(f"{emoji} {name} — {_code(to_persian_digits(f'{it["weight"]:.2f}'))} کیلو — {status}")
+    action, owner_id_str, food_key, weight_str = match.groups()
+    owner_id = int(owner_id_str)
+    weight = float(weight_str)
 
-    return "\n".join(lines)
+    if await reject_if_not_owner(query, owner_id):
+        return
+    await query.answer()
 
+    # اگر عمل «store» (یخچال) باشد، سطح کاربر را چک کن
+    if action == "store":
+        progress = get_pigeon_feature_progress(owner_id)
+        if progress["level"] < 5:
+            await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۵ به بالا فعال است.", show_alert=True)
+            return
 
-def sell_fridge_item(user_id: int, item_id: int) -> str:
-    """فروش یک آیتم از یخچال."""
-    item = db.get_fridge_item(user_id, item_id)
-    if not item:
-        return "⚠️ این آیتم در یخچال شما وجود ندارد."
+    if action == "sell":
+        message = sell_offered_item(owner_id, food_key, weight)
+    elif action == "feed":
+        message = feed_offered_item(owner_id, food_key)
+    else:  # store
+        message = store_offered_item(owner_id, food_key, weight)
 
-    template = NAZRI_ITEMS_BY_KEY.get(item["food_key"])
-    if not template:
-        return "⚠️ آیتم نامعتبر است."
-
-    weight = item["weight"]
-    multiplier = WARM_VALUE_MULTIPLIER if item["is_warmed"] else 1.0
-    value = int(round(weight * template["value_per_kg"] * multiplier))
-    if value <= 0:
-        return "⚠️ ارزش این نذری صفر است."
-
-    if not db.delete_fridge_item(user_id, item_id):
-        return "⚠️ خطا در حذف آیتم از یخچال."
-
-    # ثبت رویداد با XP=value (فروش = دریافت پوینت)
-    result = dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=value)
-    return (
-        f"💰 {_code(to_persian_digits(value))} صلوات پوینت از فروش {template['name']} دریافت کردی!"
-        + (f" 🌟 سطح کلی حسابت رفت {_code(to_persian_digits(result['new_level']))}!" if result["leveled_up"] else "")
-    )
+    try:
+        await query.edit_message_text(message, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await query.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
 
-def feed_fridge_item(user_id: int, item_id: int) -> str:
-    """تغذیه‌ی کبوتر با یک آیتم از یخچال."""
-    item = db.get_fridge_item(user_id, item_id)
-    if not item:
-        return "⚠️ این آیتم در یخچال شما وجود ندارد."
+async def nazri_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌های هر آیتمِ واقعاً تو یخچال: فروش / تغذیه / گرم‌کردن."""
+    query = update.callback_query
+    if not query:
+        return
 
-    template = NAZRI_ITEMS_BY_KEY.get(item["food_key"])
-    if not template:
-        return "⚠️ آیتم نامعتبر است."
+    match = _ITEM_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
 
-    nutrition = template["nutrition"]
-    if item["is_warmed"]:
-        nutrition = int(round(nutrition * WARM_NUTRITION_MULTIPLIER))
-    if nutrition <= 0:
-        return "⚠️ این نذری ارزش غذایی ندارد."
+    action, owner_id_str, item_id_str = match.groups()
+    owner_id = int(owner_id_str)
+    item_id = int(item_id_str)
 
-    if not db.delete_fridge_item(user_id, item_id):
-        return "⚠️ خطا در حذف آیتم از یخچال."
+    if await reject_if_not_owner(query, owner_id):
+        return
+    await query.answer()
 
-    dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-    result = add_seed_to_pigeon(user_id, nutrition)
-    return (
-        f"🕊️ کبوترت {_code(to_persian_digits(nutrition))} واحد دون از {template['name']} خورد!\n"
-        f"دون فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
-    )
+    if action == "sell":
+        action_message = sell_fridge_item(owner_id, item_id)
+    elif action == "feed":
+        action_message = feed_fridge_item(owner_id, item_id)
+    else:  # warm
+        action_message = warm_fridge_item(owner_id, item_id)
 
+    fridge_text = build_fridge_text(owner_id, _display_name(query.from_user))
+    items = db.get_fridge_items(owner_id)
+    combined = f"{action_message}\n\n{fridge_text}"
 
-def warm_fridge_item(user_id: int, item_id: int) -> str:
-    """شروع فرآیند گرم کردن یک آیتم در یخچال."""
-    item = db.get_fridge_item(user_id, item_id)
-    if not item:
-        return "⚠️ این آیتم در یخچال شما وجود ندارد."
-
-    if item["is_warmed"]:
-        return "🔥 این آیتم قبلاً گرم شده است."
-
-    if item["warm_started_at"] is not None:
-        return "⏳ این آیتم در حال گرم شدن است."
-
-    now = _now()
-    started_at = now.isoformat()
-    ready_at = (now + datetime.timedelta(seconds=WARM_DURATION_SECONDS)).isoformat()
-
-    if not db.start_warming_item(user_id, item_id, started_at, ready_at):
-        return "⚠️ خطا در شروع گرم‌کردن."
-
-    minutes = WARM_DURATION_SECONDS // 60
-    return f"🔥 گرم‌کردن شروع شد! حدود {_code(to_persian_digits(minutes))} دقیقه دیگه آماده می‌شه."
+    try:
+        await query.edit_message_text(
+            combined, reply_markup=_fridge_keyboard(owner_id, items), parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception:
+        await query.message.reply_text(action_message, parse_mode=ParseMode.MARKDOWN)
 
 
-def upgrade_fridge(user_id: int) -> str:
-    """ارتقا سطح یخچال با خرج صلوات پوینت."""
-    current_level = db.get_fridge_level(user_id)
-    new_level = current_level + 1
-    cost = fridge_upgrade_cost(current_level)
+async def fridge_upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """دکمه‌ی «⬆️ ارتقا سطح یخچال»."""
+    query = update.callback_query
+    if not query:
+        return
 
-    if not db.spend_points(user_id, cost):
-        return f"💰 برای ارتقا به {_code(to_persian_digits(f'{cost:,}'))} صلوات پوینت نیاز داری."
+    match = _UPGRADE_PATTERN.match(query.data or "")
+    if not match:
+        await query.answer()
+        return
+    owner_id = int(match.group(1))
 
-    db.set_fridge_level(user_id, new_level)
-    new_cap = fridge_capacity(new_level)
-    return f"⬆️ یخچالت به سطح {_code(to_persian_digits(new_level))} ارتقا یافت! ظرفیت جدید: {_code(to_persian_digits(new_cap))}"
+    if await reject_if_not_owner(query, owner_id):
+        return
+    await query.answer()
+
+    upgrade_message = upgrade_fridge(owner_id)
+
+    fridge_text = build_fridge_text(owner_id, _display_name(query.from_user))
+    items = db.get_fridge_items(owner_id)
+    combined = f"{upgrade_message}\n\n{fridge_text}"
+
+    try:
+        await query.edit_message_text(
+            combined, reply_markup=_fridge_keyboard(owner_id, items), parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception:
+        await query.message.reply_text(upgrade_message, parse_mode=ParseMode.MARKDOWN)
