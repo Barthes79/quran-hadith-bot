@@ -1,19 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 هندلرهای متنی/callback مربوط به یخچال صلواتی و آیتم‌های نذری.
-
-جریان:
-  «نذری» -> پنلِ پیشنهاد (فروش فوری / بده کبوترت بخوره / بندازش تو یخچال)
-  «یخچالم» -> پنلِ کامل یخچال (لیست آیتم‌ها + دکمه‌ی فروش/تغذیه/گرم‌کردن
-              روی هرکدوم + دکمه‌ی ارتقا سطح یخچال)
-
-owner_id همیشه تو خودِ callback_data قایمه (دقیقاً همون الگوی
-handlers/pigeon.py) تا فقط صاحبِ پنل بتونه روی دکمه‌هاش بزنه.
-
-🔒 تغییرات جدید:
-  - دسترسی به «نذری» فقط برای کاربران سطح ۱ به بالا.
-  - دسترسی به «یخچالم» فقط برای کاربران سطح ۵ به بالا.
-  - دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
 """
 
 import re
@@ -25,7 +12,7 @@ from telegram.ext import ContextTypes
 
 from database import register_user
 from handlers.pigeon import reject_if_not_owner, _display_name
-from gamification import db  # ✅ ایمپورت صحیح
+from gamification import db
 from gamification.fridge import (
     roll_nazri,
     build_offer_text,
@@ -45,26 +32,17 @@ logger = logging.getLogger(__name__)
 
 _FRIDGE_TRIGGERS = ("یخچالم", "یخچال من", "یخچال صلواتی")
 
-# فرمت callback_data:
-#   nzoffer:<action>:<owner_id>:<food_key>:<weight>   -- پنلِ پیشنهاد (هنوز ذخیره نشده)
-#   nzitem:<action>:<owner_id>:<item_id>              -- آیتمِ واقعاً تو یخچال
-#   nzupgrade:<owner_id>                              -- ارتقای سطح یخچال
 _OFFER_PATTERN = re.compile(r"^nzoffer:(sell|feed|store):(\d+):([a-z]+):([\d.]+)$")
 _ITEM_PATTERN = re.compile(r"^nzitem:(sell|feed|warm):(\d+):(\d+)$")
 _UPGRADE_PATTERN = re.compile(r"^nzupgrade:(\d+)$")
 
 
 def _offer_keyboard(owner_id: int, food_key: str, weight: float, user_level: int) -> InlineKeyboardMarkup:
-    """
-    ساخت کیبورد برای نذری پیشنهادی.
-    دکمه‌ی «بندازش تو یخچال» فقط برای کاربران سطح ۵ به بالا نمایش داده می‌شود.
-    """
     weight_str = f"{weight:.2f}"
     buttons = [
         [InlineKeyboardButton("💰 فروش نذری", callback_data=f"nzoffer:sell:{owner_id}:{food_key}:{weight_str}")],
         [InlineKeyboardButton("🕊️ بده کبوترت بخوره", callback_data=f"nzoffer:feed:{owner_id}:{food_key}:{weight_str}")],
     ]
-    # فقط اگر کاربر سطح ۵ یا بالاتر باشد، دکمه‌ی یخچال را نشان بده
     if user_level >= 5:
         buttons.append([InlineKeyboardButton("❄️ بندازش تو یخچال", callback_data=f"nzoffer:store:{owner_id}:{food_key}:{weight_str}")])
     return InlineKeyboardMarkup(buttons)
@@ -89,17 +67,11 @@ def _code(value) -> str:
     return f"`{value}`"
 
 
-# ============================================================
-# توابع کمکی برای پیام‌های قفل
-# ============================================================
-
 async def _reply_fridge_locked(update: Update, progress: dict) -> None:
-    """پیام قفل برای «یخچالم» (سطح ۵)."""
     remaining = progress["remaining"]
     current_level = progress["level"]
     next_level = current_level + 1
     salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
-    
     if remaining > 0:
         msg = (
             f"🔒 قابلیت «یخچالم» فقط برای کاربرانی که به سطح ۵ "
@@ -118,16 +90,13 @@ async def _reply_fridge_locked(update: Update, progress: dict) -> None:
             f"برای فعال شدن این قابلیت، باید به سطح ۵ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-    logger.info("[DEBUG] Fridge (view) locked message sent.")
 
 
 async def _reply_nazri_locked(update: Update, progress: dict) -> None:
-    """پیام قفل برای «نذری» (سطح ۱)."""
     remaining = progress["remaining"]
     current_level = progress["level"]
     next_level = current_level + 1
     salavat_phrase = "`اللهم صل علی محمد و آل محمد`"
-    
     if remaining > 0:
         msg = (
             f"🔒 قابلیت «نذری» فقط برای کاربرانی که به سطح ۱ "
@@ -146,61 +115,36 @@ async def _reply_nazri_locked(update: Update, progress: dict) -> None:
             f"برای فعال شدن این قابلیت، باید به سطح ۱ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-    logger.info("[DEBUG] Nazri locked message sent.")
 
-
-# ============================================================
-# هندلر اصلی متن
-# ============================================================
 
 async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
-    """
-    اگه پیام «نذری» یا «یخچالم» باشه، پنل مربوطه رو می‌فرسته و True
-    برمی‌گردونه؛ وگرنه False (هم پیوی هم گروه فعاله).
-    
-    🔒 قفل‌ها:
-      - «نذری» -> سطح ۱ به بالا
-      - «یخچالم» -> سطح ۵ به بالا
-    """
     if not update.message:
         return False
-
     user = update.effective_user
     normalized = text.strip()
 
-    # ============================================================
-    # «نذری» → نیاز به سطح ۱
-    # ============================================================
     if normalized == "نذری":
         register_user(user.id, user.username)
-        
         progress = get_pigeon_feature_progress(user.id)
         if progress["level"] < 1:
             await _reply_nazri_locked(update, progress)
             return True
-        
         rolled = roll_nazri(user.id)
         if not rolled["ok"]:
             await update.message.reply_text(rolled["message"], parse_mode=ParseMode.MARKDOWN)
             return True
-
         item = rolled["item"]
         offer_text = build_offer_text(item)
         keyboard = _offer_keyboard(user.id, item["food_key"], item["weight"], progress["level"])
         await update.message.reply_text(offer_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
         return True
 
-    # ============================================================
-    # «یخچالم» → نیاز به سطح ۵
-    # ============================================================
     if normalized in _FRIDGE_TRIGGERS:
         register_user(user.id, user.username)
-        
         progress = get_pigeon_feature_progress(user.id)
         if progress["level"] < 5:
             await _reply_fridge_locked(update, progress)
             return True
-        
         fridge_text = build_fridge_text(user.id, _display_name(user))
         items = db.get_fridge_items(user.id)
         await update.message.reply_text(
@@ -211,43 +155,31 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     return False
 
 
-# ============================================================
-# کالبک‌های مربوط به آیتم‌های نذری (با چک سطح برای عملیات store)
-# ============================================================
-
 async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌های پنلِ پیشنهادِ نذری: فروش / تغذیه / یخچال."""
     query = update.callback_query
     if not query:
         return
-
     match = _OFFER_PATTERN.match(query.data or "")
     if not match:
         await query.answer()
         return
-
     action, owner_id_str, food_key, weight_str = match.groups()
     owner_id = int(owner_id_str)
     weight = float(weight_str)
-
     if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
-
-    # اگر عمل «store» (یخچال) باشد، سطح کاربر را چک کن
     if action == "store":
         progress = get_pigeon_feature_progress(owner_id)
         if progress["level"] < 5:
             await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۵ به بالا فعال است.", show_alert=True)
             return
-
     if action == "sell":
         message = sell_offered_item(owner_id, food_key, weight)
     elif action == "feed":
         message = feed_offered_item(owner_id, food_key)
-    else:  # store
+    else:
         message = store_offered_item(owner_id, food_key, weight)
-
     try:
         await query.edit_message_text(message, parse_mode=ParseMode.MARKDOWN)
     except Exception:
@@ -255,35 +187,28 @@ async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def nazri_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌های هر آیتمِ واقعاً تو یخچال: فروش / تغذیه / گرم‌کردن."""
     query = update.callback_query
     if not query:
         return
-
     match = _ITEM_PATTERN.match(query.data or "")
     if not match:
         await query.answer()
         return
-
     action, owner_id_str, item_id_str = match.groups()
     owner_id = int(owner_id_str)
     item_id = int(item_id_str)
-
     if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
-
     if action == "sell":
         action_message = sell_fridge_item(owner_id, item_id)
     elif action == "feed":
         action_message = feed_fridge_item(owner_id, item_id)
-    else:  # warm
+    else:
         action_message = warm_fridge_item(owner_id, item_id)
-
     fridge_text = build_fridge_text(owner_id, _display_name(query.from_user))
     items = db.get_fridge_items(owner_id)
     combined = f"{action_message}\n\n{fridge_text}"
-
     try:
         await query.edit_message_text(
             combined, reply_markup=_fridge_keyboard(owner_id, items), parse_mode=ParseMode.MARKDOWN
@@ -293,27 +218,21 @@ async def nazri_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def fridge_upgrade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """دکمه‌ی «⬆️ ارتقا سطح یخچال»."""
     query = update.callback_query
     if not query:
         return
-
     match = _UPGRADE_PATTERN.match(query.data or "")
     if not match:
         await query.answer()
         return
     owner_id = int(match.group(1))
-
     if await reject_if_not_owner(query, owner_id):
         return
     await query.answer()
-
     upgrade_message = upgrade_fridge(owner_id)
-
     fridge_text = build_fridge_text(owner_id, _display_name(query.from_user))
     items = db.get_fridge_items(owner_id)
     combined = f"{upgrade_message}\n\n{fridge_text}"
-
     try:
         await query.edit_message_text(
             combined, reply_markup=_fridge_keyboard(owner_id, items), parse_mode=ParseMode.MARKDOWN

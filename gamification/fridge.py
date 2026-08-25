@@ -2,18 +2,7 @@
 """
 منطق یخچال صلواتی و آیتم‌های نذری.
 
-قابلیت‌ها:
-  - roll_nazri: تولید تصادفی یک آیتم نذری با در نظر گرفتن کول‌داون و سقف روزانه
-  - sell_offered_item: فروش فوری آیتم پیشنهادی
-  - feed_offered_item: تغذیه‌ی کبوتر با آیتم پیشنهادی
-  - store_offered_item: ذخیره‌ی آیتم در یخچال
-  - sell_fridge_item: فروش آیتم از یخچال
-  - feed_fridge_item: تغذیه‌ی کبوتر از یخچال
-  - warm_fridge_item: گرم کردن آیتم در یخچال
-  - upgrade_fridge: ارتقا سطح یخچال
-  - build_offer_text, build_fridge_text: ساخت متن‌های نمایشی
-
-🔒 تغییر جدید: ادمین‌ها (ADMIN_IDS) محدودیت کول‌داون و سقف روزانه‌ی نذری را ندارند.
+🔒 ادمین‌ها (ADMIN_IDS از config اصلی) کول‌داون و سقف روزانه ندارند.
 """
 
 import random
@@ -30,10 +19,13 @@ from .config import (
     fridge_capacity, fridge_upgrade_cost,
     GAMIFICATION_TIMEZONE,
 )
-from .xp import dispatch_event, seconds_until_next
+from .events import dispatch_event
+from .xp import seconds_until_next
 from .pigeon import add_seed_to_pigeon
 from text_utils import to_persian_digits
-from config import ADMIN_IDS  # ✅ ایمپورت از config اصلی
+
+# import از config اصلی (کنار main.py)
+from config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +39,6 @@ def _now() -> datetime.datetime:
 
 
 def _is_admin(user_id: int) -> bool:
-    """بررسی می‌کند که آیا کاربر در لیست ادمین‌ها است."""
     return user_id in ADMIN_IDS
 
 
@@ -58,7 +49,7 @@ def roll_nazri(user_id: int) -> dict:
     
     🔒 ادمین‌ها محدودیت کول‌داون و سقف روزانه را ندارند.
     """
-    # 🔒 اگر کاربر ادمین است، محدودیت‌ها را نادیده بگیر
+    # اگر کاربر ادمین است، محدودیت‌ها را نادیده بگیر
     if not _is_admin(user_id):
         # بررسی کول‌داون (فقط برای غیرادمین‌ها)
         remaining = seconds_until_next(user_id, EVENT_NAZRI_RECEIVED)
@@ -84,7 +75,7 @@ def roll_nazri(user_id: int) -> dict:
     item_template = random.choice(NAZRI_ITEMS)
     weight = round(random.uniform(item_template["min_kg"], item_template["max_kg"]), 2)
     value = int(round(weight * item_template["value_per_kg"]))
-    nutrition = item_template["nutrition"]  # ارزش غذایی ثابت، مستقل از وزن
+    nutrition = item_template["nutrition"]
 
     return {
         "ok": True,
@@ -120,7 +111,6 @@ def sell_offered_item(user_id: int, food_key: str, weight: float) -> str:
     if value <= 0:
         return "⚠️ ارزش این نذری صفر است."
 
-    # ثبت رویداد (برای ادمین‌ها هم محدودیت اعمال نمی‌شود چون قبلاً در roll_nazri چک شده)
     result = dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=value)
     if not result["awarded"]:
         return "⚠️ خطا در دریافت پوینت. دوباره امتحان کن."
@@ -141,9 +131,7 @@ def feed_offered_item(user_id: int, food_key: str) -> str:
     if nutrition <= 0:
         return "⚠️ این نذری ارزش غذایی ندارد."
 
-    # ثبت رویداد با XP=0 (چون پوینت نمی‌دهد، فقط دون می‌دهد)
     dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-
     result = add_seed_to_pigeon(user_id, nutrition)
     return (
         f"🕊️ کبوترت {_code(to_persian_digits(nutrition))} واحد دون خورد!\n"
@@ -163,9 +151,7 @@ def store_offered_item(user_id: int, food_key: str, weight: float) -> str:
     if current_count >= cap:
         return f"❄️ یخچال پر است! (ظرفیت {_code(to_persian_digits(cap))})"
 
-    # ثبت رویداد با XP=0 (چون پوینت نمی‌دهد، فقط ذخیره می‌شود)
     dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-
     item_id = db.insert_fridge_item(user_id, food_key, weight)
     return f"❄️ {template['emoji']} {template['name']} با وزن {_code(to_persian_digits(f'{weight:.2f}'))} کیلو در یخچال ذخیره شد."
 
@@ -209,7 +195,6 @@ def sell_fridge_item(user_id: int, item_id: int) -> str:
     if not db.delete_fridge_item(user_id, item_id):
         return "⚠️ خطا در حذف آیتم از یخچال."
 
-    # ثبت رویداد با XP=value (فروش = دریافت پوینت)
     result = dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=value)
     return (
         f"💰 {_code(to_persian_digits(value))} صلوات پوینت از فروش {template['name']} دریافت کردی!"
