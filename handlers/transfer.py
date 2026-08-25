@@ -13,7 +13,6 @@
 
 import re
 import logging
-import secrets
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -29,8 +28,8 @@ logger = logging.getLogger(__name__)
 # الگوی تشخیص دستور انتقال: «انتقال صلواتی ۱۰۰» یا «انتقال صلواتی 1000»
 _TRANSFER_PATTERN = re.compile(r"^انتقال\s+صلواتی\s+(\d+)$", re.IGNORECASE)
 
-# کلیدهای context.chat_data برای نگهداری وضعیت تایید
-_TRANSFER_PENDING_KEY = "transfer_pending"
+# کلید پایه برای ذخیره در chat_data
+_TRANSFER_PENDING_BASE = "transfer_pending"
 
 
 def _code(value) -> str:
@@ -111,7 +110,6 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return False
     
     user = update.effective_user
-    chat_id = update.effective_chat.id
     normalized = text.strip()
     
     # بررسی اینکه آیا پیام با الگوی انتقال مطابقت دارد
@@ -171,14 +169,9 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return True
     
-    # 🔑 تولید شناسه یکتا برای این درخواست
-    request_id = secrets.token_hex(8)
-    
-    # ذخیره اطلاعات درخواست در chat_data با شناسه یکتا
-    if "transfer_requests" not in context.chat_data:
-        context.chat_data["transfer_requests"] = {}
-    
-    context.chat_data["transfer_requests"][request_id] = {
+    # ذخیره اطلاعات درخواست در chat_data با کلید منحصربه‌فرد برای هر کاربر
+    pending_key = f"{_TRANSFER_PENDING_BASE}_{user.id}"
+    context.chat_data[pending_key] = {
         "from_user_id": user.id,
         "to_user_id": target_user.id,
         "amount": amount,
@@ -186,14 +179,11 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "to_first_name": target_user.first_name or "کاربر"
     }
     
-    # ذخیره request_id در context.user_data برای دسترسی سریع
-    context.user_data[_TRANSFER_PENDING_KEY] = request_id
-    
-    # نمایش پیام تایید با شناسه در دکمه‌ها
+    # نمایش پیام تایید
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ بله، مطمئنم", callback_data=f"transfer_confirm_{request_id}"),
-            InlineKeyboardButton("❌ نه، منصرف شدم", callback_data=f"transfer_cancel_{request_id}")
+            InlineKeyboardButton("✅ بله، مطمئنم", callback_data="transfer_confirm"),
+            InlineKeyboardButton("❌ نه، منصرف شدم", callback_data="transfer_cancel")
         ]
     ])
     
@@ -208,7 +198,7 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 # ============================================================
-# کالبک تایید/لغو انتقال (با محدودیت دسترسی فقط برای درخواست‌دهنده)
+# کالبک تایید/لغو انتقال (با استفاده از chat_data و کلید منحصربه‌فرد)
 # ============================================================
 
 async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -224,41 +214,29 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ابتدا به کاربر اطلاع می‌دهیم که درخواستش دریافت شده
     await query.answer()
     
-    # استخراج request_id از callback_data
-    data_parts = query.data.split("_")
-    if len(data_parts) < 3:
-        await query.answer("⚠️ درخواست نامعتبر.")
-        return
+    user_id = query.from_user.id
+    pending_key = f"{_TRANSFER_PENDING_BASE}_{user_id}"
     
-    action = data_parts[1]  # confirm یا cancel
-    request_id = data_parts[2]
+    # دریافت pending از chat_data با کلید مخصوص این کاربر
+    pending = context.chat_data.get(pending_key)
     
-    # دریافت اطلاعات درخواست از chat_data
-    if "transfer_requests" not in context.chat_data:
-        await query.edit_message_text("⚠️ درخواست انتقال منقضی شده است. دوباره امتحان کنید.")
-        return
-    
-    pending = context.chat_data["transfer_requests"].get(request_id)
     if not pending:
         await query.edit_message_text("⚠️ درخواست انتقال منقضی شده است. دوباره امتحان کنید.")
         return
     
-    # 🔒 بررسی اینکه کاربر کلیک‌کننده، همان درخواست‌دهنده است
+    # 🔒 بررسی اینکه کاربر کلیک‌کننده، همان درخواست‌دهنده است (این شرط الان با کلید منحصربه‌فرد تضمین شده، ولی برای اطمینان نگه می‌داریم)
     if query.from_user.id != pending["from_user_id"]:
-        # فقط یک اخطار به کاربر نشان بده و هیچ تغییری در پیام ایجاد نکن
         await query.answer("🚫 این دکمه مال شما نیست. فقط شخص درخواست‌کننده می‌تواند روی آن کلیک کند.", show_alert=True)
         return
     
     # از اینجا به بعد فقط خود درخواست‌دهنده می‌تواند ادامه دهد
-    # حذف درخواست از chat_data
-    del context.chat_data["transfer_requests"][request_id]
-    context.user_data.pop(_TRANSFER_PENDING_KEY, None)
-    
-    if action == "cancel":
+    if query.data == "transfer_cancel":
+        # حذف pending از chat_data
+        context.chat_data.pop(pending_key, None)
         await query.edit_message_text("❌ انتقال لغو شد.")
         return
     
-    if action == "confirm":
+    if query.data == "transfer_confirm":
         # انجام انتقال
         from_user_id = pending["from_user_id"]
         to_user_id = pending["to_user_id"]
@@ -269,6 +247,7 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 🔒 بررسی سطح گیرنده برای دریافت (نیاز به سطح ۱)
         receiver_progress = get_pigeon_feature_progress(to_user_id)
         if receiver_progress["level"] < 1:
+            context.chat_data.pop(pending_key, None)
             await query.edit_message_text(
                 f"⚠️ کاربر مقصد ({to_first_name}) نمی‌تواند صلوات دریافت کند.\n\n"
                 f"او هم‌اکنون در سطح {_code(to_persian_digits(receiver_progress['level']))} است.\n"
@@ -281,6 +260,7 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         profile = get_profile(from_user_id)
         wallet = profile["xp"] if profile else 0
         if wallet < amount:
+            context.chat_data.pop(pending_key, None)
             await query.edit_message_text(
                 f"⚠️ موجودی شما دیگر کافی نیست. انتقال لغو شد."
             )
@@ -290,6 +270,7 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             # کسر از مبدا
             if not spend_points(from_user_id, amount):
+                context.chat_data.pop(pending_key, None)
                 await query.edit_message_text(
                     f"⚠️ خطا در انجام انتقال. موجودی شما تغییر کرده است."
                 )
@@ -297,6 +278,9 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # اضافه به مقصد
             add_points(to_user_id, amount)
+            
+            # پاک کردن وضعیت
+            context.chat_data.pop(pending_key, None)
             
             # گزارش موفقیت
             await query.edit_message_text(
@@ -316,6 +300,7 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass  # در صورت عدم دسترسی به پیوی، خطا نادیده گرفته شود
                 
         except Exception as e:
+            context.chat_data.pop(pending_key, None)
             logger.error(f"خطا در انتقال: {e}")
             await query.edit_message_text(
                 f"⚠️ خطا در انجام انتقال. لطفاً دوباره امتحان کنید."
