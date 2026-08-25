@@ -93,8 +93,7 @@ ANTI_ABUSE_RULES = {
     # باز کردن مکررش مصنوعی است. پس اینجا per_item_cooldown بی‌معناست (آیتم
     # مشخصی وجود ندارد). کول‌داون ۵ دقیقه‌ست تا هم صلوات‌شمار گروهی و هم
     # محرک شخصیِ پیوی («صلوات») منطقی و بدون امکان اسپم باشند.
-    EVENT_SALAVAT_SENT: {"cooldown_seconds": 300, "daily_cap": 15, "per_item_cooldown": False},
-    # نذری: کول‌داون ۱ ساعته، سقف روزانه‌ی معقول تا کسی همه‌ی روز رو صرف
+    EVENT_SALAVAT_SENT: {"cooldown_seconds": 300, "daily_cap": 999999, "per_item_cooldown": False},    # نذری: کول‌داون ۱ ساعته، سقف روزانه‌ی معقول تا کسی همه‌ی روز رو صرف
     # جمع‌کردن نذری برای یخچال نکنه.
     EVENT_NAZRI_RECEIVED: {"cooldown_seconds": 3600, "daily_cap": 10, "per_item_cooldown": False},
 }
