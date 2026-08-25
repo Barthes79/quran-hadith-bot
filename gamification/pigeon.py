@@ -2,7 +2,22 @@
 """
 منطق شخصیت همراه: کبوتر 🕊️
 
-... (بقیه‌ی توضیحات مثل قبل)
+رفتارهای اصلی:
+  - «صلوات» → صلوات پوینتِ تصادفی (SALAVAT_POINT_MIN تا MAX) با کول‌داون
+    ۵ دقیقه؛ در پیوی مستقیماً award می‌شه، در گروه از طریق
+    dispatch_event(xp_override=...) که handlers/salavat.py صداش می‌زنه.
+  - کبوتر، وقتی سوخت (دون) داره، خودش مثل یه ماینر passive صلوات پوینت
+    تولید می‌کنه (نرخ تولید به سطح کلی خودش بستگی داره). این پوینت‌ها
+    اول تو یه استخر «آماده‌ی برداشت» جمع می‌شن و با دکمه‌ی «برداشت» به
+    کیف‌پول اصلی (ستون xp) منتقل می‌شن.
+  - کاربر می‌تونه با خرج از کیف‌پول، سطح کبوتر رو بالا ببره؛ وقتی سطح به
+    سقفِ مقام فعلی رسید، به‌جاش «ارتقا مقام» (هزینه‌ی سنگین‌تر) میاد.
+  - سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه؛ منطقِ «نذری»/یخچال کامل
+    تو gamification/fridge.py هست و از تابع add_seed_to_pigeon همینجا
+    برای «بده کبوترت بخوره» استفاده می‌کنه.
+
+توجه: این ماژول فقط متن آماده برمی‌گرداند؛ ارسال پیام/دکمه به تلگرام در
+handlers/pigeon.py انجام می‌شود.
 """
 
 import random
@@ -22,16 +37,28 @@ from text_utils import to_persian_digits, normalize_for_search
 
 DEFAULT_PIGEON_NAME = "کبوتر"
 
+# هزینه‌ی تغییرِ اسمِ کبوتر (چه از دکمه‌ی «✏️ تغییر نام» چه با نوشتنِ
+# مستقیمِ «اسم کبوترم ...») -- هر دو راه از همین یه هزینه/اعتبارسنجی رد
+# می‌شن تا یکی‌شون راهِ دورزدنِ اون یکی نشه.
 PIGEON_RENAME_COST = 114
 
+# صلوات پوینت (چه پیوی چه گروه) فقط وقتی داده می‌شه که کاربر *عین کامل*
+# عبارت صلوات رو نوشته باشه، نه فقط کلمه‌ی «صلوات» یا «N صلوات». از
+# normalize_for_search استفاده می‌کنیم تا «آل»/«ال»، فاصله‌های اضافه، و
+# تفاوت‌های ظاهری عربی/فارسی (رایج تو کیبورد موبایل) مشکلی ایجاد نکنن؛
+# ولی همچنان باید عبارت *کامل* باشه، نه بخشی از یه پیام بزرگ‌تر یا کوتاه‌تر.
 _SALAVAT_PHRASE_NORMALIZED = normalize_for_search("اللهم صل علی محمد و آل محمد")
 
 
 def is_full_salavat_phrase(text: str) -> bool:
+    """True فقط اگه کل پیام (بعد از نرمال‌سازی) دقیقاً همون عبارت کامل
+    صلوات باشه. هم handlers/pigeon.py (پیوی) هم handlers/salavat.py
+    (گروه) از همین یه تابع استفاده می‌کنن تا رفتار یکسان بمونه."""
     return normalize_for_search(text) == _SALAVAT_PHRASE_NORMALIZED
 
 
 def _format_cooldown(seconds: int) -> str:
+    """ثانیه را به شکل mm:ss با ارقام فارسی نمایش می‌دهد (مثلاً «۴:۵۵»)."""
     seconds = max(0, int(seconds))
     minutes, secs = divmod(seconds, 60)
     secs_str = to_persian_digits(f"{secs:02d}")
@@ -39,10 +66,15 @@ def _format_cooldown(seconds: int) -> str:
 
 
 def _code(value) -> str:
+    """مقدار رو بین بک‌تیک می‌ذاره تا تو تلگرام به‌شکل monospace/آبی و
+    قابل‌کپی (با یه تپ) نمایش داده بشه -- دقیقاً همون افکتی که تو
+    مثال‌های Meowie رو اعداد بود. پیام‌هایی که از این استفاده می‌کنن باید
+    با parse_mode="Markdown" فرستاده بشن."""
     return f"`{value}`"
 
 
 def _fmt_rate(rate: float) -> str:
+    """عدد نرخ تولید رو کوتاه و بدون صفرهای اضافه نشون می‌ده (۰.۱، ۴.۵، ۱۰)."""
     return to_persian_digits(f"{rate:g}")
 
 
@@ -63,10 +95,21 @@ def _parse_dt(value):
 
 
 def roll_salavat_points() -> int:
+    """یه عدد تصادفیِ صلوات پوینت برمی‌گردونه (برای پیوی و گروه، یکسان)."""
     return random.randint(SALAVAT_POINT_MIN, SALAVAT_POINT_MAX)
 
 
 def _sync_production(user_id: int) -> dict:
+    """
+    از آخرین سینک تا الان، بر اساس سوخت (دون) موجود، تولیدِ passive رو
+    حساب می‌کنه: تولید رو به pigeon_pending_points اضافه می‌کنه و دون
+    مصرف‌شده رو کم می‌کنه. همیشه قبل از ساختن کارت وضعیت یا برداشت صدا
+    زده می‌شه تا اعداد به‌روز باشن.
+
+    توجه: سوخت (دون) دیگه خودکار از یخچال پر نمی‌شه -- فقط با «بده
+    کبوترت بخوره» (gamification/fridge.py، از طریق add_seed_to_pigeon
+    همینجا) پر می‌شه.
+    """
     state = db.get_pigeon_state(user_id)
     now = _now()
     last = _parse_dt(state.get("pigeon_last_synced_at")) or now
@@ -80,6 +123,9 @@ def _sync_production(user_id: int) -> dict:
     capacity = pigeon_fuel_capacity(global_level)
 
     if elapsed > 0 and seed > 0:
+        # نرخ تولید بر اساس sub_level (سطحِ داخلِ مقامِ فعلی) حساب می‌شه،
+        # نه global_level -- چون با هر ارتقا مقام، تولید دوباره از ۰.۱
+        # شروع می‌شه (طبق طراحیِ جدید).
         rate = pigeon_production_rate(stage["sub_level"])
         fuel_seconds = seed * PIGEON_FUEL_SECONDS_PER_UNIT
         active_seconds = min(elapsed, fuel_seconds)
@@ -100,6 +146,9 @@ def _sync_production(user_id: int) -> dict:
 
 
 def add_seed_to_pigeon(user_id: int, amount: float) -> dict:
+    """مستقیم مقدار amount رو به سوخت (دون) کبوتر اضافه می‌کنه (تا سقف
+    ظرفیت)؛ قبلش سینک می‌کنه تا وضعیت فعلی درست باشه. برای «بده کبوترت
+    بخوره» روی آیتم‌های نذری (gamification/fridge.py) استفاده می‌شه."""
     synced = _sync_production(user_id)
     new_seed = min(synced["capacity"], synced["seed"] + amount)
     db.update_pigeon_seed_and_pending(
@@ -109,6 +158,7 @@ def add_seed_to_pigeon(user_id: int, amount: float) -> dict:
 
 
 def get_pigeon_name(user_id: int) -> str:
+    """اسم فعلی کبوتر رو برمی‌گردونه."""
     state = db.get_pigeon_state(user_id)
     return state.get("pigeon_name") or DEFAULT_PIGEON_NAME
 
@@ -126,7 +176,7 @@ def get_pigeon_feature_progress(user_id: int) -> dict:
       - count: تعداد صلوات کامل گفته‌شده
       - level: سطح فعلی
       - next_threshold: آستانه‌ی سطح بعد (یا None اگه به سقف رسیده)
-      - remaining: تعداد صلوات باقی‌مونده تا سطح بعد (برای سطح ۳، باقی‌مونده تا ۷۰)
+      - remaining: تعداد صلوات باقی‌مونده تا سطح بعد
     """
     state = db.get_pigeon_state(user_id)
     count = state.get("pigeon_salavat_count") or 0
@@ -141,6 +191,20 @@ def get_pigeon_feature_progress(user_id: int) -> dict:
 
 
 def register_pigeon_feature_progress(user_id: int) -> dict:
+    """
+    هر بار که کاربر *عینِ کاملِ* عبارتِ صلوات رو می‌نویسه (چه پیوی چه
+    گروه) صدا زده می‌شه: شمارنده‌ی pigeon_salavat_count رو +۱ می‌کنه و
+    اگه با شمارشِ جدید، سطحِ «پیشرفتِ قابلیت‌ها» (طبقِ
+    PIGEON_FEATURE_THRESHOLDS) بالا رفته باشه، خبرش رو برمی‌گردونه.
+
+    توجه مهم: این «سطح» کاملاً جداست از مقام/سطحِ پولیِ کبوتر (که با خرجِ
+    صلوات‌پوینت لول‌آپ می‌شه، پایین‌تر تو همین فایل با level_up_pigeon).
+    این یکی فقط تعدادِ دفعاتِ گفتنِ ذکره؛ خودِ سطح تو ستونِ
+    pigeon_salavat_count محاسبه‌پذیره (نیازی به ستونِ سطحِ جدا نداره)، و
+    بعداً یه سری قابلیتِ دیگه (که هنوز مشخص نشده) رو باز می‌کنه. عمداً
+    کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ کیف‌پوله -- شمارش
+    هیچ‌وقت محدود نمی‌شه.
+    """
     new_count = db.increment_pigeon_salavat_count(user_id, 1)
     old_level = pigeon_feature_level_for_count(new_count - 1)
     new_level = pigeon_feature_level_for_count(new_count)
@@ -160,6 +224,15 @@ def _pigeon_feature_levelup_line(level_result: dict) -> str:
 
 
 def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dict | None = None) -> str:
+    """
+    متن کارت «صلوات پوینت» رو از روی یه نتیجه‌ی award (که از قبل محاسبه
+    شده) می‌سازه؛ خودش award صدا نمی‌زنه. این جداسازی لازمه چون تو گروه،
+    award همین الان توسط salavat_text_handler انجام شده.
+
+    feature_progress_result اگه داده بشه (خروجیِ register_pigeon_feature_progress)،
+    مستقل از این‌که کیف‌پول award شده باشه یا نه (کول‌داون/سقفِ روزانه
+    خورده باشه هم فرقی نداره)، پیامِ پیشرفتِ قابلیت‌ها رو اضافه می‌کنه.
+    """
     leveled_up_line = None
     if feature_progress_result and feature_progress_result.get("leveled_up"):
         leveled_up_line = _pigeon_feature_levelup_line(feature_progress_result)
@@ -174,8 +247,9 @@ def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dic
             f"💰 صلوات پوینت‌هات: {_code(total_str)} 🪙",
             f"⏳ بعد از {_code(_format_cooldown(remaining))} می‌تونی دوباره صلوات پوینت بگیری.",
         ]
-        if result["leveled_up"]:
-            lines.append(f"🌟 سطح کلیِ حسابت هم رفت {_code(to_persian_digits(result['new_level']))}!")
+        # خط مربوط به سطح کلی حساب (XP) حذف شد تا کاربران فقط پیام صلوات رو ببینند.
+        # if result["leveled_up"]:
+        #     lines.append(f"🌟 سطح کلیِ حسابت هم رفت {_code(to_persian_digits(result['new_level']))}!")
         if leveled_up_line:
             lines.append(leveled_up_line)
         return "\n".join(lines)
@@ -194,26 +268,37 @@ def _build_salavat_card(user_id: int, result: dict, feature_progress_result: dic
 
 
 def build_salavat_card_from_dispatch(user_id: int, dispatch_result: dict) -> str:
+    """نسخه‌ی عمومی برای فراخوانی از handlers/salavat.py تو گروه، بعد از
+    این‌که خودشون dispatch_event رو انجام دادن. پیشرفتِ قابلیت‌های کبوتر
+    رو هم همینجا (مستقل از نتیجه‌ی dispatch) ثبت می‌کنه."""
     progress_result = register_pigeon_feature_progress(user_id)
     return _build_salavat_card(user_id, dispatch_result, progress_result)
 
 
 def handle_salavat_points(user_id: int) -> str:
+    """مسیر پیوی: هیچ سیستم دیگه‌ای قبلش صلوات رو پردازش نکرده، پس خودش
+    award_variable_xp رو با یه عدد رندوم صدا می‌زنه، پیشرفتِ قابلیت‌های
+    کبوتر رو ثبت می‌کنه، و بعد کارت رو می‌سازه."""
     result = award_variable_xp(user_id, EVENT_SALAVAT_SENT, roll_salavat_points())
     progress_result = register_pigeon_feature_progress(user_id)
     return _build_salavat_card(user_id, result, progress_result)
 
 
 def _is_valid_pigeon_name(name: str) -> bool:
+    """۳ تا ۲۲ کاراکتر، فقط حروف (فارسی/عربی/انگلیسی و...) و فاصله‌ی
+    تکی بینشون؛ بدون عدد، ایموجی، یا هر علامتِ نگارشیِ دیگه."""
     name = name.strip()
     if not (3 <= len(name) <= 22):
         return False
-    if "  " in name:
+    if "  " in name:  # چند فاصله‌ی پشت‌سرهم مجاز نیست
         return False
     return all(ch.isalpha() for ch in name if ch != " ")
 
 
 def set_pigeon_name(user_id: int, name: str) -> str:
+    """با پرداختِ PIGEON_RENAME_COST صلوات‌پوینت از کیف‌پول، اسمِ کبوتر
+    رو عوض می‌کنه. اسم باید ۳ تا ۲۲ کاراکتر، فقط حروف و فاصله باشه
+    (بدون عدد، ایموجی، یا علامتِ نگارشی)."""
     name = name.strip()
     if not _is_valid_pigeon_name(name):
         return (
@@ -238,6 +323,9 @@ def set_pigeon_name(user_id: int, name: str) -> str:
 
 
 def build_pigeon_status_text(user_id: int, display_name: str) -> str:
+    """کارت وضعیت کبوتر رو می‌سازه: نام، شکم، مقام/سطح (پولی)، تولید،
+    آماده‌ی برداشت، کیف‌پول، هزینه‌ی اقدامِ بعدی، و پیشرفتِ قابلیت‌ها
+    (شمارشِ صلوات، کاملاً جدا از مقام)."""
     synced = _sync_production(user_id)
     profile = db.get_profile(user_id)
     state = db.get_pigeon_state(user_id)
@@ -256,6 +344,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
     fridge_count = db.count_fridge_items(user_id)
     fridge_cap = fridge_capacity(fridge_level)
 
+    # وضعیت شکم (قبلاً: دون)
     if seed >= capacity:
         seed_status = "😋 سیر"
     elif seed >= capacity / 2:
@@ -303,6 +392,8 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
     else:
         lines.append("👑 کبوترت به بالاترین مقام و سطح رسیده!")
 
+    # این بخش کاملاً جدا از مقام/سطحِ بالاست -- فقط با گفتنِ عینِ صلوات
+    # پیشرفت می‌کنه، به پول/تولید هیچ ربطی نداره.
     lines.append("")
     lines.append(f"🔓 پیشرفتِ قابلیت‌ها: {_code(feature_level_str)} / {_code(to_persian_digits(PIGEON_MAX_FEATURE_LEVEL))}")
     if next_feature_threshold is not None:
@@ -318,6 +409,7 @@ def build_pigeon_status_text(user_id: int, display_name: str) -> str:
 
 
 def harvest_points(user_id: int) -> str:
+    """پوینتِ آماده‌ی برداشت رو (بخش صحیحش) به کیف‌پول اصلی منتقل می‌کنه."""
     synced = _sync_production(user_id)
     pending = synced["pending"]
     harvest_amount = int(pending)
@@ -339,12 +431,16 @@ def harvest_points(user_id: int) -> str:
 
     amount_str = to_persian_digits(f"{harvest_amount:,}")
     lines = [f"📥 {_code(amount_str)} صلوات پوینت برداشت کردی و به کیف‌پولت اضافه شد!"]
-    if result["leveled_up"]:
-        lines.append(f"🌟 سطح کلیِ حسابت رفت {_code(to_persian_digits(result['new_level']))}!")
+    # خط مربوط به سطح کلی حساب (XP) حذف شد.
+    # if result["leveled_up"]:
+    #     lines.append(f"🌟 سطح کلیِ حسابت رفت {_code(to_persian_digits(result['new_level']))}!")
     return "\n".join(lines)
 
 
 def level_up_pigeon(user_id: int) -> str:
+    """با خرج از کیف‌پول، سطحِ کبوتر رو بالا می‌بره (یا اگه به سقفِ مقام
+    رسیده، «ارتقا کبوتر» می‌ده: اسمِ مقام عوض می‌شه، سطح و تولید ریست
+    می‌شه)."""
     profile = db.get_profile(user_id)
     wallet = profile["xp"] if profile else 0
     state = db.get_pigeon_state(user_id)
