@@ -36,10 +36,12 @@ def _code(value) -> str:
 
 
 async def _reply_transfer_locked(update: Update, progress: dict) -> None:
-    """پیام قفل انتقال برای کاربران زیر سطح ۱."""
+    """پیام قفل انتقال برای کاربران زیر سطح ۱.
+    عبارت صلوات داخل بک‌تیک قرار می‌گیرد تا کاربر بتواند کپی کند."""
     remaining = progress["remaining"]
     current_level = progress["level"]
     next_level = current_level + 1
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"  # 🔄 قابل کپی با بک‌تیک
     
     if remaining > 0:
         msg = (
@@ -48,7 +50,7 @@ async def _reply_transfer_locked(update: Update, progress: dict) -> None:
             f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
             f"برای رسیدن به سطح ۱، باید {_code(to_persian_digits(remaining))} صلوات کامل "
             f"دیگه بفرستید.\n"
-            f"(اللهم صل علی محمد و آل محمد)\n\n"
+            f"{salavat_phrase}\n\n"
             f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
         )
     else:

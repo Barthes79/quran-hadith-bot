@@ -3,7 +3,7 @@
 هندلرهای متنی/callback مربوط به شخصیت همراه (کبوتر): صلوات، کارتِ وضعیت،
 برداشت، ارتقا، تغییرِ اسم.
 
-نسخه‌ی نهایی با پیام پویا برای سطح بعدی.
+نسخه‌ی نهایی با پنل کبوتر برای سطح ۲ به بالا.
 """
 
 import re
@@ -64,35 +64,37 @@ async def reject_if_not_owner(query, owner_id: int) -> bool:
 
 
 def _check_feature_level(user_id: int) -> tuple[bool, dict]:
+    """بررسی می‌کند که آیا کاربر به سطح ۲ رسیده است یا نه."""
     progress = get_pigeon_feature_progress(user_id)
-    is_allowed = progress["level"] >= 3
+    is_allowed = progress["level"] >= 2  # 🔄 تغییر: سطح ۲ به بالا
     logger.info(f"[DEBUG] user_id={user_id}, level={progress['level']}, is_allowed={is_allowed}, remaining={progress['remaining']}")
     return is_allowed, progress
 
 
 async def _reply_feature_locked(update: Update, progress: dict) -> None:
-    """پیام قفل بودن قابلیت‌های کبوتر رو با توضیح کامل و پویا می‌فرسته."""
+    """پیام قفل بودن قابلیت‌های کبوتر رو با توضیح کامل و پویا می‌فرسته.
+    عبارت صلوات داخل بک‌تیک قرار می‌گیرد تا کاربر بتواند کپی کند."""
     remaining = progress["remaining"]
     current_level = progress["level"]
     next_level = current_level + 1
-    # اگر سطح فعلی ۰ باشه، سطح بعدی ۱ هست؛ اگر ۱ باشه، سطح بعدی ۲ و ...
+    salavat_phrase = "`اللهم صل علی محمد و آل محمد`"  # 🔄 قابل کپی با بک‌تیک
     
     if remaining > 0:
         msg = (
-            f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۳ "
+            f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۲ "
             f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
             f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
             f"برای رسیدن به سطح بعدی (سطح {_code(to_persian_digits(next_level))})، باید "
             f"{_code(to_persian_digits(remaining))} صلوات کامل دیگه بفرستید.\n"
-            f"(اللهم صل علی محمد و آل محمد)\n\n"
+            f"{salavat_phrase}\n\n"
             f"هر بار که این عبارت رو کامل بنویسید، یک بار به شمارش اضافه می‌شود."
         )
     else:
         msg = (
-            f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۳ "
+            f"🔒 قابلیت‌های کبوتر (شامل «کبوترم») فقط برای کاربرانی که به سطح ۲ "
             f"«پیشرفت قابلیت‌ها» رسیده‌اند فعال است.\n\n"
             f"شما هم‌اکنون در سطح {_code(to_persian_digits(current_level))} هستید.\n"
-            f"برای فعال شدن این قابلیت، باید به سطح ۳ برسید."
+            f"برای فعال شدن این قابلیت، باید به سطح ۲ برسید."
         )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
     logger.info("[DEBUG] Locked message sent.")
@@ -134,7 +136,7 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return True
 
     # ============================================================
-    # عبارت کامل صلوات → همیشه کار می‌کنه (برای رسیدن به سطح ۳)
+    # عبارت کامل صلوات → همیشه کار می‌کنه (برای رسیدن به سطح ۲)
     # ============================================================
     if is_full_salavat_phrase(normalized):
         if not is_private:
@@ -146,7 +148,7 @@ async def pigeon_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return True
 
     # ============================================================
-    # از اینجا به بعد، همه‌ی قابلیت‌های کبوتر نیاز به سطح ۳ دارند
+    # از اینجا به بعد، همه‌ی قابلیت‌های کبوتر نیاز به سطح ۲ دارند
     # ============================================================
     is_allowed, progress = _check_feature_level(user.id)
 
@@ -208,7 +210,7 @@ async def pigeon_harvest_callback(update: Update, context: ContextTypes.DEFAULT_
 
     is_allowed, _ = _check_feature_level(owner_id)
     if not is_allowed:
-        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۳ به بالا فعال است.", show_alert=True)
+        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۲ به بالا فعال است.", show_alert=True)
         return
 
     await query.answer()
@@ -239,7 +241,7 @@ async def pigeon_levelup_callback(update: Update, context: ContextTypes.DEFAULT_
 
     is_allowed, _ = _check_feature_level(owner_id)
     if not is_allowed:
-        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۳ به بالا فعال است.", show_alert=True)
+        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۲ به بالا فعال است.", show_alert=True)
         return
 
     await query.answer()
@@ -270,7 +272,7 @@ async def pigeon_rename_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     is_allowed, _ = _check_feature_level(owner_id)
     if not is_allowed:
-        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۳ به بالا فعال است.", show_alert=True)
+        await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۲ به بالا فعال است.", show_alert=True)
         return
 
     await query.answer()
