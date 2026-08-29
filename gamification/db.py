@@ -1,0 +1,536 @@
+# -*- coding: utf-8 -*-
+"""
+لایه‌ی دسترسی به دیتابیس برای گیمیفیکیشن.
+
+عمداً از همان الگوی پروژه (sqlite3 خام، get_connection از database.py)
+استفاده می‌شود تا سبک کد با بقیه‌ی پروژه یکدست بماند و وابستگی جدیدی
+اضافه نشود.
+"""
+
+import datetime
+
+from database import get_connection
+
+
+def _ensure_profile(cur, user_id: int):
+    """اگر پروفایل گیمیفیکیشن کاربر وجود نداشت، با مقادیر پیش‌فرض می‌سازد."""
+    cur.execute(
+        "INSERT OR IGNORE INTO gamification_profile (user_id) VALUES (?)",
+        (user_id,),
+    )
+
+
+def _ensure_fridge_column(cur):
+    """اطمینان از وجود ستون has_fridge در جدول gamification_profile."""
+    cur.execute("PRAGMA table_info(gamification_profile)")
+    columns = [row[1] for row in cur.fetchall()]
+    if "has_fridge" not in columns:
+        cur.execute("ALTER TABLE gamification_profile ADD COLUMN has_fridge INTEGER DEFAULT 0")
+
+
+def get_profile(user_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT * FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def last_event_time(user_id: int, event_type: str, reference_id: str | None, per_item: bool):
+    """آخرین زمانی که این کاربر برای این نوع رویداد (یا این آیتم مشخص،
+    اگر per_item باشد) XP گرفته را برمی‌گرداند، یا None."""
+    conn = get_connection()
+    if per_item and reference_id is not None:
+        row = conn.execute(
+            """SELECT created_at FROM xp_transactions
+               WHERE user_id = ? AND event_type = ? AND reference_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, event_type, str(reference_id)),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """SELECT created_at FROM xp_transactions
+               WHERE user_id = ? AND event_type = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, event_type),
+        ).fetchone()
+    conn.close()
+    return row["created_at"] if row else None
+
+
+def count_events_today(user_id: int, event_type: str, day_key: str) -> int:
+    """تعداد رویدادهای این نوع که امروز (day_key) برای این کاربر XP داده‌اند."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT COUNT(*) AS c FROM xp_transactions
+           WHERE user_id = ? AND event_type = ? AND date(created_at) = date(?)""",
+        (user_id, event_type, day_key),
+    ).fetchone()
+    conn.close()
+    return row["c"] if row else 0
+
+
+def insert_xp_transaction(user_id: int, event_type: str, xp: int,
+                           reference_id: str | None, idempotency_key: str) -> bool:
+    """
+    یک تراکنش XP ثبت می‌کند و XP کل پروفایل را atomic آپدیت می‌کند.
+    اگر idempotency_key از قبل ثبت شده باشد (رویداد تکراری)، هیچ کاری
+    نمی‌کند و False برمی‌گرداند.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            """INSERT INTO xp_transactions (user_id, event_type, xp, reference_id, idempotency_key)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, event_type, xp, str(reference_id) if reference_id is not None else None,
+             idempotency_key),
+        )
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (xp, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        # idempotency_key تکراری → UNIQUE constraint خطا می‌دهد؛ یعنی این
+        # رویداد قبلاً ثبت شده، پس به‌درستی نادیده گرفته می‌شود.
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def set_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_streak(user_id: int, current_streak: int, longest_streak: int,
+                   last_activity_date: str, first_activity_date: str = None):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    if first_activity_date:
+        cur.execute(
+            """UPDATE gamification_profile
+               SET current_streak = ?, longest_streak = ?, last_activity_date = ?,
+                   first_activity_date = COALESCE(first_activity_date, ?)
+               WHERE user_id = ?""",
+            (current_streak, longest_streak, last_activity_date, first_activity_date, user_id),
+        )
+    else:
+        cur.execute(
+            """UPDATE gamification_profile
+               SET current_streak = ?, longest_streak = ?, last_activity_date = ?
+               WHERE user_id = ?""",
+            (current_streak, longest_streak, last_activity_date, user_id),
+        )
+    conn.commit()
+    conn.close()
+
+
+def increment_activity_counter(user_id: int, column: str, amount: int = 1):
+    """ستون‌های شمارنده‌ی total_hadith_read/total_quran_read/... را افزایش می‌دهد.
+    نام ستون از یک لیست سفید داخلی گرفته می‌شود تا هیچ‌گاه ورودی خام کاربر
+    مستقیم وارد SQL نشود."""
+    allowed = {
+        "total_hadith_read", "total_quran_read",
+        "total_quiz_played", "total_missions_completed",
+        "total_salavat_sent",
+    }
+    if column not in allowed:
+        raise ValueError(f"ستون غیرمجاز: {column}")
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        f"UPDATE gamification_profile SET {column} = {column} + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# کیف پول و موجودی (عملیات اتمیک)
+# ---------------------------------------------------------------------------
+
+def spend_points(user_id: int, amount: int) -> bool:
+    """
+    اگه کیف‌پول (ستون xp) کافی باشه، amount رو ازش کم می‌کنه و True
+    برمی‌گردونه؛ وگرنه بدون هیچ تغییری False. چک‌کردنِ موجودی و کم‌کردن
+    هر دو تو یه تراکنش انجام می‌شه تا race condition (مثلاً دو تا خرید
+    همزمان) باعث نشه موجودی منفی بشه.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        row = cur.execute(
+            "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        current = row["xp"] if row else 0
+        if current < amount:
+            conn.rollback()
+            return False
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def add_points(user_id: int, amount: int) -> bool:
+    """
+    مقدار amount رو به کیف‌پول کاربر اضافه می‌کند (اتمیک).
+    برای انتقال صلوات پوینت بین کاربران استفاده می‌شود.
+    """
+    if amount <= 0:
+        return False
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def set_points(user_id: int, amount: int) -> bool:
+    """
+    تنظیم مستقیم مقدار صلوات پوینت کاربر به amount (مثبت یا صفر).
+    فقط برای استفاده‌ی ادمین در نظر گرفته شده است.
+    """
+    if amount < 0:
+        amount = 0
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        _ensure_profile(cur, user_id)
+        _ensure_fridge_column(cur)
+        cur.execute(
+            "UPDATE gamification_profile SET xp = ? WHERE user_id = ?",
+            (amount, user_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
+# ---------------------------------------------------------------------------
+
+def get_pigeon_state(user_id: int) -> dict:
+    """نام، سطح کلی، سوخت فعلی، پوینتِ آماده‌ی برداشت، و آخرین زمان
+    سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
+                  pigeon_pending_points, pigeon_last_synced_at, pigeon_salavat_count
+           FROM gamification_profile WHERE user_id = ?""",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {
+            "pigeon_name": None, "pigeon_seed": 0,
+            "pigeon_global_level": 1, "pigeon_pending_points": 0,
+            "pigeon_last_synced_at": None, "pigeon_salavat_count": 0,
+        }
+    return dict(row)
+
+
+def set_pigeon_name(user_id: int, name: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_name = ? WHERE user_id = ?",
+        (name, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, synced_at: str):
+    """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، پوینتِ
+    اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        """UPDATE gamification_profile
+           SET pigeon_seed = ?, pigeon_pending_points = ?, pigeon_last_synced_at = ?
+           WHERE user_id = ?""",
+        (seed, pending, synced_at, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_pigeon_pending(user_id: int, pending: float):
+    """بعد از برداشت، باقی‌مانده‌ی اعشاریِ pending (بخشی که هنوز به
+    عددِ صحیح نرسیده) رو ذخیره می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_pending_points = ? WHERE user_id = ?",
+        (pending, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_pigeon_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_global_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
+    """شمارنده‌ی دفعاتی که کاربر *عینِ کاملِ* عبارتِ صلوات رو نوشته
+    (چه پیوی چه گروه) رو +amount می‌کنه و مقدارِ جدید رو برمی‌گردونه.
+    این شمارنده کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ
+    کیف‌پوله (EVENT_SALAVAT_SENT) -- هیچ‌وقت محدود نمی‌شه، چون منبعِ
+    تنهای لول‌آپِ کبوتره، نه یه ارزِ قابل‌فارم‌کردن."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = pigeon_salavat_count + ? WHERE user_id = ?",
+        (amount, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else amount
+
+
+def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
+    """
+    تنظیم مستقیم تعداد صلوات کامل کاربر به مقدار new_count.
+    فقط برای استفاده‌ی ادمین (تست) در نظر گرفته شده است.
+    """
+    if new_count < 0:
+        new_count = 0
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET pigeon_salavat_count = ? WHERE user_id = ?",
+        (new_count, user_id),
+    )
+    conn.commit()
+    row = cur.execute(
+        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["pigeon_salavat_count"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# یخچال صلواتی 🧊
+# ---------------------------------------------------------------------------
+
+def get_has_fridge(user_id: int) -> bool:
+    """بررسی می‌کند که آیا کاربر یخچال خریداری کرده است یا نه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT has_fridge FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return bool(row["has_fridge"]) if row else False
+
+
+def set_has_fridge(user_id: int, value: bool) -> None:
+    """تنظیم وضعیت خرید یخچال برای کاربر."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET has_fridge = ? WHERE user_id = ?",
+        (1 if value else 0, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_fridge_level(user_id: int) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    conn.commit()
+    row = cur.execute(
+        "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["fridge_level"] if row and row["fridge_level"] else 1
+
+
+def set_fridge_level(user_id: int, level: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_profile(cur, user_id)
+    _ensure_fridge_column(cur)
+    cur.execute(
+        "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def count_fridge_items(user_id: int) -> int:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM nazri_items WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row["c"] if row else 0
+
+
+def get_fridge_items(user_id: int) -> list:
+    """همه‌ی آیتم‌های تو یخچالِ این کاربر، قدیمی‌ترین اول."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM nazri_items WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_fridge_item(user_id: int, item_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def insert_fridge_item(user_id: int, food_key: str, weight: float) -> int:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO nazri_items (user_id, food_key, weight) VALUES (?, ?, ?)",
+        (user_id, food_key, weight),
+    )
+    conn.commit()
+    new_id = cur.lastrowid
+    conn.close()
+    return new_id
+
+
+def delete_fridge_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM nazri_items WHERE id = ? AND user_id = ?", (item_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def delete_all_fridge_items(user_id: int) -> bool:
+    """حذف همه‌ی آیتم‌های یخچال یک کاربر."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM nazri_items WHERE user_id = ?", (user_id,))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def start_warming_item(user_id: int, item_id: int, started_at: str, ready_at: str) -> bool:
+    """فقط اگه آیتم قبلاً رو گرم‌کن گذاشته نشده باشه، تایمرش رو شروع می‌کنه."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE nazri_items SET warm_started_at = ?, warm_ready_at = ?
+           WHERE id = ? AND user_id = ? AND warm_started_at IS NULL AND is_warmed = 0""",
+        (started_at, ready_at, item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
+def finalize_warm_item(user_id: int, item_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE nazri_items SET is_warmed = 1 WHERE id = ? AND user_id = ? AND is_warmed = 0",
+        (item_id, user_id),
+    )
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated

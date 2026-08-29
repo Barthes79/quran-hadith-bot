@@ -1,0 +1,138 @@
+From 679096ec622be33516b4192ff0f69c7003d53b9a Mon Sep 17 00:00:00 2001
+From: Bot Dev <bot@example.com>
+Date: Sat, 1 Aug 2026 23:11:42 +0000
+Subject: add backfill_chats.py: one-time seed of chats table for pre-existing
+ groups
+
+---
+ backfill_chats.py | 91 +++++++++++++++++++++++++++++++++++++++++++++++
+ database.py       | 15 ++++++++
+ 2 files changed, 106 insertions(+)
+ create mode 100644 backfill_chats.py
+
+diff --git a/backfill_chats.py b/backfill_chats.py
+new file mode 100644
+index 0000000..c8b8b1d
+--- /dev/null
++++ b/backfill_chats.py
+@@ -0,0 +1,91 @@
++"""
++اسکریپت یک‌باره‌ی «بک‌فیل» جدول chats.
++
++قابلیت ردیابی خودکار گروه‌ها (my_chat_member) فقط از این به بعد کار می‌کند؛
++گروه‌هایی که ربات از قبلِ این آپدیت توشون بوده، تا وقتی یک اتفاق تازه (مثل
++خروج/ورود دوباره‌ی ربات یا تغییر وضعیت ادمین) رخ نده، هیچ رویدادی براشون
++فایر نمی‌شه و توی /botstats دیده نمی‌شن.
++
++این اسکریپت این مشکل رو یک‌بار حل می‌کنه: از روی جدول‌هایی که از قبل
++chat_id گروه‌ها رو (به یک دلیل دیگه، مثل تنظیمات گروه یا صلوات‌شمار) ذخیره
++کرده بودن، لیست گروه‌های شناخته‌شده رو در می‌آره، برای هرکدوم از طریق API
++تلگرام (get_chat) بررسی می‌کنه که ربات هنوز توی اون گروه هست یا نه، و جدول
++chats رو بر اساسش پر می‌کنه.
++
++نحوه‌ی اجرا (روی Railway از تب Console، یا هر جا که .env در دسترسه):
++    python backfill_chats.py
++
++بعد از اجرای موفق، دیگه لازم نیست دوباره اجراش کنید؛ از این به بعد
++ChatMemberHandler خودش جدول رو تازه نگه می‌داره.
++"""
++import asyncio
++import logging
++
++from telegram import Bot
++from telegram.error import TelegramError
++from telegram.request import HTTPXRequest
++
++from config import BOT_TOKEN, PROXY_URL
++from database import init_db, get_known_group_chat_ids, upsert_chat
++
++logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
++logger = logging.getLogger(__name__)
++
++
++async def backfill():
++    init_db()
++    chat_ids = get_known_group_chat_ids()
++
++    if not chat_ids:
++        print("هیچ chat_id شناخته‌شده‌ای (از group_settings/salavat_stats/quiz_scores) پیدا نشد.")
++        return
++
++    print(f"🔎 {len(chat_ids)} گروهِ شناخته‌شده پیدا شد؛ در حال بررسی هرکدوم از طریق تلگرام...")
++
++    request = HTTPXRequest(connect_timeout=15, read_timeout=30, proxy=PROXY_URL)
++    bot = Bot(token=BOT_TOKEN, request=request)
++
++    added, inactive, failed = 0, 0, 0
++
++    async with bot:
++        for chat_id in chat_ids:
++            try:
++                chat = await bot.get_chat(chat_id)
++            except TelegramError as e:
++                # معمولاً یعنی ربات دیگه توی اون گروه نیست (حذف/بلاک شده) یا
++                # خودِ گروه دیگه وجود نداره؛ به‌عنوان غیرفعال ثبتش می‌کنیم تا
++                # توی لیست /botstats نیاد، ولی سابقه‌اش توی دیتابیس بمونه.
++                upsert_chat(chat_id, "group", is_active=False)
++                inactive += 1
++                logger.info(f"chat_id={chat_id} غیرفعال ثبت شد ({e}).")
++                continue
++            except Exception as e:
++                failed += 1
++                logger.error(f"خطای غیرمنتظره برای chat_id={chat_id}: {e}")
++                continue
++
++            member_count = None
++            if chat.type in ("group", "supergroup"):
++                try:
++                    member_count = await bot.get_chat_member_count(chat_id)
++                except Exception:
++                    member_count = None
++
++            upsert_chat(
++                chat.id, chat.type, title=chat.title, username=chat.username,
++                member_count=member_count, is_active=True,
++            )
++            added += 1
++            print(f"  ✅ {chat.title or chat.id} ({chat.type})")
++
++            # جلوگیری از برخورد به rate limit تلگرام وقتی گروه‌ها زیادن
++            await asyncio.sleep(0.3)
++
++    print(
++        f"\n✅ بک‌فیل تمام شد: {added} چتِ فعال ثبت شد، {inactive} چت غیرفعال "
++        f"(ربات دیگه توش نیست)، {failed} مورد با خطا مواجه شد."
++    )
++
++
++if __name__ == "__main__":
++    asyncio.run(backfill())
+diff --git a/database.py b/database.py
+index e2b114c..31c8150 100644
+--- a/database.py
++++ b/database.py
+@@ -1522,6 +1522,21 @@ def count_active_groups() -> int:
+     return row["c"]
+ 
+ 
++def get_known_group_chat_ids():
++    """همه‌ی chat_id هایی که توی جدول‌های مربوط به فعالیت گروهی (تنظیمات
++    گروه، صلوات‌شمار، امتیاز مسابقه) قبلاً دیده شدن — صرف‌نظر از این‌که
++    my_chat_member براشون فایر شده باشه یا نه. فقط برای بک‌فیل یک‌بارهی
++    جدول chats (backfill_chats.py) استفاده می‌شه، تا گروه‌هایی که ربات از
++    قبلِ این قابلیت توشون بوده هم توی /botstats دیده بشن."""
++    conn = get_connection()
++    chat_ids = set()
++    for table in ("group_settings", "salavat_stats", "quiz_scores"):
++        rows = conn.execute(f"SELECT DISTINCT chat_id FROM {table} WHERE chat_id IS NOT NULL").fetchall()
++        chat_ids.update(r["chat_id"] for r in rows)
++    conn.close()
++    return sorted(chat_ids)
++
++
+ def get_user_stats(user_id: int):
+     conn = get_connection()
+     favorites = conn.execute(
+-- 
+2.43.0
+

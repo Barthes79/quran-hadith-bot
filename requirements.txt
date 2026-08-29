@@ -1,0 +1,7 @@
+python-telegram-bot[job-queue]==20.8
+httpx[socks]==0.26.0
+python-dotenv==1.0.1
+thefuzz==0.22.1
+python-Levenshtein==0.25.0
+rapidfuzz
+requests==2.31.0
