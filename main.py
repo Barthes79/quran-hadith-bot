@@ -125,6 +125,7 @@ from handlers.fridge import (
     fridge_cancel_callback,
 )
 from handlers.transfer import transfer_text_handler, transfer_callback
+from admin_migrate import backup_volume, restore_volume
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -323,6 +324,12 @@ def main():
     app.add_handler(CommandHandler("setsalavat", set_salavat_count_command))
     app.add_handler(CommandHandler("removefridge", remove_fridge_command))  # ✅ جدید
     app.add_handler(CommandHandler("setpoints", set_points_command))        # ✅ جدید
+
+    # ==========================================
+    # انتقال Volume بین اکانت‌ها (موقت -- بعد از انتقال حذف شود)
+    # ==========================================
+    app.add_handler(CommandHandler("backupvolume", backup_volume))
+    app.add_handler(CommandHandler("restorevolume", restore_volume))
 
     # ==========================================
     # دستورات اوقات شرعی
