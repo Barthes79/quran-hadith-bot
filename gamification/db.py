@@ -28,11 +28,58 @@ def _ensure_fridge_column(cur):
         cur.execute("ALTER TABLE gamification_profile ADD COLUMN has_fridge INTEGER DEFAULT 0")
 
 
+# نگاشتِ ستون‌های قدیمیِ «کبوتر» به نام‌های جدیدِ «فرشته». این تابع فقط
+# یک‌بار در عمرِ دیتابیس واقعاً کاری انجام می‌ده (وقتی هنوز ستون‌های قدیمی
+# با نام pigeon_* موجودن)؛ بعد از رنیم، برای بقیه‌ی عمرِ برنامه این چک
+# سریع (فقط یه PRAGMA) هزینه‌ی قابل‌چشم‌پوشیه. توجه: pigeon_salavat_count
+# عمداً به angel_dhikr_count تغییرِ نام داده چون دیگه فقط شمارشِ صلوات
+# نیست، شمارشِ هر ذکرِ کاملِ شناخته‌شده‌ست.
+_PIGEON_TO_ANGEL_COLUMNS = {
+    "pigeon_name": ("angel_name", "TEXT", "NULL"),
+    "pigeon_seed": ("angel_seed", "REAL", "0"),
+    "pigeon_global_level": ("angel_global_level", "INTEGER", "1"),
+    "pigeon_pending_points": ("angel_pending_points", "REAL", "0"),
+    "pigeon_last_synced_at": ("angel_last_synced_at", "TEXT", "NULL"),
+    "pigeon_salavat_count": ("angel_dhikr_count", "INTEGER", "0"),
+}
+
+
+def _ensure_angel_columns(cur):
+    """ستون‌های قدیمیِ pigeon_* رو (اگه هنوز موجود باشن) به نام‌های جدیدِ
+    angel_* تغییرِ نام می‌ده تا داده‌ی کاربرها (سطح، سوخت، پوینتِ آماده‌ی
+    برداشت، شمارشِ ذکر و ...) از دست نره. اگه دیتابیس از قبل با ستون‌های
+    جدید ساخته شده باشه، یا هیچ‌کدوم هنوز وجود نداشته باشن (پروفایلِ کاملاً
+    تازه)، یا SQLite خیلی قدیمی RENAME COLUMN رو پشتیبانی نکنه، بدون خطا
+    مسیرِ درست رو پیش می‌گیره."""
+    cur.execute("PRAGMA table_info(gamification_profile)")
+    columns = [row[1] for row in cur.fetchall()]
+    for old_name, (new_name, col_type, default) in _PIGEON_TO_ANGEL_COLUMNS.items():
+        if new_name in columns:
+            continue
+        if old_name in columns:
+            try:
+                cur.execute(
+                    f"ALTER TABLE gamification_profile RENAME COLUMN {old_name} TO {new_name}"
+                )
+                continue
+            except Exception:
+                pass  # SQLite قدیمی: می‌ریم روی مسیرِ افزودنِ ستونِ جدید + کپیِ داده
+            cur.execute(
+                f"ALTER TABLE gamification_profile ADD COLUMN {new_name} {col_type} DEFAULT {default}"
+            )
+            cur.execute(f"UPDATE gamification_profile SET {new_name} = {old_name}")
+        else:
+            cur.execute(
+                f"ALTER TABLE gamification_profile ADD COLUMN {new_name} {col_type} DEFAULT {default}"
+            )
+
+
 def get_profile(user_id: int) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     conn.commit()
     row = cur.execute(
         "SELECT * FROM gamification_profile WHERE user_id = ?", (user_id,)
@@ -87,6 +134,7 @@ def insert_xp_transaction(user_id: int, event_type: str, xp: int,
     try:
         _ensure_profile(cur, user_id)
         _ensure_fridge_column(cur)
+        _ensure_angel_columns(cur)
         cur.execute(
             """INSERT INTO xp_transactions (user_id, event_type, xp, reference_id, idempotency_key)
                VALUES (?, ?, ?, ?, ?)""",
@@ -113,6 +161,7 @@ def set_level(user_id: int, level: int):
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
         "UPDATE gamification_profile SET level = ? WHERE user_id = ?",
         (level, user_id),
@@ -127,6 +176,7 @@ def update_streak(user_id: int, current_streak: int, longest_streak: int,
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     if first_activity_date:
         cur.execute(
             """UPDATE gamification_profile
@@ -161,6 +211,7 @@ def increment_activity_counter(user_id: int, column: str, amount: int = 1):
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
         f"UPDATE gamification_profile SET {column} = {column} + ? WHERE user_id = ?",
         (amount, user_id),
@@ -187,6 +238,7 @@ def spend_points(user_id: int, amount: int) -> bool:
     try:
         _ensure_profile(cur, user_id)
         _ensure_fridge_column(cur)
+        _ensure_angel_columns(cur)
         row = cur.execute(
             "SELECT xp FROM gamification_profile WHERE user_id = ?", (user_id,)
         ).fetchone()
@@ -219,6 +271,7 @@ def add_points(user_id: int, amount: int) -> bool:
     try:
         _ensure_profile(cur, user_id)
         _ensure_fridge_column(cur)
+        _ensure_angel_columns(cur)
         cur.execute(
             "UPDATE gamification_profile SET xp = xp + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
             (amount, user_id),
@@ -244,6 +297,7 @@ def set_points(user_id: int, amount: int) -> bool:
     try:
         _ensure_profile(cur, user_id)
         _ensure_fridge_column(cur)
+        _ensure_angel_columns(cur)
         cur.execute(
             "UPDATE gamification_profile SET xp = ? WHERE user_id = ?",
             (amount, user_id),
@@ -258,56 +312,59 @@ def set_points(user_id: int, amount: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# شخصیت همراه: کبوتر 🕊️ (نام، سطح کلی، سوخت/دون، یخچال، پوینتِ آماده‌ی برداشت)
+# شخصیت همراه: فرشته 👼 (نام، سطح کلی، سوخت، یخچال، پوینتِ آماده‌ی برداشت)
 # ---------------------------------------------------------------------------
 
-def get_pigeon_state(user_id: int) -> dict:
+def get_angel_state(user_id: int) -> dict:
     """نام، سطح کلی، سوخت فعلی، پوینتِ آماده‌ی برداشت، و آخرین زمان
-    سینک تولیدِ کبوتر کاربر را برمی‌گرداند."""
+    سینک تولیدِ فرشته‌ی کاربر را برمی‌گرداند."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     conn.commit()
     row = cur.execute(
-        """SELECT pigeon_name, pigeon_seed, pigeon_global_level,
-                  pigeon_pending_points, pigeon_last_synced_at, pigeon_salavat_count
+        """SELECT angel_name, angel_seed, angel_global_level,
+                  angel_pending_points, angel_last_synced_at, angel_dhikr_count
            FROM gamification_profile WHERE user_id = ?""",
         (user_id,),
     ).fetchone()
     conn.close()
     if not row:
         return {
-            "pigeon_name": None, "pigeon_seed": 0,
-            "pigeon_global_level": 1, "pigeon_pending_points": 0,
-            "pigeon_last_synced_at": None, "pigeon_salavat_count": 0,
+            "angel_name": None, "angel_seed": 0,
+            "angel_global_level": 1, "angel_pending_points": 0,
+            "angel_last_synced_at": None, "angel_dhikr_count": 0,
         }
     return dict(row)
 
 
-def set_pigeon_name(user_id: int, name: str):
+def set_angel_name(user_id: int, name: str):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
-        "UPDATE gamification_profile SET pigeon_name = ? WHERE user_id = ?",
+        "UPDATE gamification_profile SET angel_name = ? WHERE user_id = ?",
         (name, user_id),
     )
     conn.commit()
     conn.close()
 
 
-def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, synced_at: str):
+def update_angel_seed_and_pending(user_id: int, seed: float, pending: float, synced_at: str):
     """نتیجه‌ی محاسبه‌ی تولید passive رو (سوخت مصرف‌شده، پوینتِ
     اضافه‌شده به pending، و زمانِ سینک) یک‌جا ذخیره می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
         """UPDATE gamification_profile
-           SET pigeon_seed = ?, pigeon_pending_points = ?, pigeon_last_synced_at = ?
+           SET angel_seed = ?, angel_pending_points = ?, angel_last_synced_at = ?
            WHERE user_id = ?""",
         (seed, pending, synced_at, user_id),
     )
@@ -315,59 +372,62 @@ def update_pigeon_seed_and_pending(user_id: int, seed: float, pending: float, sy
     conn.close()
 
 
-def set_pigeon_pending(user_id: int, pending: float):
+def set_angel_pending(user_id: int, pending: float):
     """بعد از برداشت، باقی‌مانده‌ی اعشاریِ pending (بخشی که هنوز به
     عددِ صحیح نرسیده) رو ذخیره می‌کنه."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
-        "UPDATE gamification_profile SET pigeon_pending_points = ? WHERE user_id = ?",
+        "UPDATE gamification_profile SET angel_pending_points = ? WHERE user_id = ?",
         (pending, user_id),
     )
     conn.commit()
     conn.close()
 
 
-def set_pigeon_level(user_id: int, level: int):
+def set_angel_level(user_id: int, level: int):
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
-        "UPDATE gamification_profile SET pigeon_global_level = ? WHERE user_id = ?",
+        "UPDATE gamification_profile SET angel_global_level = ? WHERE user_id = ?",
         (level, user_id),
     )
     conn.commit()
     conn.close()
 
 
-def increment_pigeon_salavat_count(user_id: int, amount: int = 1) -> int:
-    """شمارنده‌ی دفعاتی که کاربر *عینِ کاملِ* عبارتِ صلوات رو نوشته
-    (چه پیوی چه گروه) رو +amount می‌کنه و مقدارِ جدید رو برمی‌گردونه.
-    این شمارنده کاملاً مستقل از کول‌داون/سقفِ روزانه‌ی صلوات‌پوینتِ
-    کیف‌پوله (EVENT_SALAVAT_SENT) -- هیچ‌وقت محدود نمی‌شه، چون منبعِ
-    تنهای لول‌آپِ کبوتره، نه یه ارزِ قابل‌فارم‌کردن."""
+def increment_angel_dhikr_count(user_id: int, amount: int = 1) -> int:
+    """شمارنده‌ی دفعاتی که کاربر *عینِ کاملِ* یکی از عبارت‌های ذکر/صلوات
+    شناخته‌شده (DHIKR_PHRASES) رو نوشته (چه پیوی چه گروه) رو +amount
+    می‌کنه و مقدارِ جدید رو برمی‌گردونه. این شمارنده کاملاً مستقل از
+    کول‌داون/سقفِ روزانه‌ی نورِ کیف‌پوله (EVENT_SALAVAT_SENT) -- هیچ‌وقت
+    محدود نمی‌شه، چون منبعِ تنهای لول‌آپِ فرشته‌ست، نه یه ارزِ قابل‌فارم‌کردن."""
     conn = get_connection()
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
-        "UPDATE gamification_profile SET pigeon_salavat_count = pigeon_salavat_count + ? WHERE user_id = ?",
+        "UPDATE gamification_profile SET angel_dhikr_count = angel_dhikr_count + ? WHERE user_id = ?",
         (amount, user_id),
     )
     conn.commit()
     row = cur.execute(
-        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+        "SELECT angel_dhikr_count FROM gamification_profile WHERE user_id = ?", (user_id,)
     ).fetchone()
     conn.close()
-    return row["pigeon_salavat_count"] if row else amount
+    return row["angel_dhikr_count"] if row else amount
 
 
-def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
+def set_angel_dhikr_count(user_id: int, new_count: int) -> int:
     """
-    تنظیم مستقیم تعداد صلوات کامل کاربر به مقدار new_count.
+    تنظیم مستقیم تعداد ذکر/صلواتِ کامل کاربر به مقدار new_count.
     فقط برای استفاده‌ی ادمین (تست) در نظر گرفته شده است.
     """
     if new_count < 0:
@@ -376,16 +436,17 @@ def set_pigeon_salavat_count(user_id: int, new_count: int) -> int:
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
-        "UPDATE gamification_profile SET pigeon_salavat_count = ? WHERE user_id = ?",
+        "UPDATE gamification_profile SET angel_dhikr_count = ? WHERE user_id = ?",
         (new_count, user_id),
     )
     conn.commit()
     row = cur.execute(
-        "SELECT pigeon_salavat_count FROM gamification_profile WHERE user_id = ?", (user_id,)
+        "SELECT angel_dhikr_count FROM gamification_profile WHERE user_id = ?", (user_id,)
     ).fetchone()
     conn.close()
-    return row["pigeon_salavat_count"] if row else 0
+    return row["angel_dhikr_count"] if row else 0
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +459,7 @@ def get_has_fridge(user_id: int) -> bool:
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     conn.commit()
     row = cur.execute(
         "SELECT has_fridge FROM gamification_profile WHERE user_id = ?", (user_id,)
@@ -412,6 +474,7 @@ def set_has_fridge(user_id: int, value: bool) -> None:
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
         "UPDATE gamification_profile SET has_fridge = ? WHERE user_id = ?",
         (1 if value else 0, user_id),
@@ -425,6 +488,7 @@ def get_fridge_level(user_id: int) -> int:
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     conn.commit()
     row = cur.execute(
         "SELECT fridge_level FROM gamification_profile WHERE user_id = ?", (user_id,)
@@ -438,6 +502,7 @@ def set_fridge_level(user_id: int, level: int):
     cur = conn.cursor()
     _ensure_profile(cur, user_id)
     _ensure_fridge_column(cur)
+    _ensure_angel_columns(cur)
     cur.execute(
         "UPDATE gamification_profile SET fridge_level = ? WHERE user_id = ?",
         (level, user_id),
