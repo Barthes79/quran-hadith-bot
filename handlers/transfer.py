@@ -20,7 +20,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from database import register_user
-from gamification.pigeon import get_pigeon_feature_progress
+from gamification.angel import get_angel_feature_progress
 from gamification.db import get_profile, spend_points, add_points
 from text_utils import to_persian_digits
 
@@ -138,7 +138,7 @@ async def transfer_text_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return True
     
     # بررسی سطح کاربر فرستنده برای ارسال (سطح ۲ به بالا)
-    sender_progress = get_pigeon_feature_progress(user.id)
+    sender_progress = get_angel_feature_progress(user.id)
     if sender_progress["level"] < 2:
         await _reply_transfer_sender_locked(update, sender_progress)
         return True
@@ -247,7 +247,7 @@ async def transfer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         to_first_name = pending.get("to_first_name", "کاربر")
         
         # 🔒 بررسی سطح گیرنده برای دریافت (نیاز به سطح ۱)
-        receiver_progress = get_pigeon_feature_progress(to_user_id)
+        receiver_progress = get_angel_feature_progress(to_user_id)
         if receiver_progress["level"] < 1:
             context.chat_data.pop(pending_key, None)
             await query.edit_message_text(
