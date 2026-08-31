@@ -15,9 +15,9 @@ from handlers.hadith import format_hadith
 from handlers.nahj import NAHJ_MENU_LABELS, NAHJ_ITEM_LABELS
 from services.quran_api import get_ayah, get_surah_list
 from gamification.events import dispatch_event
-from gamification.config import EVENT_DAILY_LOGIN, pigeon_feature_level_for_count, get_pigeon_level_up_message
-from gamification.pigeon import get_pigeon_feature_progress
-from gamification.db import set_pigeon_salavat_count
+from gamification.config import EVENT_DAILY_LOGIN, angel_feature_level_for_count, get_angel_level_up_message
+from gamification.angel import get_angel_feature_progress
+from gamification.db import set_angel_dhikr_count
 from text_utils import to_persian_digits
 
 # ✅ ایمپورت db برای دستورات جدید ادمین
@@ -79,13 +79,13 @@ async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAUL
 
     user_id = user.id
 
-    old_progress = get_pigeon_feature_progress(user_id)
+    old_progress = get_angel_feature_progress(user_id)
     old_level = old_progress["level"]
 
-    set_pigeon_salavat_count(user_id, new_count)
+    set_angel_dhikr_count(user_id, new_count)
 
-    new_level = pigeon_feature_level_for_count(new_count)
-    new_progress = get_pigeon_feature_progress(user_id)
+    new_level = angel_feature_level_for_count(new_count)
+    new_progress = get_angel_feature_progress(user_id)
 
     msg_lines = [
         f"✅ تعداد صلوات کامل شما به {_code(to_persian_digits(new_count))} تنظیم شد.",
@@ -94,7 +94,7 @@ async def set_salavat_count_command(update: Update, context: ContextTypes.DEFAUL
     ]
 
     if new_level > old_level:
-        level_up_message = get_pigeon_level_up_message(new_level)
+        level_up_message = get_angel_level_up_message(new_level)
         msg_lines.append("\n" + level_up_message)
     elif new_level < old_level:
         msg_lines.append(f"\n⚠️ سطح شما از {old_level} به {new_level} کاهش یافت.")
