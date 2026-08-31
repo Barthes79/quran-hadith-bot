@@ -22,7 +22,7 @@ from .config import (
 )
 from .events import dispatch_event
 from .xp import seconds_until_next
-from .pigeon import add_seed_to_pigeon
+from .angel import add_seed_to_angel
 from text_utils import to_persian_digits
 
 from config import ADMIN_IDS
@@ -114,10 +114,10 @@ def feed_offered_item(user_id: int, food_key: str) -> str:
     if nutrition <= 0:
         return "⚠️ این نذری ارزش غذایی ندارد."
     dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-    result = add_seed_to_pigeon(user_id, nutrition)
+    result = add_seed_to_angel(user_id, nutrition)
     return (
-        f"🕊️ کبوترت {_code(to_persian_digits(nutrition))} واحد دون خورد!\n"
-        f"دون فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
+        f"👼 فرشته‌ات {_code(to_persian_digits(nutrition))} واحد سوخت خورد!\n"
+        f"سوخت فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
     )
 
 
@@ -211,10 +211,10 @@ def feed_fridge_item(user_id: int, item_id: int) -> str:
     if not db.delete_fridge_item(user_id, item_id):
         return "⚠️ خطا در حذف آیتم از یخچال."
     dispatch_event(EVENT_NAZRI_RECEIVED, user_id, xp_override=0)
-    result = add_seed_to_pigeon(user_id, nutrition)
+    result = add_seed_to_angel(user_id, nutrition)
     return (
-        f"🕊️ کبوترت {_code(to_persian_digits(nutrition))} واحد دون از {template['name']} خورد!\n"
-        f"دون فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
+        f"👼 فرشته‌ات {_code(to_persian_digits(nutrition))} واحد سوخت از {template['name']} خورد!\n"
+        f"سوخت فعلی: {_code(to_persian_digits(f'{result['new_seed']:.1f}'))} / {_code(to_persian_digits(result['capacity']))}"
     )
 
 
