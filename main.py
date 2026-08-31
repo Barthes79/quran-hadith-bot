@@ -115,7 +115,7 @@ from handlers.salavat import (
     salavat_count_command,
     salavat_home_callback,
 )
-from handlers.pigeon import pigeon_text_handler, pigeon_harvest_callback, pigeon_levelup_callback, pigeon_rename_callback
+from handlers.angel import angel_text_handler, angel_harvest_callback, angel_levelup_callback, angel_rename_callback
 from handlers.fridge import (
     fridge_text_handler,
     nazri_offer_callback,
@@ -125,7 +125,6 @@ from handlers.fridge import (
     fridge_cancel_callback,
 )
 from handlers.transfer import transfer_text_handler, transfer_callback
-from admin_migrate import backup_volume, restore_volume
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -154,10 +153,10 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
 
     try:
-        if await pigeon_text_handler(update, context, text):
+        if await angel_text_handler(update, context, text):
             return
     except Exception as e:
-        logger.error(f"خطای مدیریت‌نشده در کبوتر: {e}")
+        logger.error(f"خطای مدیریت‌نشده در فرشته: {e}")
 
     try:
         if await fridge_text_handler(update, context, text):
@@ -326,12 +325,6 @@ def main():
     app.add_handler(CommandHandler("setpoints", set_points_command))        # ✅ جدید
 
     # ==========================================
-    # انتقال Volume بین اکانت‌ها (موقت -- بعد از انتقال حذف شود)
-    # ==========================================
-    app.add_handler(CommandHandler("backupvolume", backup_volume))
-    app.add_handler(CommandHandler("restorevolume", restore_volume))
-
-    # ==========================================
     # دستورات اوقات شرعی
     # ==========================================
     app.add_handler(CommandHandler("prayer", prayer_command))
@@ -371,9 +364,9 @@ def main():
     # ==========================================
     # شخصیت همراه (کبوتر)
     # ==========================================
-    app.add_handler(CallbackQueryHandler(pigeon_harvest_callback, pattern=r"^pigeon_harvest:\d+$"))
-    app.add_handler(CallbackQueryHandler(pigeon_levelup_callback, pattern=r"^pigeon_levelup:\d+$"))
-    app.add_handler(CallbackQueryHandler(pigeon_rename_callback, pattern=r"^pigeon_rename:\d+$"))
+    app.add_handler(CallbackQueryHandler(angel_harvest_callback, pattern=r"^angel_harvest:\d+$"))
+    app.add_handler(CallbackQueryHandler(angel_levelup_callback, pattern=r"^angel_levelup:\d+$"))
+    app.add_handler(CallbackQueryHandler(angel_rename_callback, pattern=r"^angel_rename:\d+$"))
 
     # ==========================================
     # یخچال صلواتی و آیتم‌های نذری
