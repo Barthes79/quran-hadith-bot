@@ -8,9 +8,13 @@
   به‌عنوان صلوات شمرده می‌شن و روی شمارنده‌ی کل گروه اضافه می‌شن.
 - خودِ کلمه‌ی تنهای «صلوات» (بدون عدد) دیگه هیچ‌چیزی رو trigger نمی‌کنه.
 - عینِ کاملِ «اللهم صل علی محمد و آل محمد» هم ۱ صلوات به شمارنده اضافه
-  می‌کنه، هم صلوات‌پوینتِ گیمیفیکیشن (XP کبوتر) می‌ده -- این تنها راهیه
-  که صلوات‌پوینت گرفته می‌شه؛ نوشتن خودِ کلمه‌ی «صلوات» یا «N صلوات» فقط
-  شمارنده‌ی واقعی رو تکون می‌ده، XP نمی‌ده.
+  می‌کنه، هم «نور»ِ گیمیفیکیشن (XP فرشته) می‌ده -- این تنها راهیه که نور
+  از صلوات گرفته می‌شه؛ نوشتن خودِ کلمه‌ی «صلوات» یا «N صلوات» فقط
+  شمارنده‌ی واقعی رو تکون می‌ده، نور نمی‌ده.
+- عینِ کاملِ هرکدوم از بقیه‌ی اذکارِ شناخته‌شده (لا اله الا الله، الله
+  اکبر، الحمدلله، استغفرالله، سبحان الله، ...) هم به همون شکل «نور»
+  می‌ده، ولی به شمارنده‌ی واقعیِ صلواتِ گروه/ختم‌ها اضافه نمی‌شه (چون
+  خودِ صلوات نیستن).
 - اگه اون لحظه توی گروه یک یا چند ختم فعال وجود داشته باشه، یه پنل شیشه‌ای
   (inline keyboard) زیر پیام باز می‌شه که وضعیت هر ختم رو نشون می‌ده و از
   فرستنده می‌پرسه این صلوات‌ها رو به نیت کدوم ختم می‌فرسته.
@@ -48,7 +52,10 @@ logger = logging.getLogger(__name__)
 
 from gamification.events import dispatch_event
 from gamification.config import EVENT_SALAVAT_SENT
-from gamification.pigeon import build_salavat_card_from_dispatch, roll_salavat_points, is_full_salavat_phrase
+from gamification.angel import (
+    build_dhikr_card_from_dispatch, roll_light_points, get_current_feature_level,
+    match_full_dhikr_phrase,
+)
 
 GROUP_CHAT_TYPES = ("group", "supergroup")
 MILESTONE_STEP = 50
@@ -62,8 +69,9 @@ _DIGIT_TRANSLATION = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "
 #   عدد + (اختیاری) «تا» + «صلوات»      -> «10 صلوات» یا «10 تا صلوات»
 # نکته‌ی مهم: دیگه خودِ کلمه‌ی تنهای «صلوات» (بدون عدد) هیچ‌چیزی رو
 # trigger نمی‌کنه -- نه شمارنده، نه ری‌اکشن، نه پوینت. تنها راهِ گرفتنِ
-# صلوات‌پوینتِ گیمیفیکیشن، نوشتنِ *عینِ کامل* «اللهم صل علی محمد و آل
-# محمد» است (چک جدا، پایین‌تر، از طریق is_full_salavat_phrase).
+# نورِ گیمیفیکیشن، نوشتنِ *عینِ کامل* یکی از عبارت‌های DHIKR_PHRASES
+# (صلوات یا هرکدوم از بقیه‌ی اذکار) است (چک جدا، پایین‌تر، از طریق
+# match_full_dhikr_phrase).
 _SALAVAT_FULL_PATTERN = re.compile(r"^(\d+)\s*(?:تا)?\s*صلوات$")
 _PURE_NUMBER_PATTERN = re.compile(r"^\d{1,4}$")
 
@@ -230,10 +238,30 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     text = message.text.strip()
 
-    # عبارت کامل صلوات («اللهم صل علی محمد و آل محمد») -- تنها چیزی که
-    # صلوات‌پوینتِ گیمیفیکیشن رو trigger می‌کنه، و به‌عنوان ۱ صلوات واقعی
-    # هم به شمارنده‌ی گروه اضافه می‌شه.
-    is_full_phrase = is_full_salavat_phrase(text)
+    # عبارت کامل صلوات («اللهم صل علی محمد و آل محمد») یا هرکدوم از بقیه‌ی
+    # اذکارِ شناخته‌شده (لا اله الا الله، الله اکبر، ...) -- تنها چیزی که
+    # «نور»ِ گیمیفیکیشن رو trigger می‌کنه. فقط عبارتِ صلوات به‌عنوانِ ۱
+    # صلواتِ واقعی هم به شمارنده‌ی گروه اضافه می‌شه؛ بقیه‌ی اذکار فقط نور
+    # می‌دن، به شمارنده‌ی واقعیِ صلوات/ختم‌ها ربطی ندارن.
+    dhikr_kind = match_full_dhikr_phrase(text)
+    is_full_phrase = dhikr_kind == "salavat"
+
+    # ذکرِ کاملِ غیر از صلوات: نور می‌گیره، ولی از این‌جا به بعدِ تابع
+    # (شمارنده‌ی گروه، ری‌اکشن، پنلِ انتخابِ ختم) کاملاً مستقل عمل می‌کنه.
+    if dhikr_kind and not is_full_phrase:
+        current_level = get_current_feature_level(user.id)
+        dispatch_result = await dispatch_event(
+            EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id),
+            xp_override=roll_light_points(current_level),
+        )
+        try:
+            await message.reply_text(
+                build_dhikr_card_from_dispatch(user.id, dispatch_result, kind=dhikr_kind),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"خطا در ارسال کارتِ ذکرِ نورانی (چت {chat.id}): {e}")
+        return True
 
     keyword_amount = _match_salavat_keyword(text)
     has_keyword = keyword_amount is not None
@@ -269,25 +297,27 @@ async def salavat_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     user_count, chat_total = increment_salavat(chat.id, user.id, user_name, amount)
     prev_total = chat_total - amount
 
-    # XP گیمیفیکیشن: فقط وقتی عینِ کامل عبارت صلوات نوشته شده باشه، نه با
-    # نوشتن «صلوات» تنها یا «N صلوات». عددی تصادفی (SALAVAT_POINT_MIN تا
-    # MAX) به‌ازای هر پیامِ واجد شرایط. محدود به کول‌داون/سقف روزانه در
-    # ANTI_ABUSE_RULES تا قابل exploit نباشد.
+    # نورِ گیمیفیکیشن: فقط وقتی عینِ کامل عبارت صلوات نوشته شده باشه، نه با
+    # نوشتن «صلوات» تنها یا «N صلوات». عددی تصادفی، متناسب با سطحِ فعلیِ
+    # کاربر (DHIKR_LIGHT_REWARD_RANGES)، به‌ازای هر پیامِ واجد شرایط.
+    # محدود به کول‌داون/سقف روزانه در ANTI_ABUSE_RULES تا قابل exploit نباشد.
     if is_full_phrase:
+        current_level = get_current_feature_level(user.id)
         dispatch_result = await dispatch_event(
-            EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id), xp_override=roll_salavat_points()
+            EVENT_SALAVAT_SENT, user.id, reference_id=str(chat.id),
+            xp_override=roll_light_points(current_level),
         )
 
-        # کارت «صلوات پوینت» (همون کارتی که تو پیوی هم نشون داده می‌شه) --
-        # از روی نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛
-        # وگرنه چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
+        # کارتِ «نور» (همون کارتی که تو پیوی هم نشون داده می‌شه) -- از روی
+        # نتیجه‌ی همین dispatch بالا ساخته می‌شه، نه با award دوباره؛ وگرنه
+        # چون همین الان یه تراکنش ثبت شده، همیشه «کول‌داون» نشون می‌داد.
         try:
             await message.reply_text(
-                build_salavat_card_from_dispatch(user.id, dispatch_result),
+                build_dhikr_card_from_dispatch(user.id, dispatch_result, kind="salavat"),
                 parse_mode="Markdown",
             )
         except Exception as e:
-            logger.error(f"خطا در ارسال کارت صلوات‌پوینت (چت {chat.id}): {e}")
+            logger.error(f"خطا در ارسال کارتِ نور (چت {chat.id}): {e}")
 
     # پیام تبریک سر رکوردهای رند کلی گروه
     if chat_total // MILESTONE_STEP > prev_total // MILESTONE_STEP:
