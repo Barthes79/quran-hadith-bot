@@ -11,7 +11,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from database import register_user
-from handlers.pigeon import reject_if_not_owner, _display_name
+from handlers.angel import reject_if_not_owner, _display_name
 from gamification import db
 from gamification.fridge import (
     roll_nazri,
@@ -26,7 +26,7 @@ from gamification.fridge import (
     upgrade_fridge,
     buy_fridge,
 )
-from gamification.pigeon import get_pigeon_feature_progress
+from gamification.angel import get_angel_feature_progress
 from text_utils import to_persian_digits
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def _offer_keyboard(owner_id: int, food_key: str, weight: float, user_level: int
     weight_str = f"{weight:.2f}"
     buttons = [
         [InlineKeyboardButton("💰 فروش نذری", callback_data=f"nzoffer:sell:{owner_id}:{food_key}:{weight_str}")],
-        [InlineKeyboardButton("🕊️ بده کبوترت بخوره", callback_data=f"nzoffer:feed:{owner_id}:{food_key}:{weight_str}")],
+        [InlineKeyboardButton("👼 بده فرشته‌ات بخوره", callback_data=f"nzoffer:feed:{owner_id}:{food_key}:{weight_str}")],
     ]
     if user_level >= 5 and has_fridge:
         buttons.append([InlineKeyboardButton("❄️ بندازش تو یخچال", callback_data=f"nzoffer:store:{owner_id}:{food_key}:{weight_str}")])
@@ -57,7 +57,7 @@ def _fridge_keyboard(owner_id: int, items: list) -> InlineKeyboardMarkup:
         emoji = "🔥" if it["is_warmed"] else "🧊"
         rows.append([
             InlineKeyboardButton(f"💰 فروش {emoji}", callback_data=f"nzitem:sell:{owner_id}:{item_id}"),
-            InlineKeyboardButton("🕊️ تغذیه", callback_data=f"nzitem:feed:{owner_id}:{item_id}"),
+            InlineKeyboardButton("👼 تغذیه", callback_data=f"nzitem:feed:{owner_id}:{item_id}"),
         ])
         if not it["is_warmed"]:
             rows.append([InlineKeyboardButton("🔥 گرم کردن", callback_data=f"nzitem:warm:{owner_id}:{item_id}")])
@@ -142,11 +142,11 @@ def _build_buy_fridge_text(cost: int) -> str:
 async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     # 🔍 لاگ برای بررسی اینکه آیا هندلر اجرا می‌شود
     logger.info(f"[FRIDGE_DEBUG] fridge_text_handler called with text: '{text}'")
-    
+
     if not update.message:
         logger.warning("[FRIDGE_DEBUG] No message in update")
         return False
-    
+
     user = update.effective_user
     normalized = text.strip()
     logger.info(f"[FRIDGE_DEBUG] user_id={user.id}, normalized='{normalized}'")
@@ -157,7 +157,7 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if normalized == "نذری":
         logger.info("[FRIDGE_DEBUG] Nazri detected")
         register_user(user.id, user.username)
-        progress = get_pigeon_feature_progress(user.id)
+        progress = get_angel_feature_progress(user.id)
         logger.info(f"[FRIDGE_DEBUG] user level: {progress['level']}")
         if progress["level"] < 1:
             await _reply_nazri_locked(update, progress)
@@ -180,15 +180,15 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if normalized in _FRIDGE_TRIGGERS:
         logger.info("[FRIDGE_DEBUG] Fridge trigger detected")
         register_user(user.id, user.username)
-        progress = get_pigeon_feature_progress(user.id)
+        progress = get_angel_feature_progress(user.id)
         logger.info(f"[FRIDGE_DEBUG] user level: {progress['level']}")
-        
+
         # ❌ اگر سطح کمتر از ۵ باشد، قفل
         if progress["level"] < 5:
             logger.info("[FRIDGE_DEBUG] Level < 5, showing locked message")
             await _reply_fridge_locked(update, progress)
             return True
-        
+
         # ❌ اگر سطح >= ۵ باشد ولی یخچال نداشته باشد، پنل خرید
         logger.info("[FRIDGE_DEBUG] Level >= 5, checking has_fridge")
         has_fridge = db.get_has_fridge(user.id)
@@ -200,7 +200,7 @@ async def fridge_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             keyboard = _buy_fridge_keyboard(user.id)
             await update.message.reply_text(buy_text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
             return True
-        
+
         # ✅ اگر سطح >= ۵ و یخچال داشته باشد، پنل یخچال
         logger.info("[FRIDGE_DEBUG] Has fridge, showing fridge panel")
         fridge_text = build_fridge_text(user.id, _display_name(user))
@@ -233,7 +233,7 @@ async def nazri_offer_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await query.answer()
     if action == "store":
-        progress = get_pigeon_feature_progress(owner_id)
+        progress = get_angel_feature_progress(owner_id)
         if progress["level"] < 5:
             await query.answer("🔒 این قابلیت فقط برای کاربران سطح ۵ به بالا فعال است.", show_alert=True)
             return
