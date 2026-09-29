@@ -125,12 +125,14 @@ from handlers.fridge import (
     fridge_cancel_callback,
 )
 from handlers.transfer import transfer_text_handler, transfer_callback
+from admin_migrate import backup_volume, restore_volume
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -290,6 +292,8 @@ def main():
     app.add_handler(CommandHandler("clearkeyboard", clear_keyboard_command))
     app.add_handler(CommandHandler("addhadith", add_hadith_command))
     app.add_handler(CommandHandler("addtafsir", add_tafsir_command))
+    app.add_handler(CommandHandler("backupvolume", backup_volume))
+    app.add_handler(CommandHandler("restorevolume", restore_volume))
     app.add_handler(CommandHandler("findhadith", find_hadith_command))
     app.add_handler(CommandHandler("edithadith", edit_hadith_command))
     app.add_handler(CommandHandler("delhadith", del_hadith_command))
