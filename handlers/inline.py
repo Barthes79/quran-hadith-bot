@@ -163,7 +163,11 @@ _SCOPE_WORDS = {
     "نهج": ("nahj", None),
     "نهجالبلاغه": ("nahj", None),
     "قران": ("quran", None),
+    "القران": ("quran", None),
     "quran": ("quran", None),
+    "قرءان": ("quran", None),
+    "قرانکریم": ("quran", None),
+    "قرآنکریم": ("quran", None),
     "ایه": ("quran", None),
     "ایات": ("quran", None),
 }
@@ -190,6 +194,9 @@ def _parse_scope(query_text: str):
     rest = tokens[1:]
     # «نهج البلاغه صبر» (با فاصله) — «البلاغه» را کنار بگذار
     if scope == ("nahj", None) and rest and rest[0] in ("البلاغه", "بلاغه"):
+        rest = rest[1:]
+    # «قرآن کریم صبر» (با فاصله) — «کریم» را کنار بگذار
+    if scope[0] == "quran" and rest and rest[0] == "کریم":
         rest = rest[1:]
     return scope[0], scope[1], " ".join(rest)
 
