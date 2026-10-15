@@ -537,6 +537,13 @@ def main():
     # جاب پست روزانه
     # ==========================================
     if app.job_queue:
+        # دانلود و ایندکس متن قرآن برای جستجوی inline («قرآن صبر»). بعد از
+        # اولین موفقیت، این جاب فقط یک COUNT ارزان می‌زند و برمی‌گردد.
+        async def _prepare_quran_search_job(context):
+            from services.quran_api import ensure_quran_data
+            await ensure_quran_data()
+        app.job_queue.run_repeating(_prepare_quran_search_job, interval=1800, first=5)
+
         app.job_queue.run_repeating(daily_post_job, interval=3600, first=10)
         app.job_queue.run_daily(
             schedule_daily_prayer_reminders,
