@@ -604,6 +604,29 @@ def init_db():
         )
     """)
 
+    # متن کامل قرآن (عربی + ترجمه) برای جستجوی متنی inline؛ یک‌بار از API
+    # دانلود می‌شود (services/quran_api.ensure_quran_data) و بعد کاملاً محلی است.
+    # ایندکسش عمداً جدا از search_fts است تا جستجوی عمومیِ حدیث/نهج/مفاتیح
+    # و سقف limit آن تحت تأثیر ۶٬۲۳۶ آیه قرار نگیرد.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS quran_ayahs (
+            surah INTEGER NOT NULL,
+            ayah INTEGER NOT NULL,
+            global_number INTEGER,
+            surah_name TEXT,
+            arabic TEXT NOT NULL,
+            translation TEXT,
+            PRIMARY KEY (surah, ayah)
+        )
+    """)
+    cur.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS quran_fts USING fts5(
+            surah UNINDEXED,
+            ayah UNINDEXED,
+            content
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -2191,6 +2214,163 @@ def search_raw(query: str, limit: int = 100, types=None):
 
 def search_all(query: str, limit: int = 100, types=None):
     return hydrate_results(search_raw(query, limit=limit, types=types))
+# =====================================================================
+# جستجوی محدودشده به یک منبع (برای inline: «حکمت صبر»، «نامه صبر»، «قرآن صبر»)
+# =====================================================================
+
+def search_nahj(query: str, category: str = None, limit: int = 1000):
+    """
+    جستجو فقط در نهج‌البلاغه؛ اگر category (hekmat / letter / khutbah) داده شود،
+    فقط همان بخش. خروجی مثل search_raw است (لیست dict با source_type/source_id)
+    به ترتیب ارتباط. چون ایندکس FTS ستون category ندارد، ابتدا همه‌ی نتایج
+    نهج را می‌گیریم (کل نهج‌البلاغه چند صد ردیف است) و بعد فیلتر می‌کنیم.
+    """
+    raw = search_raw(query, limit=limit, types=["nahj"])
+    if not category or not raw:
+        return raw
+    conn = get_connection()
+    allowed = {
+        r["id"]
+        for r in conn.execute(
+            "SELECT id FROM nahj_balagha WHERE category = ?", (category,)
+        ).fetchall()
+    }
+    conn.close()
+    return [r for r in raw if r["source_id"] in allowed]
+
+
+def quran_ayah_count() -> int:
+    conn = get_connection()
+    try:
+        return conn.execute("SELECT COUNT(*) AS c FROM quran_ayahs").fetchone()["c"]
+    finally:
+        conn.close()
+
+
+def store_quran_dump(rows, translation_edition: str):
+    """
+    rows: لیستی از dictها با کلیدهای
+        surah, ayah, global_number, surah_name, arabic, translation
+    کل جدول آیات و ایندکس جستجو را از نو می‌سازد، و هم‌زمان quran_cache را هم
+    پر می‌کند تا نمایش آیه در خود ربات (get_ayah) هم دیگر نیاز به API نداشته باشد.
+    """
+    bismillah = normalize_for_search("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
+
+    conn = get_connection()
+    conn.execute("DELETE FROM quran_ayahs")
+    conn.execute("DELETE FROM quran_fts")
+    for r in rows:
+        conn.execute(
+            """INSERT OR REPLACE INTO quran_ayahs
+               (surah, ayah, global_number, surah_name, arabic, translation)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (r["surah"], r["ayah"], r["global_number"], r["surah_name"],
+             r["arabic"], r["translation"]),
+        )
+
+        # در ادیشن uthmani اول آیه‌ی ۱ تقریباً همه‌ی سوره‌ها «بسم الله...» چسبیده؛
+        # برای ایندکس حذفش می‌کنیم وگرنه جستجوی «رحمن» اول همه‌ی سوره‌ها را می‌آورد.
+        norm_ar = normalize_for_search(r["arabic"])
+        if r["ayah"] == 1 and r["surah"] not in (1, 9) and norm_ar.startswith(bismillah):
+            norm_ar = norm_ar[len(bismillah):].strip()
+        content = (norm_ar + " \n " + normalize_for_search(r["translation"] or "")).strip()
+        conn.execute(
+            "INSERT INTO quran_fts (surah, ayah, content) VALUES (?, ?, ?)",
+            (r["surah"], r["ayah"], content),
+        )
+
+        for edition, text in (
+            ("arabic", r["arabic"]),
+            (translation_edition, r["translation"]),
+            ("global_number", str(r["global_number"]) if r["global_number"] else None),
+        ):
+            if text:
+                conn.execute(
+                    "INSERT OR REPLACE INTO quran_cache (surah, ayah, edition, text) VALUES (?, ?, ?, ?)",
+                    (r["surah"], r["ayah"], edition, text),
+                )
+    conn.commit()
+    conn.close()
+
+
+def _quran_fts_query(match_expr: str, limit: int):
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT surah, ayah FROM quran_fts WHERE quran_fts MATCH ? "
+            "ORDER BY bm25(quran_fts) LIMIT ?",
+            (match_expr, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return [(r["surah"], r["ayah"]) for r in rows]
+
+
+def search_quran(query: str, limit: int = 500):
+    """
+    جستجوی متنی در عربی + ترجمه‌ی آیات. خروجی: لیست (surah, ayah) به ترتیب ارتباط.
+    مراحل مثل search_raw: عبارت دقیق ← همه‌ی کلمات ← هر کلمه؛ و اگر هیچ‌چیز
+    پیدا نشد، جستجوی زیررشته‌ای (مثلاً «صبر» داخل «بالصبر» عربی).
+    """
+    norm_q = normalize_for_search(query)
+    tokens = [t for t in norm_q.split() if t]
+    if not tokens:
+        return []
+
+    keys = []
+    if len(tokens) > 1:
+        keys = _quran_fts_query('"' + " ".join(tokens) + '"', limit)
+    if not keys and len(tokens) > 1:
+        keys = _quran_fts_query(" AND ".join(f"{t}*" for t in tokens), limit)
+    if not keys:
+        keys = _quran_fts_query(" OR ".join(f"{t}*" for t in tokens), limit)
+
+    # جستجوی زیررشته‌ای: وقتی FTS هیچ نتیجه‌ای نداد، یا وقتی کلمه‌ی تکی است
+    # (تا آیاتی که عربی‌شان کلمه را با پیشوند دارد، مثل «بالصبر» یا «واصبر»، هم
+    # بیایند؛ پیشوندی FTS فقط ابتدای کلمه را می‌بیند). این‌ها بعد از نتایج رتبه‌دار
+    # FTS و به ترتیب قرآن می‌آیند. برای کلمه‌ی تکیِ خیلی کوتاه (<۳ حرف) فقط
+    # به‌عنوان fallback استفاده می‌شود تا نویز زیاد نشود.
+    if not keys or (len(tokens) == 1 and len(tokens[0]) >= 3):
+        conn = get_connection()
+        like_parts, params = [], []
+        for t in tokens:
+            esc = t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            like_parts.append("content LIKE ? ESCAPE '\\'")
+            params.append(f"%{esc}%")
+        params.append(limit)
+        rows = conn.execute(
+            "SELECT surah, ayah FROM quran_fts WHERE " + " AND ".join(like_parts)
+            + " ORDER BY surah, ayah LIMIT ?",
+            params,
+        ).fetchall()
+        conn.close()
+        seen = set(keys)
+        for r in rows:
+            k = (r["surah"], r["ayah"])
+            if k not in seen and len(keys) < limit:
+                seen.add(k)
+                keys.append(k)
+
+    return keys
+
+
+def get_quran_ayahs(keys):
+    """keys: لیست (surah, ayah)؛ ردیف‌ها را به همان ترتیب برمی‌گرداند."""
+    if not keys:
+        return []
+    conn = get_connection()
+    out = []
+    for surah, ayah in keys:
+        row = conn.execute(
+            "SELECT * FROM quran_ayahs WHERE surah = ? AND ayah = ?", (surah, ayah)
+        ).fetchone()
+        if row:
+            out.append(row)
+    conn.close()
+    return out
+
+
 # =====================================================================
 # توابع دسته‌بندی احادیث (سیستم جدید)
 # =====================================================================
