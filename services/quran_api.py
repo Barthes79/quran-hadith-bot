@@ -1,6 +1,11 @@
 import httpx
-from config import QURAN_API_BASE, DEFAULT_TRANSLATIONS, PROXY_URL
-from database import get_connection
+import logging
+from config import QURAN_API_BASE, DEFAULT_TRANSLATIONS, DEFAULT_TRANSLATION_KEY, PROXY_URL
+from database import get_connection, quran_ayah_count, store_quran_dump
+
+logger = logging.getLogger(__name__)
+
+TOTAL_AYAHS = 6236
 
 
 def _http_client(timeout=15):
@@ -102,3 +107,50 @@ def get_audio_url(global_number: int, reciter: str = "ar.alafasy", bitrate: int 
     reciter پیش‌فرض: مشاری راشد العفاسی (یکی از معروف‌ترین قاریان).
     """
     return f"https://cdn.islamic.network/quran/audio/{bitrate}/{reciter}/{global_number}.mp3"
+
+
+async def ensure_quran_data() -> bool:
+    """
+    اگر متن کامل قرآن هنوز در دیتابیس نیست، یک‌بار (دو درخواست: عربی + ترجمه)
+    از alquran.cloud دانلود و برای جستجوی inline ایندکس می‌کند. بعد از اولین
+    موفقیت دیگر هیچ درخواستی نمی‌زند. خروجی: آیا داده آماده است یا نه.
+    """
+    if quran_ayah_count() >= TOTAL_AYAHS:
+        return True
+
+    edition = DEFAULT_TRANSLATIONS[DEFAULT_TRANSLATION_KEY]
+    try:
+        async with _http_client(timeout=120) as client:
+            ar_resp = await client.get(f"{QURAN_API_BASE}/quran/quran-uthmani")
+            fa_resp = await client.get(f"{QURAN_API_BASE}/quran/{edition}")
+        ar_data = ar_resp.json()
+        fa_data = fa_resp.json()
+        if ar_data.get("code") != 200 or fa_data.get("code") != 200:
+            raise RuntimeError("پاسخ نامعتبر از API قرآن")
+
+        translations = {}
+        for surah in fa_data["data"]["surahs"]:
+            for a in surah["ayahs"]:
+                translations[(surah["number"], a["numberInSurah"])] = a["text"]
+
+        rows = []
+        for surah in ar_data["data"]["surahs"]:
+            for a in surah["ayahs"]:
+                rows.append({
+                    "surah": surah["number"],
+                    "ayah": a["numberInSurah"],
+                    "global_number": a["number"],
+                    "surah_name": surah["name"],
+                    "arabic": a["text"],
+                    "translation": translations.get((surah["number"], a["numberInSurah"]), ""),
+                })
+
+        if len(rows) != TOTAL_AYAHS:
+            raise RuntimeError(f"تعداد آیات دریافتی {len(rows)} است، نه {TOTAL_AYAHS}")
+
+        store_quran_dump(rows, edition)
+        logger.info("✅ متن کامل قرآن (%d آیه) برای جستجوی inline ایندکس شد.", len(rows))
+        return True
+    except Exception:
+        logger.exception("دانلود متن قرآن برای جستجو ناموفق بود؛ بعداً دوباره تلاش می‌شود.")
+        return False
