@@ -8,7 +8,7 @@ from telegram import (
 )
 from telegram.ext import ContextTypes
 from database import (
-    search_nahj, hydrate_results, search_quran, get_quran_ayahs,
+    search_nahj, search_raw, hydrate_results, search_quran, get_quran_ayahs,
     quran_ayah_count, get_nahj_item,
 )
 from services.quran_api import get_ayah
@@ -160,6 +160,9 @@ _SCOPE_WORDS = {
     "نامهها": ("nahj", "letter"),
     "خطبه": ("nahj", "khutbah"),
     "خطبهها": ("nahj", "khutbah"),
+    "حدیث": ("hadith", None),
+    "احادیث": ("hadith", None),
+    "روایت": ("hadith", None),
     "نهج": ("nahj", None),
     "نهجالبلاغه": ("nahj", None),
     "قران": ("quran", None),
@@ -178,6 +181,7 @@ _SCOPE_FA = {
     ("nahj", "khutbah"): "خطبه‌های نهج‌البلاغه",
     ("nahj", None): "نهج‌البلاغه",
     ("quran", None): "قرآن",
+    ("hadith", None): "احادیث",
 }
 
 _LATIN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -224,11 +228,12 @@ def _how_to_result(context):
         f"• {bot} نامه صبر ← فقط در نامه‌های نهج‌البلاغه\n"
         f"• {bot} خطبه صبر ← فقط در خطبه‌های نهج‌البلاغه\n"
         f"• {bot} نهج صبر ← در کل نهج‌البلاغه\n"
-        f"• {bot} قرآن صبر ← در آیات و ترجمه‌های قرآن"
+        f"• {bot} قرآن صبر ← در آیات و ترجمه‌های قرآن\n"
+        f"• {bot} حدیث صبر ← در احادیث"
     )
     return _info_result(
         "❗ اول بنویسید کجا جستجو شود",
-        "مثلاً: حکمت صبر  |  نامه صبر  |  خطبه صبر  |  قرآن صبر",
+        "مثلاً: حکمت صبر  |  نامه صبر  |  قرآن صبر  |  حدیث صبر",
         content,
     )
 
@@ -238,6 +243,7 @@ def _need_term_result(kind: str, category, context):
     first_word = {
         ("nahj", "hekmat"): "حکمت", ("nahj", "letter"): "نامه",
         ("nahj", "khutbah"): "خطبه", ("nahj", None): "نهج", ("quran", None): "قرآن",
+        ("hadith", None): "حدیث",
     }[(kind, category)]
     return _info_result(
         f"✍️ موضوع جستجو در {where} را بنویسید",
@@ -290,6 +296,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         خطبه صبر  ← فقط خطبه‌ها
         نهج صبر   ← کل نهج‌البلاغه
         قرآن صبر  ← آیات و ترجمه‌های قرآن
+        حدیث صبر  ← احادیث
     اگر کلمه‌ی اول یکی از این محدوده‌ها نباشد، هیچ جستجویی انجام نمی‌شود و فقط
     یک کارت راهنما نشان داده می‌شود. (استثناها: لینک مستقیم آیه مثل 2:255،
     اشتراک مستقیم حدیث h<id>، و توکن راه‌اندازی اذان.)
@@ -388,6 +395,15 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 results.append(_build_result(item))
             except Exception:
                 # اگر یک آیتم به هر دلیلی مشکل فرمت داشت، کل نتایج را خراب نکند
+                continue
+        total = len(all_raw)
+
+    elif kind == "hadith":
+        all_raw = search_raw(term, limit=MAX_RESULTS, types=["hadith"])
+        for item in hydrate_results(all_raw[offset: offset + PAGE_SIZE]):
+            try:
+                results.append(_build_result(item))
+            except Exception:
                 continue
         total = len(all_raw)
 
