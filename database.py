@@ -2582,3 +2582,11 @@ def recategorize_all_hadiths():
     conn.commit()
     conn.close()
     return updated
+def set_user_translation(user_id: int, translation_key: str):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE users SET preferred_translation = ? WHERE user_id = ?",
+        (translation_key, user_id),
+    )
+    conn.commit()
+    conn.close()
