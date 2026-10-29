@@ -174,7 +174,21 @@ _SCOPE_WORDS = {
     "ایه": ("quran", None),
     "ایات": ("quran", None),
 }
+# یکدست‌سازی املای کلمه‌ی اول (آ/أ/إ→ا، ء حذف، ي→ی، ك→ک، نیم‌فاصله و اعراب حذف)
+# تا «قرآن»، «قران»، «قرأن»، «القرآن» همگی یک‌جور تشخیص داده شوند
+_CHAR_FIX = str.maketrans({
+    "آ": "ا", "أ": "ا", "إ": "ا", "ٱ": "ا",
+    "ي": "ی", "ك": "ک", "ۀ": "ه", "ة": "ه",
+})
 
+
+def _scope_key(word: str) -> str:
+    word = word.translate(_CHAR_FIX)
+    word = re.sub(r"[\u064B-\u0652\u0670\u0640\u200c\u200d\u0621]", "", word)
+    return word.lower()
+
+
+_SCOPE_LOOKUP = {_scope_key(k): v for k, v in _SCOPE_WORDS.items()}
 _SCOPE_FA = {
     ("nahj", "hekmat"): "حکمت‌های نهج‌البلاغه",
     ("nahj", "letter"): "نامه‌های نهج‌البلاغه",
