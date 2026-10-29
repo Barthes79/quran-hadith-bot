@@ -1,6 +1,8 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaAudio
+from functools import wraps
 from telegram.ext import ContextTypes
+from config import ADMIN_IDS
 import database as db
 from text_utils import to_persian_digits
 from gamification.events import dispatch_event
@@ -300,6 +302,28 @@ MAFATIH_ITEM_LOCATION = build_mafatih_item_location_map()
 
 
 # ==========================================
+# 0. محدودیت دسترسی: فعلاً فقط ادمین‌ها (تا کامل شدن بخش مفاتیح)
+#    برای باز کردن بخش برای همه، کافیست MAFATIH_ADMIN_ONLY = False شود.
+# ==========================================
+MAFATIH_ADMIN_ONLY = True
+
+
+def mafatih_admin_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user = update.effective_user
+        if MAFATIH_ADMIN_ONLY and (user is None or user.id not in ADMIN_IDS):
+            if update.callback_query:
+                try:
+                    await update.callback_query.answer("این بخش هنوز در دسترس نیست.", show_alert=True)
+                except Exception:
+                    pass
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapper
+
+
+# ==========================================
 # 3. هندلرها (Handlers)
 # ==========================================
 
@@ -339,6 +363,7 @@ async def cleanup_extra_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
         except Exception:
             logger.exception("cleanup_extra_photo: خطا در حذف فایل صوتی اضافی")
 
+@mafatih_admin_only
 async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -347,6 +372,7 @@ async def mafatih_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     text = "📖 *بخش مفاتیح الجنان*\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
     await safe_edit_message(query, text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
+@mafatih_admin_only
 async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -359,6 +385,7 @@ async def mafatih_category_callback(update: Update, context: ContextTypes.DEFAUL
     if kb_func:
         await safe_edit_message(query, "📂 لطفاً زیردسته مورد نظر را انتخاب کنید:", reply_markup=kb_func())
 
+@mafatih_admin_only
 async def mafatih_subcategory_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -553,6 +580,7 @@ async def _send_mafatih_item_to_pv(query, context: ContextTypes.DEFAULT_TYPE, it
         )
 
 
+@mafatih_admin_only
 async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
@@ -586,6 +614,7 @@ async def mafatih_item_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 
+@mafatih_admin_only
 async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر دکمه‌ی «صفحه بعد / صفحه قبل» برای دعاهای طولانی."""
     query = update.callback_query
@@ -606,6 +635,7 @@ async def mafatih_text_page_callback(update: Update, context: ContextTypes.DEFAU
             reply_markup=get_main_menu_keyboard()
         )
 
+@mafatih_admin_only
 async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر دکمه‌ی «فایل صوتی این دعا».
     برای پیام‌های معمولی داخل چت/گروه: صدا را جدا در همان چت می‌فرستد.
@@ -654,6 +684,7 @@ async def mafatih_audio_callback(update: Update, context: ContextTypes.DEFAULT_T
             )
 
 
+@mafatih_admin_only
 async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     item_id = query.data.replace("favmaf_", "")
@@ -666,10 +697,12 @@ async def fav_mafatih_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Error adding fav mafatih {item_id}: {e}")
         await query.answer("❌ خطا در افزودن به علاقه‌مندی‌ها.", show_alert=True)
 
+@mafatih_admin_only
 async def add_mafatih_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر برای دستور /addmafatih (مخصوص ادمین‌ها)"""
     await update.message.reply_text("این بخش جهت افزودن دعای جدید توسط ادمین می‌باشد. (در حال توسعه)")
 
+@mafatih_admin_only
 async def mafatih_menu_text_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """هندلر برای زمانی که کاربر دکمه متنی مفاتیح الجنان را می‌زند"""
     text = "📖 *بخش مفاتیح الجنان*\n\nلطفاً دسته‌بندی مورد نظر خود را انتخاب کنید:"
