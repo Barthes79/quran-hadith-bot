@@ -49,14 +49,13 @@ def ce(key: str) -> str:
 
 def main_menu_keyboard():
     """صفحه‌ی خانه: قرائت و معارف، مداحی و مولودی، اوقات شرعی و اذان،
-    علاقه‌مندی‌ها، تنظیمات و راهنما."""
+    علاقه‌مندی‌ها و راهنما."""
     keyboard = [
         [InlineKeyboardButton("📖 قرائت و معارف", callback_data="menu_pillar_reading")],
         [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
         [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
         [InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings"),
-         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
+        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
