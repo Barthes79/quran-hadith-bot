@@ -36,7 +36,6 @@ from handlers.hadith import (
     show_favorites, copy_hadith_callback, filter_source_callback,
 )
 from handlers.inline import inline_query_handler
-from handlers.profile import profile_command
 from handlers.favorites import (
     favorites_command,
     favorites_hadith_callback,
@@ -61,27 +60,8 @@ from handlers.admin import (
     set_mafatih_audio_command, mafatih_audio_upload_handler,
     bot_chat_member_update_handler, bot_stats_command, track_user_activity,
     set_salavat_count_command,
-    remove_fridge_command,  # ✅ جدید
-    set_points_command,     # ✅ جدید
-)
-from handlers.quiz import (
-    quiz_command, quiz_menu_callback, quiz_category_callback, quiz_answer_callback,
-    leaderboard_command, global_leaderboard_command, my_quiz_stats_command,
-    add_quiz_command, quiz_settings_command, quiz_time_command,
-    quiz_buzzer_command, quiz_next_delay_command, start_rapid_quiz,
-    start_normal_quiz, 
 )
 from handlers.help import help_command, help_callback
-from handlers.gamification import (
-    missions_command, missions_callback,
-    achievements_command, achievements_callback,
-    leaderboard_gamification_command, leaderboard_gamification_callback,
-)
-from gamification.admin_commands import (
-    gami_xp_command, gami_top_command,
-    gami_missions_list_command, gami_mission_new_command, gami_mission_toggle_command,
-    gami_achievements_list_command, gami_achievement_new_command, gami_achievement_toggle_command,
-)
 from handlers.prayer import (
     prayer_command, prayer_city_callback, prayer_city_list_callback,
     prayer_page_callback, prayer_refresh_callback, prayer_location_callback,
@@ -115,16 +95,6 @@ from handlers.salavat import (
     salavat_count_command,
     salavat_home_callback,
 )
-from handlers.angel import angel_text_handler, angel_harvest_callback, angel_levelup_callback, angel_rename_callback
-from handlers.fridge import (
-    fridge_text_handler,
-    nazri_offer_callback,
-    nazri_item_callback,
-    fridge_upgrade_callback,
-    buy_fridge_callback,
-    fridge_cancel_callback,
-)
-from handlers.transfer import transfer_text_handler, transfer_callback
 from admin_migrate import backup_volume, restore_volume
 
 logging.basicConfig(
@@ -153,24 +123,6 @@ async def general_text_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await salavat_text_handler(update, context)
     except Exception as e:
         logger.error(f"خطای مدیریت‌نشده در صلوات‌شمار: {e}")
-
-    try:
-        if await angel_text_handler(update, context, text):
-            return
-    except Exception as e:
-        logger.error(f"خطای مدیریت‌نشده در فرشته: {e}")
-
-    try:
-        if await fridge_text_handler(update, context, text):
-            return
-    except Exception as e:
-        logger.error(f"خطای مدیریت‌نشده در یخچال/نذری: {e}")
-
-    try:
-        if await transfer_text_handler(update, context, text):
-            return
-    except Exception as e:
-        logger.error(f"خطای مدیریت‌نشده در انتقال صلوات: {e}")
 
     consumed_by_reminder = await prayer_reminder_minutes_text_handler(update, context)
     if consumed_by_reminder:
@@ -220,12 +172,6 @@ def main():
     init_db()
     ensure_search_index()
 
-    from gamification.missions import seed_default_missions
-    from gamification.achievements import seed_default_achievements
-    from gamification.leaderboard import ensure_xp_index
-    seed_default_missions()
-    seed_default_achievements()
-    ensure_xp_index()
 
     builder = Application.builder().token(BOT_TOKEN)
 
@@ -263,24 +209,8 @@ def main():
     # ==========================================
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("botstats", bot_stats_command))
-    app.add_handler(CommandHandler("missions", missions_command))
-    app.add_handler(CommandHandler("achievements", achievements_command))
-    app.add_handler(CommandHandler("rank", leaderboard_gamification_command))
-    app.add_handler(CallbackQueryHandler(missions_callback, pattern="^gami_missions$"))
-    app.add_handler(CallbackQueryHandler(achievements_callback, pattern="^gami_achievements$"))
-    app.add_handler(CallbackQueryHandler(leaderboard_gamification_callback, pattern="^gami_leaderboard$"))
 
-    # پنل ادمین گیمیفیکیشن
-    app.add_handler(CommandHandler("gamixp", gami_xp_command))
-    app.add_handler(CommandHandler("gamitop", gami_top_command))
-    app.add_handler(CommandHandler("gamimissions", gami_missions_list_command))
-    app.add_handler(CommandHandler("gamimission_new", gami_mission_new_command))
-    app.add_handler(CommandHandler("gamimission_toggle", gami_mission_toggle_command))
-    app.add_handler(CommandHandler("gamiachievements", gami_achievements_list_command))
-    app.add_handler(CommandHandler("gamiachievement_new", gami_achievement_new_command))
-    app.add_handler(CommandHandler("gamiachievement_toggle", gami_achievement_toggle_command))
     app.add_handler(CommandHandler("favorites", favorites_command))
     app.add_handler(CallbackQueryHandler(favorites_hadith_callback, pattern="^favorites_hadith$"))
     app.add_handler(CallbackQueryHandler(favorites_quran_callback, pattern="^favorites_quran$"))
@@ -297,19 +227,7 @@ def main():
     app.add_handler(CommandHandler("findhadith", find_hadith_command))
     app.add_handler(CommandHandler("edithadith", edit_hadith_command))
     app.add_handler(CommandHandler("delhadith", del_hadith_command))
-    app.add_handler(CommandHandler("quiz", quiz_command))
-    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
-    app.add_handler(CommandHandler("quizrank", global_leaderboard_command))
-    app.add_handler(CommandHandler("mystats", my_quiz_stats_command))
-    app.add_handler(CommandHandler("addquiz", add_quiz_command))
-    app.add_handler(CommandHandler("quizsettings", quiz_settings_command))
-    app.add_handler(CommandHandler("quiztime", quiz_time_command))
-    app.add_handler(CommandHandler("quizbuzzer", quiz_buzzer_command))
-    app.add_handler(CommandHandler("quiznextdelay", quiz_next_delay_command))
     app.add_handler(CommandHandler("addqtafsir", add_quran_tafsir_command))
-    app.add_handler(CallbackQueryHandler(quiz_answer_callback, pattern="^quizans_"))
-    app.add_handler(CallbackQueryHandler(quiz_category_callback, pattern="^quizcat_"))
-    app.add_handler(CallbackQueryHandler(quiz_menu_callback, pattern="^quizmenu$"))
     app.add_handler(CommandHandler("groupsettings", group_settings_command))
     app.add_handler(CommandHandler("setwelcome", set_welcome_command))
     app.add_handler(CommandHandler("setmafaudio", set_mafatih_audio_command))
@@ -325,8 +243,6 @@ def main():
     # دستورات ادمین برای تست
     # ==========================================
     app.add_handler(CommandHandler("setsalavat", set_salavat_count_command))
-    app.add_handler(CommandHandler("removefridge", remove_fridge_command))  # ✅ جدید
-    app.add_handler(CommandHandler("setpoints", set_points_command))        # ✅ جدید
 
     # ==========================================
     # دستورات اوقات شرعی
@@ -365,38 +281,6 @@ def main():
     app.add_handler(CallbackQueryHandler(salavat_delete_pick_callback, pattern="^salrm"))
     app.add_handler(CallbackQueryHandler(salavat_home_callback, pattern="^salhome_"))
 
-    # ==========================================
-    # شخصیت همراه (کبوتر)
-    # ==========================================
-    app.add_handler(CallbackQueryHandler(angel_harvest_callback, pattern=r"^angel_harvest:\d+$"))
-    app.add_handler(CallbackQueryHandler(angel_levelup_callback, pattern=r"^angel_levelup:\d+$"))
-    app.add_handler(CallbackQueryHandler(angel_rename_callback, pattern=r"^angel_rename:\d+$"))
-
-    # ==========================================
-    # یخچال صلواتی و آیتم‌های نذری
-    # ==========================================
-    app.add_handler(CallbackQueryHandler(nazri_offer_callback, pattern=r"^nzoffer:"))
-    app.add_handler(CallbackQueryHandler(nazri_item_callback, pattern=r"^nzitem:"))
-    app.add_handler(CallbackQueryHandler(fridge_upgrade_callback, pattern=r"^nzupgrade:\d+$"))
-    app.add_handler(CallbackQueryHandler(buy_fridge_callback, pattern=r"^buy_fridge:\d+$"))
-    app.add_handler(CallbackQueryHandler(fridge_cancel_callback, pattern=r"^fridge_cancel$"))
-
-    # ==========================================
-    # انتقال صلوات پوینت بین کاربران
-    # ==========================================
-    app.add_handler(CallbackQueryHandler(transfer_callback, pattern="^transfer_(confirm|cancel)$"))
-
-    # ==========================================
-    # هندلر مسابقه سرعتی و معمولی
-    # ==========================================
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.Regex(r"^مسابقه سرعتی \d+$") & filters.ChatType.GROUPS,
-        start_rapid_quiz
-    ))
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.Regex(r"^مسابقه \d+$") & filters.ChatType.GROUPS,
-        start_normal_quiz
-    ))
     
     # ==========================================
     # کالبک‌های منو
