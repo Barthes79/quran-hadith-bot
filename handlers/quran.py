@@ -8,7 +8,22 @@ from handlers.ownership import register_owner, GROUP_CHAT_TYPES
 from text_utils import to_persian_digits
 from gamification.events import dispatch_event
 from gamification.config import EVENT_QURAN_VIEWED
+try:
+    from database import set_user_translation
+except ImportError:
+    set_user_translation = None
 
+# (کلید ترجمه در quran_api, نام نمایشی) — ترتیب چرخش دکمه
+TRANSLATION_CYCLE = [
+    ("makarem", "مکارم شیرازی"),
+    ("ansarian", "انصاریان"),
+    ("foladvand", "فولادوند"),
+]
+
+
+def _translation_index(key):
+    keys = [k for k, _ in TRANSLATION_CYCLE]
+    return keys.index(key) if key in keys else -1
 PAGE_SIZE = 30
 AYAH_PAGE_SIZE = 96  # تعداد شماره آیه در هر صفحه از لیست آیات یک سوره
 AYAHS_PER_ROW = 8
