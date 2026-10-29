@@ -17,7 +17,7 @@ except ImportError:
 TRANSLATION_CYCLE = [
     ("makarem", "مکارم شیرازی"),
     ("ansarian", "انصاریان"),
-    ("foladvand", "فولادوند"),
+    ("fooladvand", "فولادوند"),
 ]
 
 
@@ -320,7 +320,7 @@ async def surah_selected_callback(update: Update, context: ContextTypes.DEFAULT_
     await show_ayah_list(update, context, surah_number, page=0)
 
 
-def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
+def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int, translation_key=None):
     buttons = []
     nav_row = []
     if ayah > 1:
@@ -328,6 +328,12 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
     if ayah < total_ayahs:
         nav_row.append(InlineKeyboardButton("آیه بعد ▶️", callback_data=f"ayah_{surah}_{ayah+1}"))
     buttons.append(nav_row)
+
+    next_idx = (_translation_index(translation_key) + 1) % len(TRANSLATION_CYCLE)
+    next_name = TRANSLATION_CYCLE[next_idx][1]
+    buttons.append([
+        InlineKeyboardButton(f"🔄 ترجمه: {next_name}", callback_data=f"aytr_{surah}_{ayah}_{next_idx}"),
+    ])
 
     buttons.append([
         #InlineKeyboardButton("📝 تفسیر", callback_data=f"tafsir_{surah}_{ayah}"),
@@ -341,10 +347,12 @@ def ayah_navigation_keyboard(surah: int, ayah: int, total_ayahs: int):
     return InlineKeyboardMarkup(buttons)
 
 
-async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, ayah: int):
+async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: int, ayah: int,
+                    translation_key=None, count_event: bool = True):
     query = update.callback_query
     user_id = query.from_user.id if query else update.effective_user.id
-    translation_key = get_user_translation(user_id)
+    if translation_key is None:
+        translation_key = get_user_translation(user_id)
 
     surahs = await get_surah_list()
     surah_info = next((s for s in surahs if s["number"] == surah), None)
@@ -362,7 +370,7 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
             f"🔹 ترجمه:\n{data['translation']}"
         )
 
-    markup = ayah_navigation_keyboard(surah, ayah, total_ayahs)
+    markup = ayah_navigation_keyboard(surah, ayah, total_ayahs, translation_key)
 
     if query:
         await query.edit_message_text(text, reply_markup=markup)
@@ -373,7 +381,7 @@ async def show_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE, surah: i
         if update.effective_chat and update.effective_chat.type in GROUP_CHAT_TYPES:
             register_owner(update.effective_chat.id, sent.message_id, update.effective_user.id)
 
-    if data and data.get("arabic"):
+    if count_event and data and data.get("arabic"):
         await dispatch_event(EVENT_QURAN_VIEWED, user_id, reference_id=f"{surah}:{ayah}")
 
 
@@ -382,6 +390,16 @@ async def ayah_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     _, surah, ayah = query.data.split("_")
     await show_ayah(update, context, int(surah), int(ayah))
+
+
+async def ayah_translation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    _, surah, ayah, idx = query.data.split("_")
+    key = TRANSLATION_CYCLE[int(idx) % len(TRANSLATION_CYCLE)][0]
+    if set_user_translation:
+        set_user_translation(query.from_user.id, key)  # برای آیه‌های بعدی هم بماند
+    await show_ayah(update, context, int(surah), int(ayah), translation_key=key, count_event=False)
 
 
 async def fav_ayah_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
