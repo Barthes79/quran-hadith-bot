@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
-from config import DEFAULT_TRANSLATIONS
+from config import DEFAULT_TRANSLATIONS, ADMIN_IDS
 from database import get_user_translation, set_user_translation
 
 # ─────────────────────────────────────────────────────────────
@@ -60,25 +60,35 @@ def main_menu_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-def pillar_reading_keyboard():
-    """زیرمنوی «قرائت و معارف»: قرآن، حدیث، نهج‌البلاغه، مفاتیح‌الجنان."""
+def _is_admin(user_id) -> bool:
+    return user_id in ADMIN_IDS
+
+
+def pillar_reading_keyboard(user_id=None):
+    """زیرمنوی «قرائت و معارف»: قرآن، حدیث، نهج‌البلاغه، و (فقط برای ادمین‌ها) مفاتیح‌الجنان."""
+    nahj_row = [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj")]
+    if _is_admin(user_id):
+        nahj_row.append(InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih"))
     keyboard = [
         [InlineKeyboardButton("📖 قرآن کریم", callback_data="menu_quran"),
          InlineKeyboardButton("📿 احادیث معصومین", callback_data="menu_hadith")],
-        [InlineKeyboardButton("🕌 نهج‌البلاغه", callback_data="menu_nahj"),
-         InlineKeyboardButton("📗 مفاتیح‌الجنان", callback_data="menu_mafatih")],
+        nahj_row,
         [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
 
-def _home_text():
+def _home_text(user_id=None):
+    reading_desc = (
+        "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان"
+        if _is_admin(user_id) else "قرآن، حدیث و نهج‌البلاغه"
+    )
     return (
         f"{ce('moon')} <b>همراه قرآن و اهل‌بیت</b>\n"
         "فضایی آرام برای قرآن، حدیث و معارف اهل‌بیت\n"
         f"{DIVIDER}\n\n"
         f"{ce('book')} <b>قرائت و معارف</b>\n"
-        "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
+        f"{reading_desc}\n\n"
         f"{ce('mic')} <b>مداحی و مولودی</b>\n\n"
         f"{ce('kaaba')} <b>اوقات شرعی و اذان</b>\n\n"
         "⭐ <b>علاقه‌مندی‌ها</b>\n"
@@ -88,7 +98,7 @@ def _home_text():
     )
 
 
-def _reading_text():
+def _reading_text(user_id=None):
     return (
         f"{ce('book')} <b>قرائت و معارف</b>\n"
         "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
@@ -112,7 +122,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     await update.message.reply_text(
-        _home_text(), reply_markup=main_menu_keyboard(), parse_mode="HTML"
+        _home_text(update.effective_user.id), reply_markup=main_menu_keyboard(), parse_mode="HTML"
     )
 
 
@@ -150,6 +160,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_nahj_menu(update, context)
 
     elif query.data == "menu_mafatih":
+        # فعلاً فقط برای ادمین‌ها (تا کامل شدن بخش مفاتیح)
+        if not _is_admin(query.from_user.id):
+            await query.answer("این بخش هنوز در دسترس نیست.", show_alert=True)
+            return
         from handlers.mafatih import mafatih_menu_callback
         await mafatih_menu_callback(update, context)
 
@@ -165,7 +179,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # callback_dataهای قدیمی (menu_quran, menu_hadith, ...) وصل است.
     elif query.data == "menu_pillar_reading":
         await query.edit_message_text(
-            _reading_text(), reply_markup=pillar_reading_keyboard(), parse_mode="HTML"
+            _reading_text(query.from_user.id),
+            reply_markup=pillar_reading_keyboard(query.from_user.id),
+            parse_mode="HTML",
         )
 
     # menu_main و menu_back هر دو از فایل‌های مختلف (mafatih.py، hadith.py،
@@ -174,7 +190,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # تا کاربر با دو برچسبِ متفاوت برای یک مقصد گیج نشود.
     elif query.data in ("menu_main", "menu_back", "menu_pillar_personal"):
         await query.edit_message_text(
-            _home_text(), reply_markup=main_menu_keyboard(), parse_mode="HTML"
+            _home_text(query.from_user.id), reply_markup=main_menu_keyboard(), parse_mode="HTML"
         )
 
     elif query.data == "menu_settings":
