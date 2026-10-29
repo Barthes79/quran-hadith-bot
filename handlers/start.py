@@ -49,17 +49,14 @@ def ce(key: str) -> str:
 
 def main_menu_keyboard():
     """صفحه‌ی خانه: قرائت و معارف، مداحی و مولودی، اوقات شرعی و اذان،
-    تجربه شخصی من + راهنما.
-    ⭐ ذخیره‌های من و ⚙️ تنظیمات برای کاهش cognitive load به زیرمنوی
-    «🧠 تجربه شخصی من» منتقل شدند؛ callback_data هر دو (menu_favorites,
-    menu_settings) دست‌نخورده باقی مانده و صرفاً از یک لایه پایین‌تر
-    صدا زده می‌شوند، پس هیچ handler ای نیاز به تغییر ندارد."""
+    علاقه‌مندی‌ها، تنظیمات و راهنما."""
     keyboard = [
         [InlineKeyboardButton("📖 قرائت و معارف", callback_data="menu_pillar_reading")],
         [InlineKeyboardButton("🎙 مداحی و مولودی", callback_data="menu_madahi")],
         [InlineKeyboardButton("🕋 اوقات شرعی و اذان", callback_data="menu_prayer")],
-        [InlineKeyboardButton("🧠 تجربه شخصی من", callback_data="menu_pillar_personal")],
-        [InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
+        [InlineKeyboardButton("⭐ علاقه‌مندی‌ها", callback_data="menu_favorites")],
+        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings"),
+         InlineKeyboardButton("📚 راهنما", callback_data="menu_help")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -76,26 +73,6 @@ def pillar_reading_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-def pillar_personal_keyboard():
-    """زیرمنوی «تجربه شخصی من»: آزمون، مأموریت‌ها، رتبه‌بندی، دستاوردها،
-    ذخیره‌ها، تنظیمات.
-    دکمه‌ی آزمون مستقیماً callback_data="quizmenu" را صدا می‌زند که از قبل
-    در main.py به‌صورت مستقل ثبت شده (quiz_menu_callback)، پس نیازی به
-    تغییر main.py یا quiz.py نیست. دکمه‌های مأموریت/رتبه‌بندی/دستاوردها هم
-    به همین ترتیب مستقیماً callbackهای مستقل خودشان (handlers/gamification.py)
-    را صدا می‌زنند."""
-    keyboard = [
-        [InlineKeyboardButton("🧠 آزمون", callback_data="quizmenu")],
-        [InlineKeyboardButton("🎯 مأموریت‌ها", callback_data="gami_missions"),
-         InlineKeyboardButton("🏆 رتبه‌بندی", callback_data="gami_leaderboard")],
-        [InlineKeyboardButton("🏅 دستاوردها", callback_data="gami_achievements")],
-        [InlineKeyboardButton("⭐ ذخیره‌های من", callback_data="menu_favorites")],
-        [InlineKeyboardButton("⚙️ تنظیمات", callback_data="menu_settings")],
-        [InlineKeyboardButton("🏠 بازگشت به خانه", callback_data="menu_main")],
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
 def _home_text():
     return (
         f"{ce('moon')} <b>همراه قرآن و اهل‌بیت</b>\n"
@@ -105,8 +82,8 @@ def _home_text():
         "قرآن، حدیث، نهج‌البلاغه و مفاتیح‌الجنان\n\n"
         f"{ce('mic')} <b>مداحی و مولودی</b>\n\n"
         f"{ce('kaaba')} <b>اوقات شرعی و اذان</b>\n\n"
-        f"{ce('brain')} <b>تجربه شخصی من</b>\n"
-        "آزمون، ذخیره‌ها و تنظیمات\n"
+        "⭐ <b>علاقه‌مندی‌ها</b>\n"
+        "آیات و احادیث ذخیره‌شده‌ی شما\n"
         f"{DIVIDER}\n"
         "یکی از بخش‌ها را انتخاب کنید 👇"
     )
@@ -116,15 +93,6 @@ def _reading_text():
     return (
         f"{ce('book')} <b>قرائت و معارف</b>\n"
         "قرآن، حدیث و میراث گران‌بهای اهل‌بیت\n"
-        f"{DIVIDER}\n"
-        "بخش مورد نظر را انتخاب کنید 👇"
-    )
-
-
-def _personal_text():
-    return (
-        f"{ce('brain')} <b>تجربه شخصی من</b>\n"
-        "فضای اختصاصی شما در ربات\n"
         f"{DIVIDER}\n"
         "بخش مورد نظر را انتخاب کنید 👇"
     )
@@ -201,16 +169,11 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _reading_text(), reply_markup=pillar_reading_keyboard(), parse_mode="HTML"
         )
 
-    elif query.data == "menu_pillar_personal":
-        await query.edit_message_text(
-            _personal_text(), reply_markup=pillar_personal_keyboard(), parse_mode="HTML"
-        )
-
     # menu_main و menu_back هر دو از فایل‌های مختلف (mafatih.py، hadith.py،
     # nahj.py، quran.py، prayer.py، madahi.py، help.py، favorites.py)
     # صدا زده می‌شوند؛ هر دو دقیقاً به همین صفحه‌ی خانه‌ی یکسان برمی‌گردند
     # تا کاربر با دو برچسبِ متفاوت برای یک مقصد گیج نشود.
-    elif query.data in ("menu_main", "menu_back"):
+    elif query.data in ("menu_main", "menu_back", "menu_pillar_personal"):
         await query.edit_message_text(
             _home_text(), reply_markup=main_menu_keyboard(), parse_mode="HTML"
         )
